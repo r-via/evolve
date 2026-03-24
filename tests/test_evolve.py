@@ -134,3 +134,110 @@ class TestExitCodes:
         # This is an indirect test — the actual exit code may vary
         # depending on how ImportError is triggered
         assert result.returncode != 0
+
+
+class TestInitConfig:
+    """Test _init_config scaffolding."""
+
+    def test_creates_evolve_toml(self, tmp_path: Path):
+        from evolve import _init_config
+        _init_config(tmp_path)
+        config = tmp_path / "evolve.toml"
+        assert config.is_file()
+        content = config.read_text()
+        assert 'check = ""' in content
+        assert "rounds = 10" in content
+        assert "timeout = 300" in content
+        assert 'model = "claude-opus-4-6"' in content
+        assert "yolo = false" in content
+
+    def test_does_not_overwrite_existing(self, tmp_path: Path):
+        config = tmp_path / "evolve.toml"
+        config.write_text("custom = true\n")
+        from evolve import _init_config
+        _init_config(tmp_path)
+        assert config.read_text() == "custom = true\n"
+
+    def test_creates_parent_dirs(self, tmp_path: Path):
+        target = tmp_path / "nested" / "deep" / "project"
+        from evolve import _init_config
+        _init_config(target)
+        assert (target / "evolve.toml").is_file()
+
+
+class TestCleanSessions:
+    """Test _clean_sessions cleanup logic."""
+
+    def test_no_runs_dir(self, tmp_path: Path):
+        from evolve import _clean_sessions
+        # Should not crash
+        _clean_sessions(tmp_path, keep=5)
+
+    def test_fewer_sessions_than_keep(self, tmp_path: Path):
+        runs = tmp_path / "runs"
+        (runs / "20260101_000000").mkdir(parents=True)
+        (runs / "20260102_000000").mkdir(parents=True)
+        from evolve import _clean_sessions
+        _clean_sessions(tmp_path, keep=5)
+        # All sessions should still exist
+        assert (runs / "20260101_000000").is_dir()
+        assert (runs / "20260102_000000").is_dir()
+
+    def test_removes_oldest_sessions(self, tmp_path: Path):
+        runs = tmp_path / "runs"
+        for i in range(5):
+            (runs / f"2026010{i}_000000").mkdir(parents=True)
+        from evolve import _clean_sessions
+        _clean_sessions(tmp_path, keep=2)
+        remaining = sorted(d.name for d in runs.iterdir() if d.is_dir())
+        assert len(remaining) == 2
+        # Should keep the two most recent (sorted descending)
+        assert "20260104_000000" in remaining
+        assert "20260103_000000" in remaining
+
+    def test_ignores_non_timestamped_dirs(self, tmp_path: Path):
+        runs = tmp_path / "runs"
+        (runs / "20260101_000000").mkdir(parents=True)
+        (runs / "20260102_000000").mkdir(parents=True)
+        (runs / "some_other_dir").mkdir(parents=True)
+        from evolve import _clean_sessions
+        _clean_sessions(tmp_path, keep=1)
+        # Non-timestamped dir should survive
+        assert (runs / "some_other_dir").is_dir()
+        assert (runs / "20260102_000000").is_dir()
+        assert not (runs / "20260101_000000").is_dir()
+
+    def test_keeps_shared_files(self, tmp_path: Path):
+        runs = tmp_path / "runs"
+        (runs / "20260101_000000").mkdir(parents=True)
+        (runs / "improvements.md").write_text("# Improvements\n")
+        (runs / "memory.md").write_text("# Memory\n")
+        from evolve import _clean_sessions
+        _clean_sessions(tmp_path, keep=0)
+        # Shared files are not session dirs — should remain
+        assert (runs / "improvements.md").is_file()
+        assert (runs / "memory.md").is_file()
+
+    def test_clean_cli_parsing(self):
+        """Verify clean subcommand CLI args are parsed correctly."""
+        import argparse
+        ap = argparse.ArgumentParser()
+        sub = ap.add_subparsers(dest="command")
+        clean_p = sub.add_parser("clean")
+        clean_p.add_argument("project_dir")
+        clean_p.add_argument("--keep", type=int, default=5)
+        args = ap.parse_args(["clean", "/tmp/project", "--keep", "3"])
+        assert args.command == "clean"
+        assert args.project_dir == "/tmp/project"
+        assert args.keep == 3
+
+    def test_init_cli_parsing(self):
+        """Verify init subcommand CLI args are parsed correctly."""
+        import argparse
+        ap = argparse.ArgumentParser()
+        sub = ap.add_subparsers(dest="command")
+        init_p = sub.add_parser("init")
+        init_p.add_argument("project_dir")
+        args = ap.parse_args(["init", "/tmp/project"])
+        assert args.command == "init"
+        assert args.project_dir == "/tmp/project"
