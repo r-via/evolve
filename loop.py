@@ -189,7 +189,7 @@ def _run_rounds(
         if checked == prev_checked and unchecked == prev_unchecked:
             if not convo.is_file() or convo.stat().st_size < 100:
                 ui.no_progress()
-                sys.exit(1)
+                sys.exit(2)
 
         # Check convergence
         converged_path = run_dir / "CONVERGED"
@@ -425,7 +425,7 @@ def _ensure_git(project_dir: Path, ui=None) -> None:
     )
     if result.returncode != 0:
         ui.error(f"ERROR: {project_dir} is not a git repository.")
-        sys.exit(1)
+        sys.exit(2)
 
     status = subprocess.run(
         ["git", "status", "--porcelain"],

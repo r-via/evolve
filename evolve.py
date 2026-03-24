@@ -48,7 +48,7 @@ def _check_deps():
         print(f"  pip install claude-agent-sdk")
         print(f"  python evolve.py start <project-dir>\n")
 
-    sys.exit(1)
+    sys.exit(2)
 
 
 def main():
