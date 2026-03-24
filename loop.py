@@ -24,6 +24,18 @@ def _count_unchecked(path: Path) -> int:
     return len(re.findall(r"^- \[ \]", path.read_text(), re.MULTILINE))
 
 
+def _count_blocked(path: Path) -> int:
+    """Count unchecked items that require [needs-package] (blocked without --yolo)."""
+    if not path.is_file():
+        return 0
+    count = 0
+    for line in path.read_text().splitlines():
+        m = re.match(r"^- \[ \] (.+)$", line.strip())
+        if m and "[needs-package]" in m.group(1):
+            count += 1
+    return count
+
+
 def _get_current_improvement(path: Path, yolo: bool = False) -> str | None:
     if not path.is_file():
         return None
@@ -67,6 +79,15 @@ def evolve_loop(
         if current:
             print(f"  TARGET: {current}")
             print(f"  PROGRESS: {checked}/{checked + unchecked} improvements done")
+        elif unchecked > 0:
+            # All remaining unchecked items are blocked (needs-package without --yolo)
+            blocked = _count_blocked(improvements_path)
+            if blocked == unchecked:
+                print(f"  ALL {blocked} remaining improvement(s) require new packages.")
+                print(f"  Re-run with --yolo to allow package installation, or add new improvements.")
+                print(f"{'#' * 60}")
+                break
+            print(f"  TARGET: (initial analysis)")
         else:
             print(f"  TARGET: (initial analysis)")
         print(f"{'#' * 60}")
@@ -177,7 +198,7 @@ def run_single_round(
         msg = commit_msg_path.read_text().strip()
         commit_msg_path.unlink()
     else:
-        new_current = _get_current_improvement(improvements_path)
+        new_current = _get_current_improvement(improvements_path, yolo=yolo)
         if current and new_current != current:
             msg = f"feat(evolve): ✓ {current}"
         else:
