@@ -15,7 +15,44 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _check_deps():
+    """Check that required dependencies are installed. Exit with install instructions if not."""
+    evolve_dir = Path(__file__).parent
+    venv_dir = evolve_dir / ".venv"
+
+    # Check if we're running inside evolve's venv
+    in_venv = hasattr(sys, "prefix") and str(venv_dir) in sys.prefix
+
+    try:
+        import claude_agent_sdk
+        return  # all good
+    except ImportError:
+        pass
+
+    print("ERROR: claude-agent-sdk is not installed.\n")
+
+    if venv_dir.is_dir() and not in_venv:
+        print(f"A virtual environment exists at {venv_dir}")
+        print(f"Run evolve with the venv activated:\n")
+        print(f"  source {venv_dir}/bin/activate")
+        print(f"  python evolve.py start <project-dir>\n")
+    elif venv_dir.is_dir() and in_venv:
+        print(f"Install the SDK in the current venv:\n")
+        print(f"  pip install claude-agent-sdk\n")
+    else:
+        print(f"Set up a virtual environment:\n")
+        print(f"  cd {evolve_dir}")
+        print(f"  python3 -m venv .venv")
+        print(f"  source .venv/bin/activate")
+        print(f"  pip install claude-agent-sdk")
+        print(f"  python evolve.py start <project-dir>\n")
+
+    sys.exit(1)
+
+
 def main():
+    _check_deps()
+
     ap = argparse.ArgumentParser(
         prog="evolve",
         description="Self-improving evolution loop for any project. "
@@ -112,8 +149,8 @@ def _show_status(project_dir: Path):
             latest = sessions[0]
             converged = (latest / "CONVERGED").is_file()
             convos = len(list(latest.glob("conversation_loop_*.md")))
-            probes = len(list(latest.glob("probe_round_*.txt")))
-            print(f"  Latest session: {latest.name} ({convos} rounds, {probes} probes)")
+            checks = len(list(latest.glob("check_round_*.txt")))
+            print(f"  Latest session: {latest.name} ({convos} rounds, {checks} checks)")
             print(f"  Converged: {'YES' if converged else 'NO'}")
             if converged:
                 print(f"  Reason: {(latest / 'CONVERGED').read_text().strip()[:200]}")
