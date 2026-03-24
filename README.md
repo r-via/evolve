@@ -1,6 +1,6 @@
 # evolve
 
-Self-improving evolution loop for any project, powered by Claude opus.
+Self-improving evolution loop for any project, powered by Claude.
 
 Point it at any git repo with a README → it reads the README as the specification,
 iteratively fixes bugs and implements improvements, one at a time, until the project
@@ -10,7 +10,10 @@ fully converges to its spec.
 
 ```bash
 # Evolve a project (README = spec)
-python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--yolo]
+python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo]
+
+# Resume an interrupted session
+python evolve.py start <project-dir> --resume
 
 # Check evolution status
 python evolve.py status <project-dir>
@@ -33,6 +36,12 @@ python evolve.py start ~/projects/my-lib
 
 # Allow installing new packages
 python evolve.py start ~/projects/my-tool --check "pytest" --yolo
+
+# Use a different model
+python evolve.py start ~/projects/my-tool --check "pytest" --model claude-sonnet-4-20250514
+
+# Resume after interruption (continues from last completed round)
+python evolve.py start ~/projects/my-tool --check "pytest" --resume
 ```
 
 ## TUI
@@ -69,6 +78,7 @@ Features:
 - Check command results with pass/fail indicators
 - Git commit + push status
 - Graceful fallback to plain text when `rich` is not installed
+- TUI interface enforced via Protocol — RichTUI and PlainTUI both implement the same `TUIProtocol`, guaranteeing method parity at type-check time
 
 ## How it works
 
@@ -110,16 +120,17 @@ so code changes are picked up immediately.
 9. Opus writes COMMIT_MSG with conventional commit message
 10. Git commit + push
 11. Orchestrator re-runs check → saves check_round_N.txt
-12. Next round starts as fresh subprocess (reloaded code)
+12. Round subprocess stdout/stderr captured for failure diagnostics
+13. Next round starts as fresh subprocess (reloaded code)
 
 --- after convergence ---
 
-13. Party mode: all agents brainstorm next evolution
-14. Agents produce:
+14. Party mode: all agents brainstorm next evolution
+15. Agents produce:
     - party_report.md — full discussion log with each agent's reasoning
     - README_proposal.md — proposed updated README
-15. Operator reviews both files
-16. If approved: replace README.md → new evolution loop
+16. Operator reviews both files
+17. If approved: replace README.md → new evolution loop
 ```
 
 ### The --check flag
@@ -145,6 +156,34 @@ killed. Defaults to 300 seconds (5 minutes). Increase for slow test suites:
 ```bash
 --timeout 600    # 10 minutes
 ```
+
+### The --model flag
+
+Sets the Claude model to use for evolution. Defaults to `claude-opus-4-6`.
+Can also be set via the `EVOLVE_MODEL` environment variable (CLI flag takes precedence).
+
+```bash
+--model claude-opus-4-6             # Default — most capable
+--model claude-sonnet-4-20250514    # Faster, lower cost
+```
+
+```bash
+# Or via environment variable
+export EVOLVE_MODEL=claude-sonnet-4-20250514
+python evolve.py start ~/projects/my-tool --check "pytest"
+```
+
+### The --resume flag
+
+Resumes the most recent interrupted session instead of creating a new one. Detects the
+last completed round from existing conversation logs and continues from the next round.
+
+```bash
+# Session interrupted at round 5 — resume from round 6
+python evolve.py start ~/projects/my-tool --check "pytest" --resume
+```
+
+If no previous session exists, `--resume` starts a fresh session (same as without the flag).
 
 ### improvements.md — the convergence tracker
 
@@ -198,6 +237,47 @@ By default, improvements requiring new packages are blocked. Use `--yolo` to all
 Projects can override the default system prompt by creating `prompts/evolve-system.md`
 in their project directory. Evolve will use it instead of the default.
 
+### Exit codes
+
+`evolve start` returns meaningful exit codes for CI/CD integration:
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 0 | Converged — project fully matches README spec |
+| 1 | Max rounds reached — improvements remain |
+| 2 | Error — agent failure, missing deps, or invalid args |
+
+```bash
+# Use in CI
+python evolve.py start . --check "pytest" --rounds 20
+if [ $? -eq 0 ]; then echo "Converged!"; fi
+```
+
+## Development
+
+Evolve has its own test suite. Run it with pytest:
+
+```bash
+# Run all tests
+pytest tests/
+
+# Run with coverage
+pytest tests/ --cov=. --cov-report=term-missing
+```
+
+### Test structure
+
+```
+tests/
+├── test_loop.py       # _is_needs_package, counters, _get_current_improvement
+├── test_agent.py      # build_prompt, error helpers, retry logic
+├── test_tui.py        # factory function, TUI Protocol parity
+└── test_evolve.py     # CLI arg parsing, _show_status
+```
+
+Tests cover all pure utility functions without requiring the Claude SDK. Integration
+tests that need the SDK use mocked responses.
+
 ## Requirements
 
 - Python 3.10+
@@ -205,3 +285,22 @@ in their project directory. Evolve will use it instead of the default.
 - `rich` (optional): `pip install rich` — for the modern TUI (fallback to plain text without it)
 - Git repository
 - Claude Code CLI installed and authenticated
+
+### Model compatibility
+
+Evolve works with any Claude model supported by the Agent SDK. Recommended:
+
+| Model | Best for |
+|-------|----------|
+| `claude-opus-4-6` (default) | Maximum capability, complex projects |
+| `claude-sonnet-4-20250514` | Faster iterations, simpler projects |
+
+## Future directions
+
+These are under consideration for future evolution cycles:
+
+- **Configuration file** (`.evolverc` or `evolve.toml`) — project-level defaults for all CLI flags
+- **JSON output mode** — machine-readable reports for CI/CD pipelines
+- **Log rotation** — automatic archival/pruning of old session directories
+- **Enhanced status** — per-round summaries showing what each round accomplished
+- **Multi-repo evolution** — evolve multiple related projects in coordination
