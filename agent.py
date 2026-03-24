@@ -161,13 +161,15 @@ async def run_claude_agent(
     fname = log_filename or f"conversation_loop_{round_num}.md"
     log_path = out_dir / fname
 
+    ui = get_tui()
+
     with open(log_path, "w") as log:
         log.write(f"# Evolution Round {round_num}\n\n")
 
         def _log(line: str, console: bool = False):
             log.write(line + "\n")
             if console:
-                print(line)
+                ui.agent_text(line)
 
         turn = 0
         tools_used = 0
@@ -223,7 +225,7 @@ async def run_claude_agent(
                             else:
                                 tool_input = str(inp)[:100]
                         _log(f"\n**{tool_name}**: `{tool_input}`\n")
-                        print(f"  [opus] {tool_name} → {tool_input[:80]}")
+                        ui.agent_tool(tool_name, tool_input)
 
                     elif block_type == "ToolResultBlock":
                         content_str = str(block.content)[:500] if hasattr(block, "content") and block.content else ""
@@ -240,7 +242,7 @@ async def run_claude_agent(
 
         _log(f"\n---\n\n**Done**: {turn} messages, {tools_used} tool calls\n")
 
-    print(f"  [opus] done ({tools_used} tool calls) → {log_path}")
+    ui.agent_done(tools_used, str(log_path))
 
 
 def analyze_and_fix(
@@ -253,10 +255,11 @@ def analyze_and_fix(
     run_dir: Path | None = None,
 ) -> None:
     """Run Claude opus agent to analyze and fix code."""
+    ui = get_tui()
     try:
         from claude_agent_sdk import query
     except ImportError:
-        print("WARN: claude-agent-sdk not installed, skipping agent")
+        ui.warn("claude-agent-sdk not installed, skipping agent")
         return
 
     prompt = build_prompt(project_dir, check_output, check_cmd, yolo, run_dir)
@@ -274,18 +277,18 @@ def analyze_and_fix(
                 return
             if "rate_limit" in str(e).lower() and attempt < max_retries:
                 wait = 60 * attempt
-                print(f"  [sdk] rate limited — waiting {wait}s (attempt {attempt}/{max_retries})...")
+                ui.sdk_rate_limited(wait, attempt, max_retries)
                 import time
                 time.sleep(wait)
             else:
-                print(f"WARN: Claude Code agent failed ({e})")
+                ui.warn(f"Claude Code agent failed ({e})")
                 return
         except Exception as e:
             if "rate_limit" in str(e).lower() and attempt < max_retries:
                 wait = 60 * attempt
-                print(f"  [sdk] rate limited — waiting {wait}s (attempt {attempt}/{max_retries})...")
+                ui.sdk_rate_limited(wait, attempt, max_retries)
                 import time
                 time.sleep(wait)
             else:
-                print(f"WARN: Claude Code agent failed ({e})")
+                ui.warn(f"Claude Code agent failed ({e})")
                 return
