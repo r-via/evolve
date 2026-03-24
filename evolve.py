@@ -133,7 +133,13 @@ def _show_status(project_dir: Path):
         import re
         checked = len(re.findall(r"^- \[x\]", content, re.MULTILINE))
         unchecked = len(re.findall(r"^- \[ \]", content, re.MULTILINE))
-        print(f"  Improvements: {checked} done, {unchecked} remaining")
+        # Count blocked items (needs-package without --yolo)
+        from loop import _count_blocked
+        blocked = _count_blocked(improvements_path)
+        status_line = f"  Improvements: {checked} done, {unchecked} remaining"
+        if blocked > 0:
+            status_line += f" ({blocked} blocked (needs-package))"
+        print(status_line)
     else:
         print(f"  Improvements: (none yet)")
 
