@@ -9,14 +9,20 @@ fully converges to its spec.
 ## Usage
 
 ```bash
+# Initialize a config file for your project
+python evolve.py init <project-dir>
+
 # Evolve a project (README = spec)
-python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo]
+python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo] [--json]
 
 # Resume an interrupted session
 python evolve.py start <project-dir> --resume
 
 # Check evolution status
 python evolve.py status <project-dir>
+
+# Clean up old session directories
+python evolve.py clean <project-dir> [--keep 5]
 ```
 
 ## Examples
@@ -42,6 +48,61 @@ python evolve.py start ~/projects/my-tool --check "pytest" --model claude-sonnet
 
 # Resume after interruption (continues from last completed round)
 python evolve.py start ~/projects/my-tool --check "pytest" --resume
+
+# JSON output for CI/CD pipelines
+python evolve.py start ~/projects/my-tool --check "pytest" --json
+
+# Initialize a config file with sensible defaults
+python evolve.py init ~/projects/my-tool
+
+# Clean up old sessions, keeping the 5 most recent
+python evolve.py clean ~/projects/my-tool --keep 5
+```
+
+## Configuration
+
+Evolve supports project-level configuration via `evolve.toml` or `pyproject.toml`.
+This eliminates the need to repeat CLI flags on every run.
+
+### Configuration file
+
+Create an `evolve.toml` in your project root:
+
+```toml
+# evolve.toml
+check = "pytest"
+rounds = 20
+timeout = 300
+model = "claude-opus-4-6"
+yolo = false
+```
+
+Or add an `[tool.evolve]` section to your existing `pyproject.toml`:
+
+```toml
+[tool.evolve]
+check = "pytest"
+rounds = 20
+timeout = 300
+```
+
+### Resolution order
+
+Settings are resolved in this order (first wins):
+
+1. CLI flags (`--check "pytest"`)
+2. Environment variables (`EVOLVE_MODEL`)
+3. `evolve.toml` in project root
+4. `pyproject.toml [tool.evolve]` section
+5. Built-in defaults
+
+### `evolve init`
+
+Scaffold a config file with sensible defaults:
+
+```bash
+python evolve.py init ~/projects/my-tool
+# Creates ~/projects/my-tool/evolve.toml with default settings
 ```
 
 ## TUI
@@ -80,6 +141,28 @@ Features:
 - Graceful fallback to plain text when `rich` is not installed
 - TUI interface enforced via Protocol — RichTUI and PlainTUI both implement the same `TUIProtocol`, guaranteeing method parity at type-check time
 
+### JSON output mode
+
+For CI/CD integration, use `--json` to emit structured JSON events to stdout
+instead of the interactive TUI:
+
+```bash
+python evolve.py start ~/projects/my-tool --check "pytest" --json
+```
+
+Each line is a JSON object with a `type`, `timestamp`, and event-specific fields:
+
+```json
+{"type": "round_start", "timestamp": "2026-03-24T16:00:00Z", "round": 1, "max_rounds": 10}
+{"type": "check_result", "timestamp": "2026-03-24T16:00:05Z", "label": "check", "cmd": "pytest", "passed": true}
+{"type": "agent_tool", "timestamp": "2026-03-24T16:01:00Z", "tool": "Edit", "input": "src/parser.py"}
+{"type": "improvement_completed", "timestamp": "2026-03-24T16:02:00Z", "description": "Add input validation"}
+{"type": "converged", "timestamp": "2026-03-24T16:05:00Z", "round": 3, "reason": "All README claims verified"}
+```
+
+The `JsonTUI` class implements the same `TUIProtocol` as `RichTUI` and `PlainTUI`,
+ensuring all output methods are available in JSON mode with zero changes to business logic.
+
 ## How it works
 
 Each `evolve start` creates a timestamped session. Each round runs as a **separate subprocess**
@@ -88,6 +171,7 @@ so code changes are picked up immediately.
 ```
 <project>/
 ├── README.md                          # THE SPEC — evolve converges to this
+├── evolve.toml                        # (optional) project-level config
 ├── runs/
 │   ├── improvements.md                # shared — one improvement added per round
 │   ├── memory.md                      # shared — cumulative error log, compacted each round
@@ -95,6 +179,7 @@ so code changes are picked up immediately.
 │   │   ├── conversation_loop_1.md     # full opus conversation log
 │   │   ├── conversation_loop_2.md
 │   │   ├── check_round_1.txt          # post-fix check results
+│   │   ├── evolution_report.md        # post-session summary with timeline
 │   │   ├── COMMIT_MSG                 # (transient) commit message from opus
 │   │   └── CONVERGED                  # written by opus when done
 │   └── 20260324_170000/               # session 2
@@ -132,6 +217,35 @@ so code changes are picked up immediately.
 16. Operator reviews both files
 17. If approved: replace README.md → new evolution loop
 ```
+
+### Evolution report
+
+After each session completes (converged or max rounds reached), evolve writes
+`runs/<session>/evolution_report.md` — a summary of what happened:
+
+```markdown
+# Evolution Report
+**Project:** my-tool
+**Session:** 20260324_160000
+**Rounds:** 8/20
+**Status:** CONVERGED
+
+## Timeline
+| Round | Action | Files Changed | Tests |
+|-------|--------|---------------|-------|
+| 1 | fix: parser crash on empty input | parser.py | 42→43 |
+| 2 | feat: add input validation | validator.py, parser.py | 43→47 |
+...
+
+## Summary
+- 6 improvements completed
+- 2 bugs fixed
+- 12 files modified
+```
+
+The report is generated by parsing conversation logs, commit messages, and check
+results from the session directory. It serves both human review (post-run summary)
+and CI/CD integration (PR description content).
 
 ### The --check flag
 
@@ -185,6 +299,16 @@ python evolve.py start ~/projects/my-tool --check "pytest" --resume
 
 If no previous session exists, `--resume` starts a fresh session (same as without the flag).
 
+### The --json flag
+
+Switches output from the interactive TUI to structured JSON events on stdout.
+Each line is a valid JSON object. Designed for CI/CD pipelines, monitoring dashboards,
+and programmatic consumption.
+
+```bash
+python evolve.py start ~/projects/my-tool --check "pytest" --json
+```
+
 ### improvements.md — the convergence tracker
 
 One improvement added per round:
@@ -237,6 +361,22 @@ By default, improvements requiring new packages are blocked. Use `--yolo` to all
 Projects can override the default system prompt by creating `prompts/evolve-system.md`
 in their project directory. Evolve will use it instead of the default.
 
+### `evolve clean`
+
+Remove old session directories to free disk space:
+
+```bash
+# Keep the 5 most recent sessions, delete the rest
+python evolve.py clean ~/projects/my-tool --keep 5
+
+# Keep only the latest session
+python evolve.py clean ~/projects/my-tool --keep 1
+```
+
+Sessions are sorted by timestamp. The `--keep` flag specifies how many recent
+sessions to retain (default: 5). Committed code changes are preserved in git
+history regardless of session cleanup.
+
 ### Exit codes
 
 `evolve start` returns meaningful exit codes for CI/CD integration:
@@ -251,6 +391,16 @@ in their project directory. Evolve will use it instead of the default.
 # Use in CI
 python evolve.py start . --check "pytest" --rounds 20
 if [ $? -eq 0 ]; then echo "Converged!"; fi
+```
+
+```bash
+# Full CI/CD example with JSON output
+python evolve.py start . --check "pytest" --rounds 20 --json > evolve-output.jsonl
+EXIT_CODE=$?
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "Converged! Creating PR..."
+  # Parse evolve-output.jsonl for PR description
+fi
 ```
 
 ## Development
@@ -271,7 +421,7 @@ pytest tests/ --cov=. --cov-report=term-missing
 tests/
 ├── test_loop.py       # _is_needs_package, counters, _get_current_improvement
 ├── test_agent.py      # build_prompt, error helpers, retry logic
-├── test_tui.py        # factory function, TUI Protocol parity
+├── test_tui.py        # factory function, TUI Protocol parity, JsonTUI
 └── test_evolve.py     # CLI arg parsing, _show_status
 ```
 
@@ -299,8 +449,8 @@ Evolve works with any Claude model supported by the Agent SDK. Recommended:
 
 These are under consideration for future evolution cycles:
 
-- **Configuration file** (`.evolverc` or `evolve.toml`) — project-level defaults for all CLI flags
-- **JSON output mode** — machine-readable reports for CI/CD pipelines
-- **Log rotation** — automatic archival/pruning of old session directories
-- **Enhanced status** — per-round summaries showing what each round accomplished
 - **Multi-repo evolution** — evolve multiple related projects in coordination
+- **`--dry-run` mode** — preview what the agent would do without modifying files
+- **Parallel analysis** — run read-only analysis in parallel before sequential implementation
+- **Watch mode** — re-evolve automatically when README changes
+- **Plugin system** — custom check commands, reporters, and post-convergence hooks
