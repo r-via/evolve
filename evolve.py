@@ -68,7 +68,7 @@ def main():
     start_p.add_argument("--rounds", type=int, default=10, help="Max evolution rounds")
     start_p.add_argument("--check", default=None, help="Verification command (e.g. 'pytest', 'npm test', 'cargo test')")
     start_p.add_argument("--yolo", action="store_true", help="Allow adding new packages/binaries")
-    start_p.add_argument("--timeout", type=int, default=30, help="Timeout per check command (seconds)")
+    start_p.add_argument("--timeout", type=int, default=300, help="Timeout per check command in seconds (default: 300)")
 
     # --- status ---
     status_p = sub.add_parser("status", help="Show evolution status for a project")
@@ -111,7 +111,7 @@ def _parse_round_args():
     p.add_argument("project_dir")
     p.add_argument("--round-num", type=int, required=True)
     p.add_argument("--check", default=None)
-    p.add_argument("--timeout", type=int, default=30)
+    p.add_argument("--timeout", type=int, default=300)
     p.add_argument("--run-dir", default=None)
     p.add_argument("--yolo", action="store_true")
     args = p.parse_args(sys.argv[2:])

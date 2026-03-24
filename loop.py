@@ -39,7 +39,7 @@ def evolve_loop(
     max_rounds: int = 10,
     check_cmd: str | None = None,
     yolo: bool = False,
-    timeout: int = 30,
+    timeout: int = 300,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess."""
     improvements_path = project_dir / "runs" / "improvements.md"
@@ -113,7 +113,7 @@ def run_single_round(
     round_num: int,
     check_cmd: str | None = None,
     yolo: bool = False,
-    timeout: int = 30,
+    timeout: int = 300,
     run_dir: Path | None = None,
 ) -> None:
     """Execute a single evolution round (called as subprocess)."""

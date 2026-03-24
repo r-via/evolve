@@ -10,7 +10,7 @@ fully converges to its spec.
 
 ```bash
 # Evolve a project (README = spec)
-python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--yolo]
+python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--yolo]
 
 # Check evolution status
 python evolve.py status <project-dir>
@@ -101,6 +101,15 @@ The `--check` flag specifies how to verify the project works. Any shell command:
 
 If omitted, opus runs commands manually to verify. With `--check`, the orchestrator
 runs it automatically before and after each round for objective verification.
+
+### The --timeout flag
+
+Sets the maximum time (in seconds) the check command is allowed to run before being
+killed. Defaults to 300 seconds (5 minutes). Increase for slow test suites:
+
+```bash
+--timeout 600    # 10 minutes
+```
 
 ### improvements.md — the convergence tracker
 
