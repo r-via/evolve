@@ -292,7 +292,7 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
         warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
 
         try:
-            asyncio.run(run_claude_agent(prompt, project_dir, round_num=0, run_dir=run_dir))
+            asyncio.run(run_claude_agent(prompt, project_dir, round_num=0, run_dir=run_dir, log_filename="party_conversation.md"))
         except RuntimeError as e:
             if "cancel scope" not in str(e) and "Event loop is closed" not in str(e):
                 print(f"  WARN: Party mode failed ({e})")

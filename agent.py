@@ -129,7 +129,13 @@ def _patch_sdk_parser():
         pass
 
 
-async def run_claude_agent(prompt: str, project_dir: Path, round_num: int = 1, run_dir: Path | None = None) -> None:
+async def run_claude_agent(
+    prompt: str,
+    project_dir: Path,
+    round_num: int = 1,
+    run_dir: Path | None = None,
+    log_filename: str | None = None,
+) -> None:
     """Run Claude Code agent with the given prompt. Logs conversation to run_dir/."""
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -146,7 +152,8 @@ async def run_claude_agent(prompt: str, project_dir: Path, round_num: int = 1, r
     # Log file
     out_dir = run_dir or (project_dir / "runs")
     out_dir.mkdir(parents=True, exist_ok=True)
-    log_path = out_dir / f"conversation_loop_{round_num}.md"
+    fname = log_filename or f"conversation_loop_{round_num}.md"
+    log_path = out_dir / fname
 
     with open(log_path, "w") as log:
         log.write(f"# Evolution Round {round_num}\n\n")
