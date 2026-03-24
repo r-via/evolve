@@ -165,6 +165,116 @@ class TestInitConfig:
         assert (target / "evolve.toml").is_file()
 
 
+class TestLoadConfig:
+    """Test _load_config reads evolve.toml and pyproject.toml correctly."""
+
+    def test_no_config_files(self, tmp_path: Path):
+        from evolve import _load_config
+        assert _load_config(tmp_path) == {}
+
+    def test_evolve_toml(self, tmp_path: Path):
+        (tmp_path / "evolve.toml").write_text(
+            'check = "pytest"\nrounds = 20\ntimeout = 600\n'
+            'model = "claude-sonnet-4-20250514"\nyolo = true\n'
+        )
+        from evolve import _load_config
+        cfg = _load_config(tmp_path)
+        assert cfg["check"] == "pytest"
+        assert cfg["rounds"] == 20
+        assert cfg["timeout"] == 600
+        assert cfg["model"] == "claude-sonnet-4-20250514"
+        assert cfg["yolo"] is True
+
+    def test_pyproject_toml_fallback(self, tmp_path: Path):
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.evolve]\ncheck = "npm test"\nrounds = 15\n'
+        )
+        from evolve import _load_config
+        cfg = _load_config(tmp_path)
+        assert cfg["check"] == "npm test"
+        assert cfg["rounds"] == 15
+
+    def test_evolve_toml_takes_precedence(self, tmp_path: Path):
+        (tmp_path / "evolve.toml").write_text('check = "pytest"\n')
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.evolve]\ncheck = "npm test"\n'
+        )
+        from evolve import _load_config
+        cfg = _load_config(tmp_path)
+        assert cfg["check"] == "pytest"
+
+    def test_pyproject_no_tool_evolve(self, tmp_path: Path):
+        (tmp_path / "pyproject.toml").write_text('[tool.other]\nfoo = "bar"\n')
+        from evolve import _load_config
+        assert _load_config(tmp_path) == {}
+
+    def test_malformed_toml_returns_empty(self, tmp_path: Path):
+        (tmp_path / "evolve.toml").write_text("this is not valid toml {{{}}")
+        from evolve import _load_config
+        assert _load_config(tmp_path) == {}
+
+
+class TestResolveConfig:
+    """Test _resolve_config merges CLI, env, file config, and defaults."""
+
+    def _make_args(self, **overrides):
+        import argparse
+        args = argparse.Namespace(
+            check=None, rounds=10, timeout=300,
+            model=None, yolo=False, resume=False,
+        )
+        for k, v in overrides.items():
+            setattr(args, k, v)
+        return args
+
+    def test_cli_wins_over_file(self, tmp_path: Path):
+        (tmp_path / "evolve.toml").write_text(
+            'check = "npm test"\nrounds = 20\n'
+        )
+        from evolve import _resolve_config
+        args = self._make_args(check="pytest")
+        with patch("sys.argv", ["evolve", "start", str(tmp_path), "--check", "pytest"]):
+            result = _resolve_config(args, tmp_path)
+        assert result.check == "pytest"
+
+    def test_file_config_used_when_no_cli(self, tmp_path: Path):
+        (tmp_path / "evolve.toml").write_text(
+            'check = "cargo test"\nrounds = 25\ntimeout = 600\n'
+            'model = "claude-sonnet-4-20250514"\nyolo = true\n'
+        )
+        from evolve import _resolve_config
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]):
+            with patch.dict("os.environ", {}, clear=True):
+                result = _resolve_config(args, tmp_path)
+        assert result.check == "cargo test"
+        assert result.rounds == 25
+        assert result.timeout == 600
+        assert result.model == "claude-sonnet-4-20250514"
+        assert result.yolo is True
+
+    def test_env_wins_over_file(self, tmp_path: Path):
+        (tmp_path / "evolve.toml").write_text('model = "claude-sonnet-4-20250514"\n')
+        from evolve import _resolve_config
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]):
+            with patch.dict("os.environ", {"EVOLVE_MODEL": "claude-opus-4-6"}, clear=True):
+                result = _resolve_config(args, tmp_path)
+        assert result.model == "claude-opus-4-6"
+
+    def test_defaults_when_no_config(self, tmp_path: Path):
+        from evolve import _resolve_config
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]):
+            with patch.dict("os.environ", {}, clear=True):
+                result = _resolve_config(args, tmp_path)
+        assert result.check is None
+        assert result.rounds == 10
+        assert result.timeout == 300
+        assert result.model == "claude-opus-4-6"
+        assert result.yolo is False
+
+
 class TestCleanSessions:
     """Test _clean_sessions cleanup logic."""
 

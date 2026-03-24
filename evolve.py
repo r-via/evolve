@@ -19,6 +19,124 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _load_config(project_dir: Path) -> dict:
+    """Load configuration from evolve.toml or pyproject.toml [tool.evolve].
+
+    Resolution order (handled by caller — this returns file-level config):
+    1. CLI flags (caller handles)
+    2. Environment variables (caller handles)
+    3. evolve.toml in project root
+    4. pyproject.toml [tool.evolve] section
+    5. Built-in defaults (caller handles)
+    """
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            return {}
+
+    # Try evolve.toml first
+    evolve_toml = project_dir / "evolve.toml"
+    if evolve_toml.is_file():
+        try:
+            with open(evolve_toml, "rb") as f:
+                return tomllib.load(f)
+        except Exception:
+            return {}
+
+    # Fall back to pyproject.toml [tool.evolve]
+    pyproject_toml = project_dir / "pyproject.toml"
+    if pyproject_toml.is_file():
+        try:
+            with open(pyproject_toml, "rb") as f:
+                data = tomllib.load(f)
+            return data.get("tool", {}).get("evolve", {})
+        except Exception:
+            return {}
+
+    return {}
+
+
+def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
+    """Merge CLI args with config file settings.
+
+    Resolution order (first wins):
+    1. CLI flags
+    2. Environment variables
+    3. evolve.toml / pyproject.toml [tool.evolve]
+    4. Built-in defaults
+    """
+    import os
+
+    file_config = _load_config(project_dir)
+
+    # Defaults
+    defaults = {
+        "check": None,
+        "rounds": 10,
+        "timeout": 300,
+        "model": "claude-opus-4-6",
+        "yolo": False,
+    }
+
+    # For each setting, apply resolution order
+    # check: CLI (non-None) > env > file > default
+    if args.check is not None:
+        pass  # CLI wins
+    elif os.environ.get("EVOLVE_CHECK"):
+        args.check = os.environ["EVOLVE_CHECK"]
+    elif "check" in file_config and file_config["check"]:
+        args.check = file_config["check"]
+    else:
+        args.check = defaults["check"]
+
+    # rounds: CLI (non-default) > env > file > default
+    cli_rounds_set = "--rounds" in sys.argv
+    if cli_rounds_set:
+        pass  # CLI wins
+    elif os.environ.get("EVOLVE_ROUNDS"):
+        try:
+            args.rounds = int(os.environ["EVOLVE_ROUNDS"])
+        except ValueError:
+            pass
+    elif "rounds" in file_config:
+        args.rounds = int(file_config["rounds"])
+
+    # timeout: CLI (non-default) > env > file > default
+    cli_timeout_set = "--timeout" in sys.argv
+    if cli_timeout_set:
+        pass  # CLI wins
+    elif os.environ.get("EVOLVE_TIMEOUT"):
+        try:
+            args.timeout = int(os.environ["EVOLVE_TIMEOUT"])
+        except ValueError:
+            pass
+    elif "timeout" in file_config:
+        args.timeout = int(file_config["timeout"])
+
+    # model: CLI (non-None) > env > file > default
+    if args.model is not None:
+        pass  # CLI wins
+    elif os.environ.get("EVOLVE_MODEL"):
+        args.model = os.environ["EVOLVE_MODEL"]
+    elif "model" in file_config:
+        args.model = file_config["model"]
+    else:
+        args.model = defaults["model"]
+
+    # yolo: CLI (True) > env > file > default
+    if args.yolo:
+        pass  # CLI wins
+    elif os.environ.get("EVOLVE_YOLO", "").lower() in ("1", "true", "yes"):
+        args.yolo = True
+    elif "yolo" in file_config:
+        args.yolo = bool(file_config["yolo"])
+
+    return args
+
+
 def _check_deps():
     """Check that required dependencies are installed. Exit with install instructions if not."""
     evolve_dir = Path(__file__).parent
@@ -99,17 +217,17 @@ def main():
         _init_config(Path(args.project_dir).resolve())
 
     elif args.command == "start":
-        import os
-        # Resolve model: CLI flag > env var > default
-        model = args.model or os.environ.get("EVOLVE_MODEL", "claude-opus-4-6")
+        project_path = Path(args.project_dir).resolve()
+        # Merge CLI flags with config file + env vars
+        args = _resolve_config(args, project_path)
         from loop import evolve_loop
         evolve_loop(
-            project_dir=Path(args.project_dir).resolve(),
+            project_dir=project_path,
             max_rounds=args.rounds,
             check_cmd=args.check,
             yolo=args.yolo,
             timeout=args.timeout,
-            model=model,
+            model=args.model,
             resume=args.resume,
         )
 
