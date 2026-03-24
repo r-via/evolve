@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""evolve — Self-improving evolution loop for any project.
+
+Takes a project directory with a README (the spec) and iteratively improves
+the code until it fully converges to the specification.
+
+Usage:
+  evolve <project-dir> [--rounds 10] [--check <cmd>] [--yolo]
+"""
+
+import argparse
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="evolve",
+        description="Self-improving evolution loop for any project. "
+        "Reads the README as spec, iteratively fixes and improves code until convergence.",
+    )
+    ap.add_argument("--version", action="version", version="evolve 0.1.0")
+
+    sub = ap.add_subparsers(dest="command", required=True)
+
+    # --- start ---
+    start_p = sub.add_parser("start", help="Start an evolution loop")
+    start_p.add_argument("project_dir", help="Path to the project to evolve")
+    start_p.add_argument("--rounds", type=int, default=10, help="Max evolution rounds")
+    start_p.add_argument("--check", default=None, help="Verification command (e.g. 'pytest', 'npm test', 'cargo test')")
+    start_p.add_argument("--yolo", action="store_true", help="Allow adding new packages/binaries")
+    start_p.add_argument("--timeout", type=int, default=30, help="Timeout per check command (seconds)")
+
+    # --- status ---
+    status_p = sub.add_parser("status", help="Show evolution status for a project")
+    status_p.add_argument("project_dir", help="Path to the project")
+
+    # --- _round (internal) ---
+    if len(sys.argv) > 1 and sys.argv[1] == "_round":
+        args = _parse_round_args()
+    else:
+        args = ap.parse_args()
+
+    if args.command == "start":
+        from loop import evolve_loop
+        evolve_loop(
+            project_dir=Path(args.project_dir).resolve(),
+            max_rounds=args.rounds,
+            check_cmd=args.check,
+            yolo=args.yolo,
+            timeout=args.timeout,
+        )
+
+    elif args.command == "status":
+        _show_status(Path(args.project_dir).resolve())
+
+    elif args.command == "_round":
+        from loop import run_single_round
+        run_single_round(
+            project_dir=Path(args.project_dir).resolve(),
+            round_num=args.round_num,
+            check_cmd=args.check,
+            yolo=args.yolo,
+            timeout=args.timeout,
+            run_dir=Path(args.run_dir) if args.run_dir else None,
+        )
+
+
+def _parse_round_args():
+    import argparse as _ap
+    p = _ap.ArgumentParser(prog="evolve _round")
+    p.add_argument("project_dir")
+    p.add_argument("--round-num", type=int, required=True)
+    p.add_argument("--check", default=None)
+    p.add_argument("--timeout", type=int, default=30)
+    p.add_argument("--run-dir", default=None)
+    p.add_argument("--yolo", action="store_true")
+    args = p.parse_args(sys.argv[2:])
+    args.command = "_round"
+    return args
+
+
+def _show_status(project_dir: Path):
+    runs_dir = project_dir / "runs"
+    improvements_path = runs_dir / "improvements.md"
+    memory_path = runs_dir / "memory.md"
+
+    print(f"\n  Project: {project_dir}")
+    print(f"  README:  {'exists' if (project_dir / 'README.md').is_file() else 'MISSING'}")
+
+    if improvements_path.is_file():
+        content = improvements_path.read_text()
+        import re
+        checked = len(re.findall(r"^- \[x\]", content, re.MULTILINE))
+        unchecked = len(re.findall(r"^- \[ \]", content, re.MULTILINE))
+        print(f"  Improvements: {checked} done, {unchecked} remaining")
+    else:
+        print(f"  Improvements: (none yet)")
+
+    if memory_path.is_file():
+        lines = [l for l in memory_path.read_text().splitlines() if l.startswith("## Error:")]
+        print(f"  Memory: {len(lines)} entries")
+    else:
+        print(f"  Memory: (empty)")
+
+    # Show latest session
+    if runs_dir.is_dir():
+        sessions = sorted([d for d in runs_dir.iterdir() if d.is_dir() and d.name[0].isdigit()], reverse=True)
+        if sessions:
+            latest = sessions[0]
+            converged = (latest / "CONVERGED").is_file()
+            convos = len(list(latest.glob("conversation_loop_*.md")))
+            probes = len(list(latest.glob("probe_round_*.txt")))
+            print(f"  Latest session: {latest.name} ({convos} rounds, {probes} probes)")
+            print(f"  Converged: {'YES' if converged else 'NO'}")
+            if converged:
+                print(f"  Reason: {(latest / 'CONVERGED').read_text().strip()[:200]}")
+    print()
+
+
+if __name__ == "__main__":
+    main()

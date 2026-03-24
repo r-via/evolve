@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+runs/*/
+!runs/memory.md
+!runs/improvements.md
