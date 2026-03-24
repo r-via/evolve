@@ -321,16 +321,28 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
 """
 
     try:
-        from agent import run_claude_agent
+        from agent import run_claude_agent, _is_benign_runtime_error, _should_retry_rate_limit
         import asyncio
+        import time
         import warnings
         warnings.filterwarnings("ignore", message=".*cancel scope.*")
         warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
 
-        try:
-            asyncio.run(run_claude_agent(prompt, project_dir, round_num=0, run_dir=run_dir, log_filename="party_conversation.md"))
-        except RuntimeError as e:
-            if "cancel scope" not in str(e) and "Event loop is closed" not in str(e):
+        max_retries = 5
+        for attempt in range(1, max_retries + 1):
+            try:
+                asyncio.run(run_claude_agent(prompt, project_dir, round_num=0, run_dir=run_dir, log_filename="party_conversation.md"))
+                break
+            except Exception as e:
+                if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
+                    break
+
+                wait = _should_retry_rate_limit(e, attempt, max_retries)
+                if wait is not None:
+                    ui.sdk_rate_limited(wait, attempt, max_retries)
+                    time.sleep(wait)
+                    continue
+
                 ui.warn(f"Party mode failed ({e})")
                 return
     except ImportError:
