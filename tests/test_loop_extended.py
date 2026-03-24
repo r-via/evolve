@@ -26,6 +26,7 @@ from loop import (
     _ensure_git,
     _git_commit,
     _run_party_mode,
+    _generate_evolution_report,
 )
 
 
@@ -280,6 +281,69 @@ class TestResumeLogic:
         convos = sorted(session.glob("conversation_loop_*.md"))
         assert len(convos) == 0
         # In the real code, start_round stays at 1 when no convos found
+
+# ---------------------------------------------------------------------------
+# _generate_evolution_report
+# ---------------------------------------------------------------------------
+
+class TestGenerateEvolutionReport:
+    def _setup_project(self, tmp_path: Path, improvements_text: str = "") -> tuple:
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        run_dir = runs_dir / "20260324_120000"
+        run_dir.mkdir()
+        imp_path = runs_dir / "improvements.md"
+        imp_path.write_text(improvements_text or "# Improvements\n- [x] [functional] done one\n- [ ] [functional] pending\n")
+        return project_dir, run_dir
+
+    def test_basic_report_converged(self, tmp_path: Path):
+        project_dir, run_dir = self._setup_project(tmp_path)
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=3, converged=True)
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "# Evolution Report" in report
+        assert "CONVERGED" in report
+        assert "3/10" in report
+        assert "1 improvements completed" in report
+
+    def test_basic_report_max_rounds(self, tmp_path: Path):
+        project_dir, run_dir = self._setup_project(tmp_path)
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=5, final_round=5, converged=False)
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "MAX_ROUNDS" in report
+        assert "5/5" in report
+        assert "1 improvements remaining" in report
+
+    def test_report_with_check_results(self, tmp_path: Path):
+        project_dir, run_dir = self._setup_project(tmp_path)
+        (run_dir / "check_round_1.txt").write_text("Round 1 post-fix check: PASS\n42 passed\n")
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "42 passed" in report
+
+    def test_report_with_conversation_log(self, tmp_path: Path):
+        project_dir, run_dir = self._setup_project(tmp_path)
+        (run_dir / "conversation_loop_1.md").write_text(
+            "feat(parser): add validation\nEdit → src/parser.py\nWrite → src/validator.py\n"
+        )
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "feat(parser): add validation" in report
+        assert "src/parser.py" in report
+
+    def test_report_no_rounds(self, tmp_path: Path):
+        """Report with 0 final_round shouldn't crash."""
+        project_dir, run_dir = self._setup_project(tmp_path)
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=0, converged=False)
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "# Evolution Report" in report
+
 
     def test_detect_last_round_malformed_name(self, tmp_path: Path):
         """Malformed conversation file name doesn't crash."""

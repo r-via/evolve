@@ -63,6 +63,126 @@ def _get_current_improvement(path: Path, yolo: bool = False) -> str | None:
     return None
 
 
+def _generate_evolution_report(
+    project_dir: Path,
+    run_dir: Path,
+    max_rounds: int,
+    final_round: int,
+    converged: bool,
+) -> None:
+    """Generate evolution_report.md summarizing the session.
+
+    Parses conversation logs, commit messages (from git log), and check results
+    to produce a timeline table and summary stats.
+    """
+    session_name = run_dir.name
+    improvements_path = project_dir / "runs" / "improvements.md"
+    checked = _count_checked(improvements_path)
+    unchecked = _count_unchecked(improvements_path)
+    status = "CONVERGED" if converged else "MAX_ROUNDS"
+
+    # Build timeline by scanning each round's data
+    timeline_rows: list[str] = []
+    files_modified: set[str] = set()
+    bugs_fixed = 0
+    improvements_done = 0
+
+    for r in range(1, final_round + 1):
+        # Try to get the commit message for this round from git log
+        action = ""
+        commit_msg_line = ""
+        try:
+            git_result = subprocess.run(
+                ["git", "log", "--oneline", f"--grep=round {r}", "--grep=evolve", "--all-match", "-1"],
+                cwd=str(project_dir), capture_output=True, text=True, timeout=10,
+            )
+            if git_result.stdout.strip():
+                commit_msg_line = git_result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # Fall back: parse conversation log for COMMIT_MSG content
+        if not commit_msg_line:
+            convo_path = run_dir / f"conversation_loop_{r}.md"
+            if convo_path.is_file():
+                convo_text = convo_path.read_text(errors="replace")
+                # Look for conventional commit patterns in the conversation
+                for line in convo_text.splitlines():
+                    m = re.match(r"^(fix|feat|refactor|perf|docs|test|chore)\(.+?\):\s+(.+)", line.strip())
+                    if m:
+                        commit_msg_line = line.strip()
+                        break
+
+        if commit_msg_line:
+            action = commit_msg_line[:70]
+        else:
+            action = f"round {r}"
+
+        # Count fix vs feat
+        if action.startswith("fix"):
+            bugs_fixed += 1
+        elif action.startswith("feat"):
+            improvements_done += 1
+
+        # Parse check results
+        tests_info = ""
+        check_path = run_dir / f"check_round_{r}.txt"
+        if check_path.is_file():
+            check_text = check_path.read_text(errors="replace")
+            pass_fail = "PASS" if "PASS" in check_text else "FAIL"
+            # Try to extract test counts (pytest format: "N passed")
+            m = re.search(r"(\d+)\s+passed", check_text)
+            if m:
+                tests_info = f"{m.group(1)} passed"
+                m2 = re.search(r"(\d+)\s+failed", check_text)
+                if m2:
+                    tests_info += f", {m2.group(1)} failed"
+            else:
+                tests_info = pass_fail
+
+        # Parse files changed from conversation log
+        round_files: list[str] = []
+        convo_path = run_dir / f"conversation_loop_{r}.md"
+        if convo_path.is_file():
+            convo_text = convo_path.read_text(errors="replace")
+            # Look for file edit patterns: Edit → filename, Write → filename
+            for fm in re.finditer(r"(?:Edit|Write)\s*→?\s*[`]?([^\s`\n]+\.\w+)", convo_text):
+                fname = fm.group(1)
+                round_files.append(fname)
+                files_modified.add(fname)
+
+        files_str = ", ".join(round_files[:3]) if round_files else ""
+        if len(round_files) > 3:
+            files_str += f" (+{len(round_files) - 3})"
+
+        timeline_rows.append(f"| {r} | {action} | {files_str} | {tests_info} |")
+
+    # Build report
+    report_lines = [
+        "# Evolution Report",
+        f"**Project:** {project_dir.name}",
+        f"**Session:** {session_name}",
+        f"**Rounds:** {final_round}/{max_rounds}",
+        f"**Status:** {status}",
+        "",
+        "## Timeline",
+        "| Round | Action | Files Changed | Tests |",
+        "|-------|--------|---------------|-------|",
+    ]
+    report_lines.extend(timeline_rows)
+    report_lines.append("")
+    report_lines.append("## Summary")
+    report_lines.append(f"- {checked} improvements completed")
+    report_lines.append(f"- {bugs_fixed} bugs fixed")
+    report_lines.append(f"- {len(files_modified)} files modified")
+    if unchecked > 0:
+        report_lines.append(f"- {unchecked} improvements remaining")
+    report_lines.append("")
+
+    report_path = run_dir / "evolution_report.md"
+    report_path.write_text("\n".join(report_lines))
+
+
 def evolve_loop(
     project_dir: Path,
     max_rounds: int = 10,
@@ -197,12 +317,19 @@ def _run_rounds(
             reason = converged_path.read_text().strip()
             ui.converged(round_num, reason)
 
+            # Generate evolution report
+            _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True)
+
             # Launch party mode
             _run_party_mode(project_dir, run_dir, ui)
             sys.exit(0)
 
     unchecked = _count_unchecked(improvements_path)
     checked = _count_checked(improvements_path)
+
+    # Generate evolution report
+    _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False)
+
     ui.max_rounds(max_rounds, checked, unchecked)
     sys.exit(1)
 

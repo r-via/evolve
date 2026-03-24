@@ -52,6 +52,9 @@ python evolve.py start ~/projects/my-tool --check "pytest" --model claude-sonnet
 # Resume after interruption (continues from last completed round)
 python evolve.py start ~/projects/my-tool --check "pytest" --resume
 
+# Autonomous forever mode — evolves indefinitely on a separate branch
+python evolve.py start ~/projects/my-tool --check "pytest" --forever
+
 # JSON output for CI/CD pipelines
 python evolve.py start ~/projects/my-tool --check "pytest" --json
 
