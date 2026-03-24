@@ -12,6 +12,7 @@ from loop import (
     _count_blocked,
     _get_current_improvement,
     _setup_forever_branch,
+    _forever_restart,
 )
 
 
@@ -160,3 +161,50 @@ class TestSetupForeverBranch:
         with pytest.raises(SystemExit) as exc_info:
             _setup_forever_branch(tmp_path)
         assert exc_info.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# _forever_restart
+# ---------------------------------------------------------------------------
+
+class TestForeverRestart:
+    def test_adopts_readme_proposal(self, tmp_path: Path):
+        """README_proposal.md replaces README.md when present."""
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir(parents=True)
+        improvements = tmp_path / "runs" / "improvements.md"
+        improvements.write_text("# Improvements\n- [x] done\n- [ ] pending\n")
+
+        proposal = run_dir / "README_proposal.md"
+        proposal.write_text("# New README\nProposed content.\n")
+        readme = tmp_path / "README.md"
+        readme.write_text("# Old README\n")
+
+        ui = MagicMock()
+        _forever_restart(tmp_path, run_dir, improvements, ui)
+
+        assert readme.read_text() == "# New README\nProposed content.\n"
+        assert improvements.read_text() == "# Improvements\n"
+        ui.info.assert_any_call("  Forever mode: adopting README_proposal.md as new README.md")
+        ui.info.assert_any_call("  Forever mode: resetting improvements.md for next cycle")
+
+    def test_no_proposal_warns(self, tmp_path: Path):
+        """Warns and continues when no README_proposal.md exists."""
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir(parents=True)
+        improvements = tmp_path / "runs" / "improvements.md"
+        improvements.write_text("# Improvements\n- [x] done\n")
+
+        readme = tmp_path / "README.md"
+        readme.write_text("# Original README\n")
+
+        ui = MagicMock()
+        _forever_restart(tmp_path, run_dir, improvements, ui)
+
+        # README unchanged
+        assert readme.read_text() == "# Original README\n"
+        # improvements still reset
+        assert improvements.read_text() == "# Improvements\n"
+        ui.warn.assert_called_once_with(
+            "No README_proposal.md produced — restarting with current README"
+        )

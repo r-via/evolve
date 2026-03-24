@@ -233,6 +233,7 @@ def evolve_loop(
                 return _run_rounds(
                     project_dir, run_dir, improvements_path, ui,
                     start_round, max_rounds, check_cmd, yolo, timeout, model,
+                    forever=forever,
                 )
 
     # Create timestamped run directory
@@ -248,6 +249,7 @@ def evolve_loop(
     _run_rounds(
         project_dir, run_dir, improvements_path, ui,
         1, max_rounds, check_cmd, yolo, timeout, model,
+        forever=forever,
     )
 
 
@@ -262,6 +264,7 @@ def _run_rounds(
     yolo: bool,
     timeout: int,
     model: str,
+    forever: bool = False,
 ) -> None:
     """Run evolution rounds from start_round to max_rounds."""
     for round_num in range(start_round, max_rounds + 1):
@@ -329,6 +332,31 @@ def _run_rounds(
 
             # Launch party mode
             _run_party_mode(project_dir, run_dir, ui)
+
+            if forever:
+                # Auto-merge README_proposal.md into README.md and restart
+                _forever_restart(project_dir, run_dir, improvements_path, ui)
+
+                # Create a new session directory for the next cycle
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                new_run_dir = project_dir / "runs" / timestamp
+                new_run_dir.mkdir(parents=True, exist_ok=True)
+                ui.run_dir_info(str(new_run_dir))
+
+                # Git commit the README update + reset
+                _git_commit(
+                    project_dir,
+                    "chore(evolve): forever mode — adopt README_proposal, reset improvements",
+                    ui,
+                )
+
+                # Recurse into a new round cycle starting from round 1
+                return _run_rounds(
+                    project_dir, new_run_dir, improvements_path, ui,
+                    1, max_rounds, check_cmd, yolo, timeout, model,
+                    forever=True,
+                )
+
             sys.exit(0)
 
     unchecked = _count_unchecked(improvements_path)
@@ -548,6 +576,37 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
         str(proposal) if proposal.is_file() else None,
         str(report) if report.is_file() else None,
     )
+
+
+def _forever_restart(
+    project_dir: Path,
+    run_dir: Path,
+    improvements_path: Path,
+    ui,
+) -> None:
+    """Post-convergence restart for forever mode.
+
+    1. Merge README_proposal.md into README.md (if produced by party mode)
+    2. Reset improvements.md for the next evolution cycle
+    """
+    proposal = run_dir / "README_proposal.md"
+    readme = project_dir / "README.md"
+
+    if proposal.is_file():
+        ui.info("  Forever mode: adopting README_proposal.md as new README.md")
+        readme.write_text(proposal.read_text())
+    else:
+        ui.warn("No README_proposal.md produced — restarting with current README")
+
+    # Reset improvements.md for the next cycle
+    ui.info("  Forever mode: resetting improvements.md for next cycle")
+    improvements_path.write_text("# Improvements\n")
+
+    # Remove the CONVERGED marker so the next cycle starts fresh
+    converged_path = run_dir / "CONVERGED"
+    if converged_path.is_file():
+        # Keep it in the old run dir — it's already been processed
+        pass
 
 
 def _setup_forever_branch(project_dir: Path) -> None:
