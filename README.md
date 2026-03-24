@@ -202,5 +202,6 @@ in their project directory. Evolve will use it instead of the default.
 
 - Python 3.10+
 - `claude-agent-sdk`: `pip install claude-agent-sdk`
+- `rich` (optional): `pip install rich` — for the modern TUI (fallback to plain text without it)
 - Git repository
 - Claude Code CLI installed and authenticated
