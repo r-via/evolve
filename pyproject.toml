@@ -1,0 +1,20 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    ".venv/*",
+    "tests/*",
+    "runs/*",
+    "__pycache__/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]
