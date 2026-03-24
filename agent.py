@@ -173,72 +173,93 @@ async def run_claude_agent(
 
         turn = 0
         tools_used = 0
-        stream = query(prompt=prompt, options=options)
-        ait = stream.__aiter__()
-        while True:
-            try:
-                message = await ait.__anext__()
-            except StopAsyncIteration:
-                break
-            except Exception as e:
-                _log(f"> SDK error: {e}")
-                continue
+        # Track already-logged block IDs to skip duplicate partial messages.
+        # With include_partial_messages=True, the same AssistantMessage is
+        # re-emitted with progressively more content.  We keep the option
+        # enabled so tool calls appear in the TUI as soon as they start,
+        # but we deduplicate by tracking seen tool-use block IDs and
+        # seen text content hashes.
+        seen_tool_ids: set[str] = set()
+        seen_text_hashes: set[int] = set()
 
-            if message is None:
-                continue
-
-            msg_type = type(message).__name__
-            turn += 1
-
-            if msg_type == "StreamEvent":
-                continue
-
-            if isinstance(message, (AssistantMessage, ResultMessage)):
-                if not hasattr(message, "content") or not message.content:
+        try:
+            async for message in query(prompt=prompt, options=options):
+                if message is None:
                     continue
-                for block in message.content:
-                    block_type = type(block).__name__
 
-                    if hasattr(block, "thinking"):
-                        _log(f"\n### Thinking\n\n{block.thinking}\n")
+                msg_type = type(message).__name__
+                turn += 1
 
-                    elif hasattr(block, "text") and block.text.strip():
-                        _log(f"\n{block.text}\n", console=True)
+                if msg_type == "StreamEvent":
+                    continue
 
-                    elif hasattr(block, "name"):
-                        tools_used += 1
-                        tool_name = block.name
-                        tool_input = ""
-                        if hasattr(block, "input") and block.input:
-                            inp = block.input
-                            if isinstance(inp, dict):
-                                if "command" in inp:
-                                    tool_input = inp["command"]
-                                elif "pattern" in inp:
-                                    tool_input = inp["pattern"]
-                                elif "file_path" in inp:
-                                    tool_input = inp["file_path"]
-                                elif "old_string" in inp:
-                                    tool_input = f'{inp.get("file_path", "?")} (edit)'
-                                elif "content" in inp:
-                                    tool_input = f'({len(inp["content"])} chars)'
+                if isinstance(message, (AssistantMessage, ResultMessage)):
+                    if not hasattr(message, "content") or not message.content:
+                        continue
+                    for block in message.content:
+                        block_type = type(block).__name__
+
+                        if hasattr(block, "thinking"):
+                            # Thinking blocks may be streamed incrementally;
+                            # deduplicate by content hash.
+                            h = hash(block.thinking)
+                            if h in seen_text_hashes:
+                                continue
+                            seen_text_hashes.add(h)
+                            _log(f"\n### Thinking\n\n{block.thinking}\n")
+
+                        elif hasattr(block, "text") and block.text.strip():
+                            h = hash(block.text)
+                            if h in seen_text_hashes:
+                                continue
+                            seen_text_hashes.add(h)
+                            _log(f"\n{block.text}\n", console=True)
+
+                        elif hasattr(block, "name"):
+                            # ToolUseBlock — deduplicate by block id so
+                            # partial updates don't log the same call twice.
+                            block_id = getattr(block, "id", None)
+                            if block_id and block_id in seen_tool_ids:
+                                continue
+                            if block_id:
+                                seen_tool_ids.add(block_id)
+
+                            tools_used += 1
+                            tool_name = block.name
+                            tool_input = ""
+                            if hasattr(block, "input") and block.input:
+                                inp = block.input
+                                if isinstance(inp, dict):
+                                    if "command" in inp:
+                                        tool_input = inp["command"]
+                                    elif "pattern" in inp:
+                                        tool_input = inp["pattern"]
+                                    elif "file_path" in inp:
+                                        tool_input = inp["file_path"]
+                                    elif "old_string" in inp:
+                                        tool_input = f'{inp.get("file_path", "?")} (edit)'
+                                    elif "content" in inp:
+                                        tool_input = f'({len(inp["content"])} chars)'
+                                else:
+                                    tool_input = str(inp)[:100]
+                            _log(f"\n**{tool_name}**: `{tool_input}`\n")
+                            ui.agent_tool(tool_name, tool_input)
+
+                        elif block_type == "ToolResultBlock":
+                            # Tool results are not partial — log normally.
+                            content_str = str(block.content)[:500] if hasattr(block, "content") and block.content else ""
+                            is_error = getattr(block, "is_error", False)
+                            if is_error:
+                                _log(f"\n> Error:\n> {content_str}\n")
                             else:
-                                tool_input = str(inp)[:100]
-                        _log(f"\n**{tool_name}**: `{tool_input}`\n")
-                        ui.agent_tool(tool_name, tool_input)
-
-                    elif block_type == "ToolResultBlock":
-                        content_str = str(block.content)[:500] if hasattr(block, "content") and block.content else ""
-                        is_error = getattr(block, "is_error", False)
-                        if is_error:
-                            _log(f"\n> Error:\n> {content_str}\n")
-                        else:
-                            _log(f"\n```\n{content_str}\n```\n")
-            else:
-                if msg_type == "RateLimitEvent":
-                    _log(f"\n> Rate limited\n")
-                elif msg_type == "SystemMessage":
-                    _log(f"\n---\n*Session initialized*\n---\n")
+                                _log(f"\n```\n{content_str}\n```\n")
+                else:
+                    if msg_type == "RateLimitEvent":
+                        _log(f"\n> Rate limited\n")
+                    elif msg_type == "SystemMessage":
+                        _log(f"\n---\n*Session initialized*\n---\n")
+        except Exception as e:
+            _log(f"\n> SDK error: {e}\n")
 
         _log(f"\n---\n\n**Done**: {turn} messages, {tools_used} tool calls\n")
 
