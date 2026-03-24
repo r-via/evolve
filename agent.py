@@ -70,12 +70,12 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
 
     rdir = str(run_dir or "runs")
 
-    # Interpolate
-    system_prompt = system_prompt.format(
-        project_dir=project_dir,
-        run_dir=rdir,
-        yolo_note=yolo_note,
-    )
+    # Interpolate using str.replace() instead of .format() to avoid KeyError
+    # when the template (or project-specific override) contains literal curly braces
+    # (e.g. JSON examples, Rust code, Go generics).
+    system_prompt = system_prompt.replace("{project_dir}", str(project_dir))
+    system_prompt = system_prompt.replace("{run_dir}", rdir)
+    system_prompt = system_prompt.replace("{yolo_note}", yolo_note)
 
     # Build sections
     readme_section = f"## README (specification)\n{readme}" if readme else "## README\n(no README found)"
