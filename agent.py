@@ -6,6 +6,8 @@ import asyncio
 import re
 from pathlib import Path
 
+from loop import _is_needs_package
+
 MODEL = "claude-opus-4-6"
 
 
@@ -45,7 +47,7 @@ def build_prompt(
             m = re.match(r"^- \[ \] (.+)$", line.strip())
             if m:
                 text = m.group(1)
-                if not yolo and re.match(r"\[[\w-]+\]\s+\[needs-package\]", text):
+                if not yolo and _is_needs_package(text):
                     continue
                 current = text
                 break
