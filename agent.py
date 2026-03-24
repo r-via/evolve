@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from loop import _is_needs_package
+from tui import get_tui
 
 MODEL = "claude-opus-4-6"
 

@@ -11,6 +11,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from tui import get_tui
+
 
 def _count_checked(path: Path) -> int:
     if not path.is_file():
@@ -75,33 +77,30 @@ def evolve_loop(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = project_dir / "runs" / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"  Run directory: {run_dir}")
+    ui = get_tui()
+    ui.run_dir_info(str(run_dir))
 
     # Ensure git
-    _ensure_git(project_dir)
+    _ensure_git(project_dir, ui)
 
     for round_num in range(1, max_rounds + 1):
         current = _get_current_improvement(improvements_path, yolo=yolo)
         checked = _count_checked(improvements_path)
         unchecked = _count_unchecked(improvements_path)
 
-        print(f"\n{'#' * 60}")
-        print(f"  EVOLUTION ROUND {round_num}/{max_rounds}")
         if current:
-            print(f"  TARGET: {current}")
-            print(f"  PROGRESS: {checked}/{checked + unchecked} improvements done")
+            ui.round_header(round_num, max_rounds, target=current,
+                            checked=checked, total=checked + unchecked)
         elif unchecked > 0:
             # All remaining unchecked items are blocked (needs-package without --yolo)
             blocked = _count_blocked(improvements_path)
             if blocked == unchecked:
-                print(f"  ALL {blocked} remaining improvement(s) require new packages.")
-                print(f"  Re-run with --yolo to allow package installation, or add new improvements.")
-                print(f"{'#' * 60}")
+                ui.round_header(round_num, max_rounds)
+                ui.blocked_message(blocked)
                 break
-            print(f"  TARGET: (initial analysis)")
+            ui.round_header(round_num, max_rounds, target="(initial analysis)")
         else:
-            print(f"  TARGET: (initial analysis)")
-        print(f"{'#' * 60}")
+            ui.round_header(round_num, max_rounds, target="(initial analysis)")
 
         # Launch round as subprocess — picks up code changes from previous round
         evolve_script = Path(__file__).parent / "evolve.py"
@@ -121,37 +120,35 @@ def evolve_loop(
         result = subprocess.run(cmd, cwd=str(project_dir))
 
         if result.returncode != 0:
-            print(f"\n  Round {round_num} failed (exit {result.returncode})")
+            ui.round_failed(round_num, result.returncode)
 
         # Re-read improvements
         prev_checked = checked
         prev_unchecked = unchecked
         unchecked = _count_unchecked(improvements_path)
         checked = _count_checked(improvements_path)
-        print(f"\n  Progress: {checked} done, {unchecked} remaining")
+        ui.progress_summary(checked, unchecked)
 
         # Stop if agent did nothing
         convo = run_dir / f"conversation_loop_{round_num}.md"
         if checked == prev_checked and unchecked == prev_unchecked:
             if not convo.is_file() or convo.stat().st_size < 100:
-                print(f"\n  Agent made no progress — stopping.")
-                print(f"  Is claude-agent-sdk installed? Run: evolve.py --help")
+                ui.no_progress()
                 break
 
         # Check convergence
         converged_path = run_dir / "CONVERGED"
         if converged_path.is_file():
             reason = converged_path.read_text().strip()
-            print(f"\n*** CONVERGED at round {round_num} ***")
-            print(f"  {reason}")
+            ui.converged(round_num, reason)
 
             # Launch party mode
-            _run_party_mode(project_dir, run_dir)
+            _run_party_mode(project_dir, run_dir, ui)
             return
 
     unchecked = _count_unchecked(improvements_path)
     checked = _count_checked(improvements_path)
-    print(f"\n*** Max rounds ({max_rounds}) reached — {checked} done, {unchecked} remaining ***")
+    ui.max_rounds(max_rounds, checked, unchecked)
 
 
 def run_single_round(
@@ -168,11 +165,12 @@ def run_single_round(
     rdir = run_dir or (project_dir / "runs")
     rdir.mkdir(parents=True, exist_ok=True)
     improvements_path = project_dir / "runs" / "improvements.md"
+    ui = get_tui()
 
     # 1. Run check command if provided
     check_output = ""
     if check_cmd:
-        print(f"\n  [check] Running: {check_cmd}")
+        ui.check_result("check", check_cmd, passed=None)
         try:
             result = subprocess.run(
                 check_cmd, shell=True, cwd=str(project_dir),
@@ -184,16 +182,16 @@ def run_single_round(
             if result.stderr:
                 check_output += f"stderr:\n{result.stderr[-2000:]}\n"
             ok = result.returncode == 0
-            print(f"  [check] {'PASS' if ok else 'FAIL'} (exit {result.returncode})")
+            ui.check_result("check", check_cmd, passed=ok)
         except subprocess.TimeoutExpired:
             check_output = f"TIMEOUT after {timeout}s"
-            print(f"  [check] TIMEOUT")
+            ui.check_result("check", check_cmd, timeout=True)
     else:
-        print(f"  [check] No check command configured")
+        ui.no_check()
 
     # 2. Let opus agent analyze and fix
     current = _get_current_improvement(improvements_path, yolo=yolo)
-    print(f"\n  [agent] Claude opus working...")
+    ui.agent_working()
     analyze_and_fix(
         project_dir=project_dir,
         check_output=check_output,
@@ -214,18 +212,18 @@ def run_single_round(
             msg = f"feat(evolve): ✓ {current}"
         else:
             msg = f"chore(evolve): round {round_num}"
-    _git_commit(project_dir, msg)
+    _git_commit(project_dir, msg, ui)
 
     # 4. Re-run check after fixes
     if check_cmd:
-        print(f"\n  [verify] Re-running: {check_cmd}")
+        ui.check_result("verify", check_cmd, passed=None)
         try:
             result = subprocess.run(
                 check_cmd, shell=True, cwd=str(project_dir),
                 capture_output=True, text=True, timeout=timeout,
             )
             ok = result.returncode == 0
-            print(f"  [verify] {'PASS' if ok else 'FAIL'} (exit {result.returncode})")
+            ui.check_result("verify", check_cmd, passed=ok)
 
             probe_path = rdir / f"check_round_{round_num}.txt"
             with open(probe_path, "w") as f:
@@ -237,12 +235,14 @@ def run_single_round(
                 if result.stderr:
                     f.write(f"\nstderr:\n{result.stderr[-2000:]}\n")
         except subprocess.TimeoutExpired:
-            print(f"  [verify] TIMEOUT")
+            ui.check_result("verify", check_cmd, timeout=True)
 
 
-def _run_party_mode(project_dir: Path, run_dir: Path) -> None:
+def _run_party_mode(project_dir: Path, run_dir: Path, ui=None) -> None:
     """Launch party mode: multi-agent brainstorming post-convergence."""
-    print("\n  Launching Party Mode — multi-agent brainstorming...")
+    if ui is None:
+        ui = get_tui()
+    ui.party_mode()
 
     agents_dir = project_dir / "agents"
     if not agents_dir.is_dir():
@@ -250,7 +250,7 @@ def _run_party_mode(project_dir: Path, run_dir: Path) -> None:
         agents_dir = Path(__file__).parent / "agents"
 
     if not agents_dir.is_dir() or not list(agents_dir.glob("*.md")):
-        print("  WARN: No agent personas found — skipping party mode")
+        ui.warn("No agent personas found — skipping party mode")
         return
 
     # Load agents
@@ -331,29 +331,29 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
             asyncio.run(run_claude_agent(prompt, project_dir, round_num=0, run_dir=run_dir, log_filename="party_conversation.md"))
         except RuntimeError as e:
             if "cancel scope" not in str(e) and "Event loop is closed" not in str(e):
-                print(f"  WARN: Party mode failed ({e})")
+                ui.warn(f"Party mode failed ({e})")
                 return
     except ImportError:
-        print("  WARN: claude-agent-sdk not installed — skipping party mode")
+        ui.warn("claude-agent-sdk not installed — skipping party mode")
         return
 
     proposal = run_dir / "README_proposal.md"
     report = run_dir / "party_report.md"
-    if proposal.is_file():
-        print(f"\n  README_proposal.md → {proposal}")
-    if report.is_file():
-        print(f"  party_report.md   → {report}")
-    if proposal.is_file():
-        print("  Review and accept/reject. If accepted: cp README_proposal.md README.md && evolve start .")
+    ui.party_results(
+        str(proposal) if proposal.is_file() else None,
+        str(report) if report.is_file() else None,
+    )
 
 
-def _ensure_git(project_dir: Path) -> None:
+def _ensure_git(project_dir: Path, ui=None) -> None:
+    if ui is None:
+        ui = get_tui()
     result = subprocess.run(
         ["git", "rev-parse", "--git-dir"],
         cwd=project_dir, capture_output=True, text=True,
     )
     if result.returncode != 0:
-        print(f"ERROR: {project_dir} is not a git repository.", file=sys.stderr)
+        ui.error(f"ERROR: {project_dir} is not a git repository.")
         sys.exit(1)
 
     status = subprocess.run(
@@ -361,7 +361,7 @@ def _ensure_git(project_dir: Path) -> None:
         cwd=project_dir, capture_output=True, text=True,
     )
     if status.stdout.strip():
-        print("Uncommitted changes — committing snapshot...")
+        ui.uncommitted()
         subprocess.run(["git", "add", "-A"], cwd=project_dir)
         subprocess.run(
             ["git", "commit", "-m", "evolve: snapshot before evolution"],
@@ -369,15 +369,17 @@ def _ensure_git(project_dir: Path) -> None:
         )
 
 
-def _git_commit(project_dir: Path, message: str) -> None:
+def _git_commit(project_dir: Path, message: str, ui=None) -> None:
+    if ui is None:
+        ui = get_tui()
     subprocess.run(["git", "add", "-A"], cwd=project_dir)
     status = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=project_dir)
     if status.returncode == 0:
-        print(f"  [git] no changes")
+        ui.git_status(message, pushed=None)
         return
     subprocess.run(["git", "commit", "-m", message], cwd=project_dir, capture_output=True)
     result = subprocess.run(["git", "push"], cwd=project_dir, capture_output=True, text=True)
     if result.returncode == 0:
-        print(f"  [git] {message} → pushed")
+        ui.git_status(message, pushed=True)
     else:
-        print(f"  [git] {message} (push failed: {result.stderr.strip()[:100]})")
+        ui.git_status(message, pushed=False, error=result.stderr.strip()[:100])

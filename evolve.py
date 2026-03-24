@@ -121,33 +121,31 @@ def _parse_round_args():
 
 
 def _show_status(project_dir: Path):
+    from tui import get_tui
+    ui = get_tui()
+
     runs_dir = project_dir / "runs"
     improvements_path = runs_dir / "improvements.md"
     memory_path = runs_dir / "memory.md"
 
-    print(f"\n  Project: {project_dir}")
-    print(f"  README:  {'exists' if (project_dir / 'README.md').is_file() else 'MISSING'}")
+    ui.status_header(str(project_dir), (project_dir / "README.md").is_file())
 
     if improvements_path.is_file():
         content = improvements_path.read_text()
         import re
         checked = len(re.findall(r"^- \[x\]", content, re.MULTILINE))
         unchecked = len(re.findall(r"^- \[ \]", content, re.MULTILINE))
-        # Count blocked items (needs-package without --yolo)
         from loop import _count_blocked
         blocked = _count_blocked(improvements_path)
-        status_line = f"  Improvements: {checked} done, {unchecked} remaining"
-        if blocked > 0:
-            status_line += f" ({blocked} blocked (needs-package))"
-        print(status_line)
+        ui.status_improvements(checked, unchecked, blocked)
     else:
-        print(f"  Improvements: (none yet)")
+        ui.status_no_improvements()
 
     if memory_path.is_file():
         lines = [l for l in memory_path.read_text().splitlines() if l.startswith("## Error:")]
-        print(f"  Memory: {len(lines)} entries")
+        ui.status_memory(len(lines))
     else:
-        print(f"  Memory: (empty)")
+        ui.status_memory(0)
 
     # Show latest session
     if runs_dir.is_dir():
@@ -157,11 +155,10 @@ def _show_status(project_dir: Path):
             converged = (latest / "CONVERGED").is_file()
             convos = len(list(latest.glob("conversation_loop_*.md")))
             checks = len(list(latest.glob("check_round_*.txt")))
-            print(f"  Latest session: {latest.name} ({convos} rounds, {checks} checks)")
-            print(f"  Converged: {'YES' if converged else 'NO'}")
-            if converged:
-                print(f"  Reason: {(latest / 'CONVERGED').read_text().strip()[:200]}")
-    print()
+            reason = (latest / "CONVERGED").read_text().strip() if converged else ""
+            ui.status_session(latest.name, convos, checks, converged, reason)
+
+    ui.status_flush()
 
 
 if __name__ == "__main__":
