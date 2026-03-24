@@ -35,6 +35,41 @@ python evolve.py start ~/projects/my-lib
 python evolve.py start ~/projects/my-tool --check "pytest" --yolo
 ```
 
+## TUI
+
+Evolve features a modern terminal UI powered by `rich`:
+
+```
+╭──────────────────── evolve ─────────────────────╮
+│ EVOLUTION ROUND 3/10                            │
+│ TARGET: [functional] Add input validation       │
+│ PROGRESS: ██████░░░░ 5/9 improvements done      │
+╰─────────────────────────────────────────────────╯
+
+  [check] pytest ─────────────────────────────────
+  ✓ 42 passed · 0 failed · 1.2s
+
+  [agent] Claude opus working...
+  [opus] Read → src/parser.py
+  [opus] Edit → src/parser.py (edit)
+  [opus] Bash → pytest tests/test_parser.py
+  [opus] Edit → runs/improvements.md (edit)
+
+  [verify] pytest ────────────────────────────────
+  ✓ 43 passed · 0 failed · 1.3s
+
+  [git] feat(parser): add input validation → pushed
+
+  Progress: 6 done, 3 remaining
+```
+
+Features:
+- Colored panels for round headers with progress bars
+- Real-time agent activity feed (tools used, files edited)
+- Check command results with pass/fail indicators
+- Git commit + push status
+- Graceful fallback to plain text when `rich` is not installed
+
 ## How it works
 
 Each `evolve start` creates a timestamped session. Each round runs as a **separate subprocess**

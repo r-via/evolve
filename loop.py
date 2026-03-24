@@ -24,6 +24,17 @@ def _count_unchecked(path: Path) -> int:
     return len(re.findall(r"^- \[ \]", path.read_text(), re.MULTILINE))
 
 
+def _is_needs_package(text: str) -> bool:
+    """Check if an improvement text has [needs-package] as a leading tag token.
+
+    Matches patterns like:
+      [functional] [needs-package] description
+      [performance] [needs-package] description
+    Does NOT match [needs-package] mentioned in the description body.
+    """
+    return bool(re.match(r"\[[\w-]+\]\s+\[needs-package\]", text))
+
+
 def _count_blocked(path: Path) -> int:
     """Count unchecked items that require [needs-package] (blocked without --yolo)."""
     if not path.is_file():
@@ -31,7 +42,7 @@ def _count_blocked(path: Path) -> int:
     count = 0
     for line in path.read_text().splitlines():
         m = re.match(r"^- \[ \] (.+)$", line.strip())
-        if m and "[needs-package]" in m.group(1):
+        if m and _is_needs_package(m.group(1)):
             count += 1
     return count
 
@@ -44,7 +55,7 @@ def _get_current_improvement(path: Path, yolo: bool = False) -> str | None:
         if m:
             text = m.group(1)
             # Skip [needs-package] items unless --yolo is set
-            if not yolo and "[needs-package]" in text:
+            if not yolo and _is_needs_package(text):
                 continue
             return text
     return None

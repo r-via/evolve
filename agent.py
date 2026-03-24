@@ -45,7 +45,7 @@ def build_prompt(
             m = re.match(r"^- \[ \] (.+)$", line.strip())
             if m:
                 text = m.group(1)
-                if not yolo and "[needs-package]" in text:
+                if not yolo and re.match(r"\[[\w-]+\]\s+\[needs-package\]", text):
                     continue
                 current = text
                 break
