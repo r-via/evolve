@@ -69,9 +69,44 @@ def evolve_loop(
     check_cmd: str | None = None,
     yolo: bool = False,
     timeout: int = 300,
+    model: str = "claude-opus-4-6",
+    resume: bool = False,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess."""
     improvements_path = project_dir / "runs" / "improvements.md"
+
+    start_round = 1
+
+    if resume:
+        # Find the most recent session and detect last completed round
+        runs_dir = project_dir / "runs"
+        if runs_dir.is_dir():
+            sessions = sorted(
+                [d for d in runs_dir.iterdir() if d.is_dir() and d.name[0].isdigit()],
+                reverse=True,
+            )
+            if sessions:
+                run_dir = sessions[0]
+                # Detect last completed round from conversation logs
+                convos = sorted(run_dir.glob("conversation_loop_*.md"))
+                if convos:
+                    last = convos[-1].stem  # conversation_loop_N
+                    try:
+                        last_round = int(last.rsplit("_", 1)[1])
+                        start_round = last_round + 1
+                    except (ValueError, IndexError):
+                        pass
+                ui = get_tui()
+                ui.run_dir_info(f"{run_dir} (resumed from round {start_round})")
+
+                # Ensure git
+                _ensure_git(project_dir, ui)
+
+                # Jump to loop body
+                return _run_rounds(
+                    project_dir, run_dir, improvements_path, ui,
+                    start_round, max_rounds, check_cmd, yolo, timeout, model,
+                )
 
     # Create timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -83,7 +118,26 @@ def evolve_loop(
     # Ensure git
     _ensure_git(project_dir, ui)
 
-    for round_num in range(1, max_rounds + 1):
+    _run_rounds(
+        project_dir, run_dir, improvements_path, ui,
+        1, max_rounds, check_cmd, yolo, timeout, model,
+    )
+
+
+def _run_rounds(
+    project_dir: Path,
+    run_dir: Path,
+    improvements_path: Path,
+    ui,
+    start_round: int,
+    max_rounds: int,
+    check_cmd: str | None,
+    yolo: bool,
+    timeout: int,
+    model: str,
+) -> None:
+    """Run evolution rounds from start_round to max_rounds."""
+    for round_num in range(start_round, max_rounds + 1):
         current = _get_current_improvement(improvements_path, yolo=yolo)
         checked = _count_checked(improvements_path)
         unchecked = _count_unchecked(improvements_path)
@@ -97,7 +151,7 @@ def evolve_loop(
             if blocked == unchecked:
                 ui.round_header(round_num, max_rounds)
                 ui.blocked_message(blocked)
-                break
+                sys.exit(1)
             ui.round_header(round_num, max_rounds, target="(initial analysis)")
         else:
             ui.round_header(round_num, max_rounds, target="(initial analysis)")
@@ -111,6 +165,7 @@ def evolve_loop(
             "--round-num", str(round_num),
             "--timeout", str(timeout),
             "--run-dir", str(run_dir),
+            "--model", model,
         ]
         if check_cmd:
             cmd += ["--check", check_cmd]
@@ -134,7 +189,7 @@ def evolve_loop(
         if checked == prev_checked and unchecked == prev_unchecked:
             if not convo.is_file() or convo.stat().st_size < 100:
                 ui.no_progress()
-                break
+                sys.exit(1)
 
         # Check convergence
         converged_path = run_dir / "CONVERGED"
@@ -144,11 +199,12 @@ def evolve_loop(
 
             # Launch party mode
             _run_party_mode(project_dir, run_dir, ui)
-            return
+            sys.exit(0)
 
     unchecked = _count_unchecked(improvements_path)
     checked = _count_checked(improvements_path)
     ui.max_rounds(max_rounds, checked, unchecked)
+    sys.exit(1)
 
 
 def run_single_round(
@@ -158,9 +214,12 @@ def run_single_round(
     yolo: bool = False,
     timeout: int = 300,
     run_dir: Path | None = None,
+    model: str = "claude-opus-4-6",
 ) -> None:
     """Execute a single evolution round (called as subprocess)."""
     from agent import analyze_and_fix
+    import agent as _agent_mod
+    _agent_mod.MODEL = model
 
     rdir = run_dir or (project_dir / "runs")
     rdir.mkdir(parents=True, exist_ok=True)

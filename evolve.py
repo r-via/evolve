@@ -70,6 +70,8 @@ def main():
     start_p.add_argument("--check", default=None, help="Verification command (e.g. 'pytest', 'npm test', 'cargo test')")
     start_p.add_argument("--yolo", action="store_true", help="Allow adding new packages/binaries")
     start_p.add_argument("--timeout", type=int, default=300, help="Timeout per check command in seconds (default: 300)")
+    start_p.add_argument("--model", default=None, help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
+    start_p.add_argument("--resume", action="store_true", help="Resume the most recent interrupted session")
 
     # --- status ---
     status_p = sub.add_parser("status", help="Show evolution status for a project")
@@ -82,6 +84,9 @@ def main():
         args = ap.parse_args()
 
     if args.command == "start":
+        import os
+        # Resolve model: CLI flag > env var > default
+        model = args.model or os.environ.get("EVOLVE_MODEL", "claude-opus-4-6")
         from loop import evolve_loop
         evolve_loop(
             project_dir=Path(args.project_dir).resolve(),
@@ -89,6 +94,8 @@ def main():
             check_cmd=args.check,
             yolo=args.yolo,
             timeout=args.timeout,
+            model=model,
+            resume=args.resume,
         )
 
     elif args.command == "status":
@@ -103,6 +110,7 @@ def main():
             yolo=args.yolo,
             timeout=args.timeout,
             run_dir=Path(args.run_dir) if args.run_dir else None,
+            model=args.model,
         )
 
 
@@ -115,6 +123,7 @@ def _parse_round_args():
     p.add_argument("--timeout", type=int, default=300)
     p.add_argument("--run-dir", default=None)
     p.add_argument("--yolo", action="store_true")
+    p.add_argument("--model", default="claude-opus-4-6")
     args = p.parse_args(sys.argv[2:])
     args.command = "_round"
     return args
