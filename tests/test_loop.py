@@ -1,7 +1,9 @@
 """Tests for loop.py — _is_needs_package, counters, _get_current_improvement."""
 
+import subprocess
 import textwrap
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 from loop import (
     _is_needs_package,
@@ -9,6 +11,7 @@ from loop import (
     _count_unchecked,
     _count_blocked,
     _get_current_improvement,
+    _setup_forever_branch,
 )
 
 
@@ -125,3 +128,35 @@ class TestGetCurrentImprovement:
         f = tmp_path / "improvements.md"
         f.write_text("- [ ] [functional] [needs-package] blocked\n")
         assert _get_current_improvement(f, yolo=False) is None
+
+
+# ---------------------------------------------------------------------------
+# _setup_forever_branch
+# ---------------------------------------------------------------------------
+
+class TestSetupForeverBranch:
+    def _init_git(self, path: Path):
+        """Initialize a git repo with an initial commit."""
+        subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+        (path / "README.md").write_text("# Test\n")
+        subprocess.run(["git", "add", "-A"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(path), capture_output=True)
+
+    def test_creates_branch(self, tmp_path: Path):
+        self._init_git(tmp_path)
+        _setup_forever_branch(tmp_path)
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(tmp_path), capture_output=True, text=True,
+        )
+        branch = result.stdout.strip()
+        assert branch.startswith("evolve/forever-")
+
+    def test_exits_on_failure(self, tmp_path: Path):
+        """Exits with code 2 if git checkout -b fails (not a git repo)."""
+        import pytest
+        with pytest.raises(SystemExit) as exc_info:
+            _setup_forever_branch(tmp_path)
+        assert exc_info.value.code == 2
