@@ -5,7 +5,8 @@ Takes a project directory with a README (the spec) and iteratively improves
 the code until it fully converges to the specification.
 
 Usage:
-  evolve <project-dir> [--rounds 10] [--check <cmd>] [--yolo]
+  python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--yolo]
+  python evolve.py status <project-dir>
 """
 
 import argparse
