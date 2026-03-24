@@ -24,13 +24,17 @@ def _count_unchecked(path: Path) -> int:
     return len(re.findall(r"^- \[ \]", path.read_text(), re.MULTILINE))
 
 
-def _get_current_improvement(path: Path) -> str | None:
+def _get_current_improvement(path: Path, yolo: bool = False) -> str | None:
     if not path.is_file():
         return None
     for line in path.read_text().splitlines():
         m = re.match(r"^- \[ \] (.+)$", line.strip())
         if m:
-            return m.group(1)
+            text = m.group(1)
+            # Skip [needs-package] items unless --yolo is set
+            if not yolo and "[needs-package]" in text:
+                continue
+            return text
     return None
 
 
@@ -54,7 +58,7 @@ def evolve_loop(
     _ensure_git(project_dir)
 
     for round_num in range(1, max_rounds + 1):
-        current = _get_current_improvement(improvements_path)
+        current = _get_current_improvement(improvements_path, yolo=yolo)
         checked = _count_checked(improvements_path)
         unchecked = _count_unchecked(improvements_path)
 
@@ -156,7 +160,7 @@ def run_single_round(
         print(f"  [check] No check command configured")
 
     # 2. Let opus agent analyze and fix
-    current = _get_current_improvement(improvements_path)
+    current = _get_current_improvement(improvements_path, yolo=yolo)
     print(f"\n  [agent] Claude opus working...")
     analyze_and_fix(
         project_dir=project_dir,

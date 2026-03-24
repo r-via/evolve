@@ -38,13 +38,16 @@ def build_prompt(
     improvements_path = project_dir / "runs" / "improvements.md"
     improvements = improvements_path.read_text() if improvements_path.is_file() else None
 
-    # Current target
+    # Current target — skip [needs-package] items unless --yolo
     current = None
     if improvements:
         for line in improvements.splitlines():
             m = re.match(r"^- \[ \] (.+)$", line.strip())
             if m:
-                current = m.group(1)
+                text = m.group(1)
+                if not yolo and "[needs-package]" in text:
+                    continue
+                current = text
                 break
 
     # Memory
