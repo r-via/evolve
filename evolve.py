@@ -197,6 +197,7 @@ def main():
     start_p.add_argument("--timeout", type=int, default=300, help="Timeout per check command in seconds (default: 300)")
     start_p.add_argument("--model", default=None, help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
     start_p.add_argument("--resume", action="store_true", help="Resume the most recent interrupted session")
+    start_p.add_argument("--forever", action="store_true", help="Autonomous forever mode — evolve indefinitely on a separate branch until convergence")
     start_p.add_argument("--json", action="store_true", help="Emit structured JSON events to stdout (for CI/CD)")
 
     # --- status ---
@@ -234,6 +235,7 @@ def main():
             timeout=args.timeout,
             model=args.model,
             resume=args.resume,
+            forever=args.forever,
         )
 
     elif args.command == "status":

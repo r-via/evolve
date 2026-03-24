@@ -305,6 +305,54 @@ python evolve.py start ~/projects/my-tool --check "pytest" --resume
 
 If no previous session exists, `--resume` starts a fresh session (same as without the flag).
 
+### The --forever flag
+
+Autonomous evolution mode. Runs indefinitely on a **separate git branch** until the
+operator stops it (Ctrl+C or kill).
+
+```bash
+python evolve.py start ~/projects/my-tool --check "pytest" --forever
+```
+
+**How it works:**
+
+1. Creates a new branch `evolve/<timestamp>` from the current branch
+2. Runs the normal evolution loop (Phase 1-3) until convergence
+3. After convergence, launches party mode — agents brainstorm the next evolution
+4. **Instead of waiting for operator approval**, automatically merges the
+   `README_proposal.md` into `README.md`
+5. Resets `improvements.md` and starts a new evolution loop against the updated README
+6. Repeats until stopped by the operator
+
+```
+main ──────────────────────────────────────────────────
+       \
+        evolve/20260324_220000 ─── round 1 ─── round 2 ─── CONVERGED
+                                                                │
+                                                          party mode
+                                                                │
+                                                     README_proposal → README.md
+                                                                │
+                                                          round 1 ─── round 2 ─── CONVERGED
+                                                                                       │
+                                                                                 party mode
+                                                                                       │
+                                                                                     ...
+```
+
+All work happens on the `evolve/*` branch — `main` is never touched. The operator can:
+- Watch progress in real-time via the TUI
+- Review the branch at any time (`git log evolve/<timestamp>`)
+- Merge when satisfied (`git merge evolve/<timestamp>`)
+- Or discard the branch entirely (`git branch -D evolve/<timestamp>`)
+
+Combines well with `--yolo` for fully autonomous evolution:
+
+```bash
+# Full autonomy — installs packages, updates README, loops forever
+python evolve.py start ~/projects/my-tool --check "pytest" --forever --yolo
+```
+
 ### The --json flag
 
 Switches output from the interactive TUI to structured JSON events on stdout.

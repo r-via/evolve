@@ -191,11 +191,18 @@ def evolve_loop(
     timeout: int = 300,
     model: str = "claude-opus-4-6",
     resume: bool = False,
+    forever: bool = False,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess."""
     improvements_path = project_dir / "runs" / "improvements.md"
 
     start_round = 1
+
+    # In forever mode, create a separate branch and run indefinitely
+    if forever:
+        _setup_forever_branch(project_dir)
+        # Use a very large max_rounds so the loop runs until convergence
+        max_rounds = 999999
 
     if resume:
         # Find the most recent session and detect last completed round
@@ -541,6 +548,29 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
         str(proposal) if proposal.is_file() else None,
         str(report) if report.is_file() else None,
     )
+
+
+def _setup_forever_branch(project_dir: Path) -> None:
+    """Create and switch to a dedicated branch for forever mode.
+
+    Creates a branch named ``evolve/forever-<timestamp>`` from the current HEAD
+    so that forever-mode changes are isolated from the main branch.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    branch_name = f"evolve/forever-{timestamp}"
+    ui = get_tui()
+
+    result = subprocess.run(
+        ["git", "checkout", "-b", branch_name],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        ui.error(f"Failed to create branch {branch_name}: {result.stderr.strip()}")
+        sys.exit(2)
+
+    ui.info(f"  Forever mode: created branch {branch_name}")
 
 
 def _ensure_git(project_dir: Path, ui=None) -> None:
