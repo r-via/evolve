@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve import _parse_round_args, _show_status
+from evolve import _parse_round_args, _show_status, _init_config, _clean_sessions
 
 
 # ---------------------------------------------------------------------------

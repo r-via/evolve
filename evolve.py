@@ -5,8 +5,11 @@ Takes a project directory with a README (the spec) and iteratively improves
 the code until it fully converges to the specification.
 
 Usage:
-  python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--yolo]
+  python evolve.py init <project-dir>
+  python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo] [--json]
+  python evolve.py start <project-dir> --resume
   python evolve.py status <project-dir>
+  python evolve.py clean <project-dir> [--keep 5]
 """
 
 import argparse
@@ -63,6 +66,10 @@ def main():
 
     sub = ap.add_subparsers(dest="command", required=True)
 
+    # --- init ---
+    init_p = sub.add_parser("init", help="Initialize an evolve.toml config file")
+    init_p.add_argument("project_dir", help="Path to the project to initialize")
+
     # --- start ---
     start_p = sub.add_parser("start", help="Start an evolution loop")
     start_p.add_argument("project_dir", help="Path to the project to evolve")
@@ -77,13 +84,21 @@ def main():
     status_p = sub.add_parser("status", help="Show evolution status for a project")
     status_p.add_argument("project_dir", help="Path to the project")
 
+    # --- clean ---
+    clean_p = sub.add_parser("clean", help="Clean up old session directories")
+    clean_p.add_argument("project_dir", help="Path to the project")
+    clean_p.add_argument("--keep", type=int, default=5, help="Number of recent sessions to keep (default: 5)")
+
     # --- _round (internal) ---
     if len(sys.argv) > 1 and sys.argv[1] == "_round":
         args = _parse_round_args()
     else:
         args = ap.parse_args()
 
-    if args.command == "start":
+    if args.command == "init":
+        _init_config(Path(args.project_dir).resolve())
+
+    elif args.command == "start":
         import os
         # Resolve model: CLI flag > env var > default
         model = args.model or os.environ.get("EVOLVE_MODEL", "claude-opus-4-6")
@@ -100,6 +115,9 @@ def main():
 
     elif args.command == "status":
         _show_status(Path(args.project_dir).resolve())
+
+    elif args.command == "clean":
+        _clean_sessions(Path(args.project_dir).resolve(), args.keep)
 
     elif args.command == "_round":
         from loop import run_single_round
@@ -127,6 +145,55 @@ def _parse_round_args():
     args = p.parse_args(sys.argv[2:])
     args.command = "_round"
     return args
+
+
+_DEFAULT_EVOLVE_TOML = """\
+# evolve.toml — configuration for evolve
+# See README.md for details on each option.
+
+check = ""
+rounds = 10
+timeout = 300
+model = "claude-opus-4-6"
+yolo = false
+"""
+
+
+def _init_config(project_dir: Path) -> None:
+    """Scaffold an evolve.toml with default settings."""
+    config_path = project_dir / "evolve.toml"
+    if config_path.is_file():
+        print(f"evolve.toml already exists at {config_path}")
+        return
+    project_dir.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(_DEFAULT_EVOLVE_TOML)
+    print(f"Created {config_path}")
+
+
+def _clean_sessions(project_dir: Path, keep: int = 5) -> None:
+    """Remove old session directories, keeping the N most recent."""
+    import shutil
+
+    runs_dir = project_dir / "runs"
+    if not runs_dir.is_dir():
+        print("No runs directory found.")
+        return
+
+    sessions = sorted(
+        [d for d in runs_dir.iterdir() if d.is_dir() and d.name[0].isdigit()],
+        reverse=True,
+    )
+
+    if len(sessions) <= keep:
+        print(f"Only {len(sessions)} session(s) found — nothing to clean (keeping {keep}).")
+        return
+
+    to_remove = sessions[keep:]
+    for s in to_remove:
+        shutil.rmtree(s)
+        print(f"Removed {s.name}")
+
+    print(f"Cleaned {len(to_remove)} session(s), kept {keep}.")
 
 
 def _show_status(project_dir: Path):
