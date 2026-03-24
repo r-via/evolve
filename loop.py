@@ -88,9 +88,19 @@ def evolve_loop(
             print(f"\n  Round {round_num} failed (exit {result.returncode})")
 
         # Re-read improvements
+        prev_checked = checked
+        prev_unchecked = unchecked
         unchecked = _count_unchecked(improvements_path)
         checked = _count_checked(improvements_path)
         print(f"\n  Progress: {checked} done, {unchecked} remaining")
+
+        # Stop if agent did nothing
+        convo = run_dir / f"conversation_loop_{round_num}.md"
+        if checked == prev_checked and unchecked == prev_unchecked:
+            if not convo.is_file() or convo.stat().st_size < 100:
+                print(f"\n  Agent made no progress — stopping.")
+                print(f"  Is claude-agent-sdk installed? Run: evolve.py --help")
+                break
 
         # Check convergence
         converged_path = run_dir / "CONVERGED"

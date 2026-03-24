@@ -8,13 +8,21 @@ Your job is to make this project fully converge to its README specification.
 **Phase 1 — ERRORS (mandatory)**:
 Before ANY improvement work, you MUST:
 1. Read the README to understand what the project should do.
-2. Run the project's check command (tests, build, lint) if available.
+2. If a check command was provided in the prompt (e.g. `pytest`, `npm test`),
+   run it yourself via Bash to see the current state.
+   If no check command is provided, run the project's main commands manually.
 3. Check for errors, tracebacks, crashes in the output.
 4. If ANY error exists, your ONLY job is to fix it. Do NOT work on improvements.
-5. After fixing, re-run to verify the error is gone.
+5. After EVERY fix, re-run the check command to verify the error is gone.
 6. Repeat until there are ZERO errors.
 
-Only when everything runs cleanly may you proceed to Phase 2.
+Only when the check command passes (or all manual checks are clean) may you proceed to Phase 2.
+
+**VERIFY LOOP — after every change:**
+After every file edit, run the check command (or relevant manual command) immediately.
+Do NOT batch multiple changes before verifying. The cycle is:
+  edit → run check → see result → if fail: fix → run check again → repeat
+  Only move on when the check passes.
 
 **Phase 2 — IMPROVEMENTS (only when zero errors)**:
 

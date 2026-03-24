@@ -83,9 +83,21 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
 
     check_section = ""
     if check_cmd and check_output:
-        check_section = f"\n## Check command results (`{check_cmd}`)\n```\n{check_output}\n```\n"
+        check_section = (
+            f"\n## Check command: `{check_cmd}`\n"
+            f"Run this command after every change to verify your fixes work.\n"
+            f"\n### Latest check output:\n```\n{check_output}\n```\n"
+        )
     elif check_cmd:
-        check_section = f"\n## Check command: `{check_cmd}` (no output yet)\n"
+        check_section = (
+            f"\n## Check command: `{check_cmd}`\n"
+            f"Run this command after every change to verify your fixes work.\n"
+        )
+    else:
+        check_section = (
+            f"\n## No check command configured\n"
+            f"Run the project's main commands manually after each fix to verify they work.\n"
+        )
 
     return f"""\
 {system_prompt}
@@ -135,85 +147,86 @@ async def run_claude_agent(prompt: str, project_dir: Path, round_num: int = 1, r
     out_dir = run_dir or (project_dir / "runs")
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / f"conversation_loop_{round_num}.md"
-    log = open(log_path, "w")
-    log.write(f"# Evolution Round {round_num}\n\n")
 
-    def _log(line: str, console: bool = False):
-        log.write(line + "\n")
-        if console:
-            print(line)
+    with open(log_path, "w") as log:
+        log.write(f"# Evolution Round {round_num}\n\n")
 
-    turn = 0
-    tools_used = 0
-    stream = query(prompt=prompt, options=options)
-    ait = stream.__aiter__()
-    while True:
-        try:
-            message = await ait.__anext__()
-        except StopAsyncIteration:
-            break
-        except Exception as e:
-            _log(f"> SDK error: {e}")
-            continue
+        def _log(line: str, console: bool = False):
+            log.write(line + "\n")
+            if console:
+                print(line)
 
-        if message is None:
-            continue
-
-        msg_type = type(message).__name__
-        turn += 1
-
-        if msg_type == "StreamEvent":
-            continue
-
-        if isinstance(message, (AssistantMessage, ResultMessage)):
-            if not hasattr(message, "content") or not message.content:
+        turn = 0
+        tools_used = 0
+        stream = query(prompt=prompt, options=options)
+        ait = stream.__aiter__()
+        while True:
+            try:
+                message = await ait.__anext__()
+            except StopAsyncIteration:
+                break
+            except Exception as e:
+                _log(f"> SDK error: {e}")
                 continue
-            for block in message.content:
-                block_type = type(block).__name__
 
-                if hasattr(block, "thinking"):
-                    _log(f"\n### Thinking\n\n{block.thinking}\n")
+            if message is None:
+                continue
 
-                elif hasattr(block, "text") and block.text.strip():
-                    _log(f"\n{block.text}\n", console=True)
+            msg_type = type(message).__name__
+            turn += 1
 
-                elif hasattr(block, "name"):
-                    tools_used += 1
-                    tool_name = block.name
-                    tool_input = ""
-                    if hasattr(block, "input") and block.input:
-                        inp = block.input
-                        if isinstance(inp, dict):
-                            if "command" in inp:
-                                tool_input = inp["command"]
-                            elif "pattern" in inp:
-                                tool_input = inp["pattern"]
-                            elif "file_path" in inp:
-                                tool_input = inp["file_path"]
-                            elif "old_string" in inp:
-                                tool_input = f'{inp.get("file_path", "?")} (edit)'
-                            elif "content" in inp:
-                                tool_input = f'({len(inp["content"])} chars)'
+            if msg_type == "StreamEvent":
+                continue
+
+            if isinstance(message, (AssistantMessage, ResultMessage)):
+                if not hasattr(message, "content") or not message.content:
+                    continue
+                for block in message.content:
+                    block_type = type(block).__name__
+
+                    if hasattr(block, "thinking"):
+                        _log(f"\n### Thinking\n\n{block.thinking}\n")
+
+                    elif hasattr(block, "text") and block.text.strip():
+                        _log(f"\n{block.text}\n", console=True)
+
+                    elif hasattr(block, "name"):
+                        tools_used += 1
+                        tool_name = block.name
+                        tool_input = ""
+                        if hasattr(block, "input") and block.input:
+                            inp = block.input
+                            if isinstance(inp, dict):
+                                if "command" in inp:
+                                    tool_input = inp["command"]
+                                elif "pattern" in inp:
+                                    tool_input = inp["pattern"]
+                                elif "file_path" in inp:
+                                    tool_input = inp["file_path"]
+                                elif "old_string" in inp:
+                                    tool_input = f'{inp.get("file_path", "?")} (edit)'
+                                elif "content" in inp:
+                                    tool_input = f'({len(inp["content"])} chars)'
+                            else:
+                                tool_input = str(inp)[:100]
+                        _log(f"\n**{tool_name}**: `{tool_input}`\n")
+                        print(f"  [opus] {tool_name} → {tool_input[:80]}")
+
+                    elif block_type == "ToolResultBlock":
+                        content_str = str(block.content)[:500] if hasattr(block, "content") and block.content else ""
+                        is_error = getattr(block, "is_error", False)
+                        if is_error:
+                            _log(f"\n> Error:\n> {content_str}\n")
                         else:
-                            tool_input = str(inp)[:100]
-                    _log(f"\n**{tool_name}**: `{tool_input}`\n")
-                    print(f"  [opus] {tool_name} → {tool_input[:80]}")
+                            _log(f"\n```\n{content_str}\n```\n")
+            else:
+                if msg_type == "RateLimitEvent":
+                    _log(f"\n> Rate limited\n")
+                elif msg_type == "SystemMessage":
+                    _log(f"\n---\n*Session initialized*\n---\n")
 
-                elif block_type == "ToolResultBlock":
-                    content_str = str(block.content)[:500] if hasattr(block, "content") and block.content else ""
-                    is_error = getattr(block, "is_error", False)
-                    if is_error:
-                        _log(f"\n> Error:\n> {content_str}\n")
-                    else:
-                        _log(f"\n```\n{content_str}\n```\n")
-        else:
-            if msg_type == "RateLimitEvent":
-                _log(f"\n> Rate limited\n")
-            elif msg_type == "SystemMessage":
-                _log(f"\n---\n*Session initialized*\n---\n")
+        _log(f"\n---\n\n**Done**: {turn} messages, {tools_used} tool calls\n")
 
-    _log(f"\n---\n\n**Done**: {turn} messages, {tools_used} tool calls\n")
-    log.close()
     print(f"  [opus] done ({tools_used} tool calls) → {log_path}")
 
 
