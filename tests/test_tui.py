@@ -1,6 +1,9 @@
-"""Tests for tui.py — factory function, TUI Protocol parity."""
+"""Tests for tui.py — factory function, TUI Protocol parity, JsonTUI."""
 
-from tui import get_tui, RichTUI, PlainTUI, TUIProtocol, _has_rich
+import json
+
+from tui import get_tui, RichTUI, PlainTUI, JsonTUI, TUIProtocol, _has_rich
+import tui as _tui_mod
 
 
 class TestTUIProtocol:
@@ -13,11 +16,15 @@ class TestTUIProtocol:
         if _has_rich():
             assert isinstance(RichTUI(), TUIProtocol)
 
+    def test_json_tui_is_protocol(self):
+        assert isinstance(JsonTUI(), TUIProtocol)
+
     def test_method_parity(self):
-        """RichTUI and PlainTUI must have the same public methods."""
+        """RichTUI, PlainTUI, and JsonTUI must have the same public methods."""
         rich_methods = {m for m in dir(RichTUI) if not m.startswith("_")}
         plain_methods = {m for m in dir(PlainTUI) if not m.startswith("_")}
-        # Both should cover at least all Protocol methods
+        json_methods = {m for m in dir(JsonTUI) if not m.startswith("_")}
+        # All should cover at least all Protocol methods
         protocol_methods = {
             m for m in dir(TUIProtocol)
             if not m.startswith("_") and callable(getattr(TUIProtocol, m, None))
@@ -28,7 +35,10 @@ class TestTUIProtocol:
         assert protocol_methods.issubset(plain_methods), (
             f"PlainTUI missing: {protocol_methods - plain_methods}"
         )
-        # And they should match each other
+        assert protocol_methods.issubset(json_methods), (
+            f"JsonTUI missing: {protocol_methods - json_methods}"
+        )
+        # Rich and Plain should match each other
         assert rich_methods == plain_methods, (
             f"Mismatch: only in Rich={rich_methods - plain_methods}, "
             f"only in Plain={plain_methods - rich_methods}"
@@ -94,3 +104,174 @@ class TestPlainTUIMethods:
         out = capsys.readouterr().out
         assert "/tmp/proj" in out
         assert "5 done" in out
+
+
+class TestGetTUIJson:
+    """Test that get_tui returns JsonTUI when _use_json is True."""
+
+    def test_returns_json_tui_when_flag_set(self):
+        old = _tui_mod._use_json
+        try:
+            _tui_mod._use_json = True
+            ui = get_tui()
+            assert isinstance(ui, JsonTUI)
+        finally:
+            _tui_mod._use_json = old
+
+    def test_returns_non_json_when_flag_unset(self):
+        old = _tui_mod._use_json
+        try:
+            _tui_mod._use_json = False
+            ui = get_tui()
+            assert not isinstance(ui, JsonTUI)
+        finally:
+            _tui_mod._use_json = old
+
+
+class TestJsonTUIMethods:
+    """Smoke-test JsonTUI methods emit valid JSON lines."""
+
+    def _parse_line(self, capsys) -> dict:
+        out = capsys.readouterr().out.strip()
+        lines = [l for l in out.splitlines() if l.strip()]
+        assert len(lines) >= 1, f"Expected JSON output, got: {out!r}"
+        return json.loads(lines[-1])
+
+    def test_round_header(self, capsys):
+        JsonTUI().round_header(1, 10, target="test", checked=3, total=5)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "round_start"
+        assert obj["round"] == 1
+        assert obj["max_rounds"] == 10
+        assert obj["target"] == "test"
+        assert obj["checked"] == 3
+        assert obj["total"] == 5
+        assert "timestamp" in obj
+
+    def test_check_result_pass(self, capsys):
+        JsonTUI().check_result("check", "pytest", passed=True)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "check_result"
+        assert obj["passed"] is True
+        assert obj["cmd"] == "pytest"
+
+    def test_check_result_timeout(self, capsys):
+        JsonTUI().check_result("check", "pytest", timeout=True)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "check_result"
+        assert obj["timeout"] is True
+
+    def test_agent_tool(self, capsys):
+        JsonTUI().agent_tool("Edit", "src/main.py")
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "agent_tool"
+        assert obj["tool"] == "Edit"
+        assert obj["input"] == "src/main.py"
+
+    def test_converged(self, capsys):
+        JsonTUI().converged(5, "All README claims verified")
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "converged"
+        assert obj["round"] == 5
+        assert "All README" in obj["reason"]
+
+    def test_progress_summary(self, capsys):
+        JsonTUI().progress_summary(5, 3)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "progress_summary"
+        assert obj["checked"] == 5
+        assert obj["unchecked"] == 3
+
+    def test_blocked_message(self, capsys):
+        JsonTUI().blocked_message(2)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "blocked"
+        assert obj["blocked"] == 2
+
+    def test_git_status(self, capsys):
+        JsonTUI().git_status("feat: add feature", pushed=True)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "git_status"
+        assert obj["pushed"] is True
+
+    def test_max_rounds(self, capsys):
+        JsonTUI().max_rounds(10, 8, 2)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "max_rounds"
+        assert obj["max_rounds"] == 10
+
+    def test_warn(self, capsys):
+        JsonTUI().warn("something happened")
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "warn"
+        assert obj["message"] == "something happened"
+
+    def test_error(self, capsys):
+        JsonTUI().error("bad thing")
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "error"
+        assert obj["message"] == "bad thing"
+
+    def test_status_flow(self, capsys):
+        ui = JsonTUI()
+        ui.status_header("/tmp/proj", True)
+        ui.status_improvements(5, 2, 1)
+        ui.status_memory(3)
+        ui.status_session("20260101_000000", 5, 3, False)
+        ui.status_flush()
+        out = capsys.readouterr().out.strip()
+        lines = out.splitlines()
+        assert len(lines) == 5
+        for line in lines:
+            obj = json.loads(line)
+            assert "type" in obj
+            assert "timestamp" in obj
+
+    def test_improvement_completed_via_agent_tool(self, capsys):
+        """JsonTUI emits agent_tool events that can track improvement completion."""
+        JsonTUI().agent_tool("Edit", "runs/improvements.md")
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "agent_tool"
+
+    def test_no_check(self, capsys):
+        JsonTUI().no_check()
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "no_check"
+
+    def test_agent_working(self, capsys):
+        JsonTUI().agent_working()
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "agent_working"
+
+    def test_agent_done(self, capsys):
+        JsonTUI().agent_done(5, "/tmp/log.md")
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "agent_done"
+        assert obj["tools_used"] == 5
+
+    def test_round_failed(self, capsys):
+        JsonTUI().round_failed(3, 1)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "round_failed"
+        assert obj["round"] == 3
+
+    def test_party_mode(self, capsys):
+        JsonTUI().party_mode()
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "party_mode"
+
+    def test_party_results(self, capsys):
+        JsonTUI().party_results("/tmp/proposal.md", "/tmp/report.md")
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "party_results"
+
+    def test_uncommitted(self, capsys):
+        JsonTUI().uncommitted()
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "uncommitted"
+
+    def test_sdk_rate_limited(self, capsys):
+        JsonTUI().sdk_rate_limited(60, 1, 5)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "sdk_rate_limited"
+        assert obj["wait"] == 60

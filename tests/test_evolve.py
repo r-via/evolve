@@ -48,6 +48,7 @@ class TestCLIParsing:
         start_p.add_argument("--timeout", type=int, default=300)
         start_p.add_argument("--model", default=None)
         start_p.add_argument("--resume", action="store_true")
+        start_p.add_argument("--json", action="store_true")
         args = ap.parse_args([
             "start", "/tmp/project",
             "--rounds", "20",
@@ -56,6 +57,7 @@ class TestCLIParsing:
             "--timeout", "600",
             "--model", "claude-sonnet-4-20250514",
             "--resume",
+            "--json",
         ])
         assert args.rounds == 20
         assert args.check == "pytest"
@@ -63,6 +65,17 @@ class TestCLIParsing:
         assert args.timeout == 600
         assert args.model == "claude-sonnet-4-20250514"
         assert args.resume is True
+        assert args.json is True
+
+    def test_json_flag_defaults_false(self):
+        import argparse
+        ap = argparse.ArgumentParser()
+        sub = ap.add_subparsers(dest="command")
+        start_p = sub.add_parser("start")
+        start_p.add_argument("project_dir")
+        start_p.add_argument("--json", action="store_true")
+        args = ap.parse_args(["start", "/tmp/project"])
+        assert args.json is False
 
     def test_status_parsing(self):
         import argparse

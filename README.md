@@ -18,6 +18,9 @@ python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout
 # Resume an interrupted session
 python evolve.py start <project-dir> --resume
 
+# Autonomous forever mode (runs on a separate branch)
+python evolve.py start <project-dir> --forever [--check "pytest"]
+
 # Check evolution status
 python evolve.py status <project-dir>
 

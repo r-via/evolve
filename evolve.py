@@ -197,6 +197,7 @@ def main():
     start_p.add_argument("--timeout", type=int, default=300, help="Timeout per check command in seconds (default: 300)")
     start_p.add_argument("--model", default=None, help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
     start_p.add_argument("--resume", action="store_true", help="Resume the most recent interrupted session")
+    start_p.add_argument("--json", action="store_true", help="Emit structured JSON events to stdout (for CI/CD)")
 
     # --- status ---
     status_p = sub.add_parser("status", help="Show evolution status for a project")
@@ -220,6 +221,10 @@ def main():
         project_path = Path(args.project_dir).resolve()
         # Merge CLI flags with config file + env vars
         args = _resolve_config(args, project_path)
+        # Enable JSON TUI mode if --json flag is set
+        if args.json:
+            import tui as _tui_mod
+            _tui_mod._use_json = True
         from loop import evolve_loop
         evolve_loop(
             project_dir=project_path,
