@@ -266,6 +266,22 @@ async def run_claude_agent(
     ui.agent_done(tools_used, str(log_path))
 
 
+def _is_benign_runtime_error(e: RuntimeError) -> bool:
+    """Check if a RuntimeError is a benign async teardown issue we can ignore."""
+    msg = str(e)
+    return "cancel scope" in msg or "Event loop is closed" in msg
+
+
+def _should_retry_rate_limit(e: Exception, attempt: int, max_retries: int) -> int | None:
+    """Return wait time in seconds if the error is a rate limit and retries remain.
+
+    Returns None if the error is not retryable.
+    """
+    if "rate_limit" in str(e).lower() and attempt < max_retries:
+        return 60 * attempt
+    return None
+
+
 def analyze_and_fix(
     project_dir: Path,
     check_output: str = "",
@@ -293,23 +309,19 @@ def analyze_and_fix(
         try:
             asyncio.run(run_claude_agent(prompt, project_dir, round_num=round_num, run_dir=run_dir))
             return
-        except RuntimeError as e:
-            if "cancel scope" in str(e) or "Event loop is closed" in str(e):
-                return
-            if "rate_limit" in str(e).lower() and attempt < max_retries:
-                wait = 60 * attempt
-                ui.sdk_rate_limited(wait, attempt, max_retries)
-                import time
-                time.sleep(wait)
-            else:
-                ui.warn(f"Claude Code agent failed ({e})")
-                return
         except Exception as e:
-            if "rate_limit" in str(e).lower() and attempt < max_retries:
-                wait = 60 * attempt
+            # Benign async teardown errors — safe to ignore.
+            if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
+                return
+
+            # Rate-limit — back off and retry if attempts remain.
+            wait = _should_retry_rate_limit(e, attempt, max_retries)
+            if wait is not None:
                 ui.sdk_rate_limited(wait, attempt, max_retries)
                 import time
                 time.sleep(wait)
-            else:
-                ui.warn(f"Claude Code agent failed ({e})")
-                return
+                continue
+
+            # Non-retryable error — give up.
+            ui.warn(f"Claude Code agent failed ({e})")
+            return
