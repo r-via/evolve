@@ -7,8 +7,41 @@ from unittest.mock import patch
 from agent import (
     build_prompt,
     _is_benign_runtime_error,
+    _load_project_context,
     _should_retry_rate_limit,
 )
+
+
+# ---------------------------------------------------------------------------
+# _load_project_context
+# ---------------------------------------------------------------------------
+
+class TestLoadProjectContext:
+    def test_loads_readme_and_improvements(self, tmp_path: Path):
+        (tmp_path / "README.md").write_text("# Hello")
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        (runs / "improvements.md").write_text("- [ ] [functional] Do X\n")
+        ctx = _load_project_context(tmp_path)
+        assert ctx["readme"] == "# Hello"
+        assert "Do X" in ctx["improvements"]
+
+    def test_no_readme(self, tmp_path: Path):
+        (tmp_path / "runs").mkdir()
+        ctx = _load_project_context(tmp_path)
+        assert ctx["readme"] == ""
+
+    def test_no_improvements(self, tmp_path: Path):
+        (tmp_path / "README.md").write_text("# P")
+        (tmp_path / "runs").mkdir()
+        ctx = _load_project_context(tmp_path)
+        assert ctx["improvements"] is None
+
+    def test_readme_rst_fallback(self, tmp_path: Path):
+        (tmp_path / "README.rst").write_text("RST readme")
+        (tmp_path / "runs").mkdir()
+        ctx = _load_project_context(tmp_path)
+        assert ctx["readme"] == "RST readme"
 
 
 # ---------------------------------------------------------------------------

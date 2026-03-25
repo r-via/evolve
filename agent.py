@@ -14,6 +14,34 @@ from tui import get_tui
 MODEL = "claude-opus-4-6"
 
 
+def _load_project_context(project_dir: Path) -> dict[str, str]:
+    """Load shared project context: README and improvements.
+
+    Centralises the file-loading logic used by all prompt builders so that
+    adding a new file or changing search order only needs to happen once.
+
+    Args:
+        project_dir: Root directory of the project.
+
+    Returns:
+        Dictionary with ``readme`` (may be empty) and ``improvements``
+        (``None`` when the file does not exist, otherwise its text content).
+    """
+    # Load README — try common filenames in order
+    readme = ""
+    for name in ("README.md", "README.rst", "README.txt", "README"):
+        p = project_dir / name
+        if p.is_file():
+            readme = p.read_text()
+            break
+
+    # Load improvements
+    improvements_path = project_dir / "runs" / "improvements.md"
+    improvements = improvements_path.read_text() if improvements_path.is_file() else None
+
+    return {"readme": readme, "improvements": improvements}
+
+
 def build_prompt(
     project_dir: Path,
     check_output: str = "",
@@ -45,17 +73,9 @@ def build_prompt(
 
     system_prompt = prompt_path.read_text() if prompt_path.is_file() else ""
 
-    # Load README
-    readme = ""
-    for name in ("README.md", "README.rst", "README.txt", "README"):
-        p = project_dir / name
-        if p.is_file():
-            readme = p.read_text()
-            break
-
-    # Load improvements
-    improvements_path = project_dir / "runs" / "improvements.md"
-    improvements = improvements_path.read_text() if improvements_path.is_file() else None
+    ctx = _load_project_context(project_dir)
+    readme = ctx["readme"]
+    improvements = ctx["improvements"]
 
     # Current target — skip [needs-package] items unless --yolo
     current = None
@@ -400,17 +420,9 @@ def build_validate_prompt(
     Returns:
         The fully assembled prompt string.
     """
-    # Load README
-    readme = ""
-    for name in ("README.md", "README.rst", "README.txt", "README"):
-        p = project_dir / name
-        if p.is_file():
-            readme = p.read_text()
-            break
-
-    # Load improvements
-    improvements_path = project_dir / "runs" / "improvements.md"
-    improvements = improvements_path.read_text() if improvements_path.is_file() else "(none)"
+    ctx = _load_project_context(project_dir)
+    readme = ctx["readme"]
+    improvements = ctx["improvements"] or "(none)"
 
     rdir = str(run_dir or "runs")
 
@@ -487,17 +499,9 @@ def build_dry_run_prompt(
     Returns:
         The fully assembled prompt string.
     """
-    # Load README
-    readme = ""
-    for name in ("README.md", "README.rst", "README.txt", "README"):
-        p = project_dir / name
-        if p.is_file():
-            readme = p.read_text()
-            break
-
-    # Load improvements
-    improvements_path = project_dir / "runs" / "improvements.md"
-    improvements = improvements_path.read_text() if improvements_path.is_file() else "(none)"
+    ctx = _load_project_context(project_dir)
+    readme = ctx["readme"]
+    improvements = ctx["improvements"] or "(none)"
 
     rdir = str(run_dir or "runs")
 
