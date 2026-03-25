@@ -344,8 +344,11 @@ The `--check` flag specifies how to verify the project works. Any shell command:
 --check "make test && make lint"    # Multiple checks
 ```
 
-If omitted, opus runs commands manually to verify. With `--check`, the orchestrator
-runs it automatically before and after each round for objective verification.
+If omitted, evolve auto-detects the test framework by looking for common tools
+(`pytest`, `npm test`, `cargo test`, `go test`, `make test`, etc.) and uses the
+first one found. With an explicit `--check`, the orchestrator uses that command
+instead. In both cases, the check is run automatically before and after each round
+for objective verification.
 
 ### The --timeout flag
 
