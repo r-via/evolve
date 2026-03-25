@@ -167,6 +167,40 @@ def _get_current_improvement(path: Path, yolo: bool = False) -> str | None:
     return None
 
 
+def _parse_report_summary(run_dir: Path) -> dict:
+    """Parse evolution_report.md to extract completion summary stats.
+
+    Returns a dict with keys: improvements, bugs_fixed, tests_passing.
+    """
+    report_path = run_dir / "evolution_report.md"
+    improvements = 0
+    bugs_fixed = 0
+    tests_passing: int | None = None
+
+    if report_path.is_file():
+        text = report_path.read_text(errors="replace")
+        m = re.search(r"(\d+)\s+improvements completed", text)
+        if m:
+            improvements = int(m.group(1))
+        m = re.search(r"(\d+)\s+bugs fixed", text)
+        if m:
+            bugs_fixed = int(m.group(1))
+
+    # Get latest test count from the most recent check_round_N.txt
+    check_files = sorted(run_dir.glob("check_round_*.txt"))
+    if check_files:
+        last_check = check_files[-1].read_text(errors="replace")
+        m = re.search(r"(\d+)\s+passed", last_check)
+        if m:
+            tests_passing = int(m.group(1))
+
+    return {
+        "improvements": improvements,
+        "bugs_fixed": bugs_fixed,
+        "tests_passing": tests_passing,
+    }
+
+
 def _generate_evolution_report(
     project_dir: Path,
     run_dir: Path,
@@ -557,6 +591,7 @@ def _run_rounds(
     """
     if hooks is None:
         hooks = {}
+    _rounds_start_time = time.monotonic()
     print(f"[probe] _run_rounds starting from round {start_round} to {max_rounds}")
     while True:
         for round_num in range(start_round, max_rounds + 1):

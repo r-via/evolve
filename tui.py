@@ -88,6 +88,11 @@ class TUIProtocol(Protocol):
                       num_sessions: int, total_rounds: int,
                       total_improvements: int) -> None: ...
 
+    def completion_summary(self, status: str, round_num: int,
+                           duration_s: float, improvements: int,
+                           bugs_fixed: int, tests_passing: int | None,
+                           report_path: str) -> None: ...
+
 
 def _has_rich() -> bool:
     """Check if rich is available."""
@@ -322,6 +327,36 @@ class RichTUI:
             f"{total_improvements} improvements"
         )
 
+    def completion_summary(self, status: str, round_num: int,
+                           duration_s: float, improvements: int,
+                           bugs_fixed: int, tests_passing: int | None,
+                           report_path: str) -> None:
+        """Display a rich panel summarising the completed evolution session."""
+        from rich.panel import Panel
+        from rich.table import Table
+
+        # Format duration as Xm Ys
+        mins, secs = divmod(int(duration_s), 60)
+        dur = f"{mins}m {secs:02d}s" if mins else f"{secs}s"
+
+        icon = "\u2705" if status == "CONVERGED" else "\u26a0\ufe0f"
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column()
+        grid.add_row(f"{icon} {status} in {round_num} rounds ({dur})")
+        grid.add_row("")
+        grid.add_row(f"{improvements} improvements completed")
+        grid.add_row(f"{bugs_fixed} bugs fixed")
+        if tests_passing is not None:
+            grid.add_row(f"{tests_passing} tests passing")
+        grid.add_row("")
+        grid.add_row(f"Report: {report_path}")
+
+        border = "green" if status == "CONVERGED" else "yellow"
+        panel = Panel(grid, title="[bold]Evolution Complete[/bold]", border_style=border,
+                      width=min(self.console.width, 50))
+        self.console.print()
+        self.console.print(panel)
+
 
 # ---------------------------------------------------------------------------
 # Plain text fallback
@@ -474,6 +509,25 @@ class PlainTUI:
         print(f"\n  Total: {num_sessions} sessions, {total_rounds} rounds, "
               f"{total_improvements} improvements")
 
+    def completion_summary(self, status: str, round_num: int,
+                           duration_s: float, improvements: int,
+                           bugs_fixed: int, tests_passing: int | None,
+                           report_path: str) -> None:
+        """Display a plain text completion summary."""
+        mins, secs = divmod(int(duration_s), 60)
+        dur = f"{mins}m {secs:02d}s" if mins else f"{secs}s"
+        icon = "\u2705" if status == "CONVERGED" else "\u26a0\ufe0f"
+        print(f"\n{'─' * 46}")
+        print(f"  {icon} {status} in {round_num} rounds ({dur})")
+        print()
+        print(f"  {improvements} improvements completed")
+        print(f"  {bugs_fixed} bugs fixed")
+        if tests_passing is not None:
+            print(f"  {tests_passing} tests passing")
+        print()
+        print(f"  Report: {report_path}")
+        print(f"{'─' * 46}")
+
 
 # ---------------------------------------------------------------------------
 # JSON TUI — structured JSON events for CI/CD
@@ -612,6 +666,15 @@ class JsonTUI:
         self._emit("history", project_dir=project_dir, sessions=rows,
                     num_sessions=num_sessions, total_rounds=total_rounds,
                     total_improvements=total_improvements)
+
+    def completion_summary(self, status: str, round_num: int,
+                           duration_s: float, improvements: int,
+                           bugs_fixed: int, tests_passing: int | None,
+                           report_path: str) -> None:
+        self._emit("completion_summary", status=status, round=round_num,
+                    duration_s=duration_s, improvements=improvements,
+                    bugs_fixed=bugs_fixed, tests_passing=tests_passing,
+                    report_path=report_path)
 
 
 # ---------------------------------------------------------------------------
