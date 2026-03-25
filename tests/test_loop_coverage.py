@@ -2073,3 +2073,187 @@ class TestEvolveLoopForeverIntegration:
         ui.completion_summary.assert_called_once()
         summary_kwargs = ui.completion_summary.call_args[1]
         assert summary_kwargs["status"] == "CONVERGED"
+
+
+# ---------------------------------------------------------------------------
+# Integration tests for evolve_loop with --resume and --forever combined
+# ---------------------------------------------------------------------------
+
+class TestEvolveLoopResumeForeverCombined:
+    """Tests for evolve_loop with both resume=True and forever=True.
+
+    Verifies that resuming a forever-mode session correctly:
+    - Calls _setup_forever_branch (branch setup happens before resume logic)
+    - Sets max_rounds to 999999
+    - Detects the last completed round from conversation logs
+    - Continues the evolution loop from the right starting point
+    - Passes forever=True to _run_rounds so convergence triggers restart
+    """
+
+    def _setup_project_with_session(self, tmp_path: Path, num_convos: int = 3):
+        """Create a project with an existing session and conversation logs."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "README.md").write_text("# My Project\n")
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        imp_path = runs_dir / "improvements.md"
+        imp_path.write_text("- [x] [functional] done\n- [ ] [functional] pending\n")
+
+        session = runs_dir / "20260101_120000"
+        session.mkdir()
+        for i in range(1, num_convos + 1):
+            (session / f"conversation_loop_{i}.md").write_text(f"round {i}")
+
+        return project_dir, session
+
+    def test_resume_forever_calls_setup_branch_and_resumes(self, tmp_path: Path):
+        """Resume + forever: sets up branch, detects last round, passes forever to _run_rounds."""
+        project_dir, session = self._setup_project_with_session(tmp_path, num_convos=5)
+
+        with patch("loop._ensure_git"), \
+             patch("loop._setup_forever_branch") as mock_branch, \
+             patch("loop._run_rounds") as mock_run:
+            evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
+
+        # 1. Branch setup was called
+        mock_branch.assert_called_once_with(project_dir)
+
+        # 2. _run_rounds was called (via the resume path)
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+
+        # 3. start_round should be 6 (last convo was 5, so start at 6)
+        assert args[0][4] == 6, f"Expected start_round=6, got {args[0][4]}"
+
+        # 4. max_rounds should be 999999 (forever mode overrides)
+        assert args[0][5] == 999999, f"Expected max_rounds=999999, got {args[0][5]}"
+
+        # 5. forever=True is passed through
+        assert args[1].get("forever") is True
+
+    def test_resume_forever_no_sessions_starts_fresh(self, tmp_path: Path):
+        """Resume + forever with no existing sessions starts a fresh session."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "README.md").write_text("# Test\n")
+        (project_dir / "runs").mkdir()
+
+        with patch("loop._ensure_git"), \
+             patch("loop._setup_forever_branch") as mock_branch, \
+             patch("loop._run_rounds") as mock_run:
+            evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
+
+        mock_branch.assert_called_once_with(project_dir)
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+        # Falls through to fresh start path
+        assert args[0][4] == 1  # start_round
+        assert args[0][5] == 999999  # max_rounds (forever override)
+        assert args[1].get("forever") is True
+
+    def test_resume_forever_session_no_convos_starts_round_1(self, tmp_path: Path):
+        """Resume + forever with session but no conversation logs starts from round 1."""
+        project_dir, session = self._setup_project_with_session(tmp_path, num_convos=0)
+
+        with patch("loop._ensure_git"), \
+             patch("loop._setup_forever_branch"), \
+             patch("loop._run_rounds") as mock_run:
+            evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
+
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+        assert args[0][4] == 1  # start_round (no convos to detect)
+        assert args[0][5] == 999999
+
+    def test_resume_forever_uses_correct_session_dir(self, tmp_path: Path):
+        """Resume + forever reuses the most recent session directory."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "README.md").write_text("# Test\n")
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        (runs_dir / "improvements.md").write_text("# Improvements\n")
+
+        # Create two sessions — resume should pick the latest
+        old_session = runs_dir / "20260101_100000"
+        old_session.mkdir()
+        (old_session / "conversation_loop_1.md").write_text("r1")
+
+        new_session = runs_dir / "20260201_100000"
+        new_session.mkdir()
+        (new_session / "conversation_loop_1.md").write_text("r1")
+        (new_session / "conversation_loop_2.md").write_text("r2")
+
+        with patch("loop._ensure_git"), \
+             patch("loop._setup_forever_branch"), \
+             patch("loop._run_rounds") as mock_run:
+            evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
+
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+        # Should use the latest session
+        assert args[0][1] == new_session  # run_dir
+        assert args[0][4] == 3  # start_round (after convo 2)
+
+    def test_resume_forever_convergence_triggers_restart(self, tmp_path: Path):
+        """Resume + forever: when CONVERGED is written, _forever_restart is called."""
+        project_dir, session = self._setup_project_with_session(tmp_path, num_convos=2)
+        imp_path = project_dir / "runs" / "improvements.md"
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            run_dir = None
+            for i, arg in enumerate(cmd):
+                if arg == "--run-dir" and i + 1 < len(cmd):
+                    run_dir = Path(cmd[i + 1])
+                    break
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+
+            if call_count == 1:
+                # First call (round 3, resumed): converge
+                (run_dir / f"conversation_loop_{round_num}.md").write_text("converged")
+                (run_dir / "CONVERGED").write_text("done")
+                imp_path.write_text("- [x] [functional] done\n")
+                return 0, "converged output", False
+            else:
+                # After restart: break out of infinite loop
+                raise SystemExit(42)
+
+        with patch("loop._ensure_git"), \
+             patch("loop._setup_forever_branch"), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._git_commit"), \
+             patch("loop._run_party_mode") as mock_party, \
+             patch("loop._forever_restart") as mock_restart, \
+             patch("loop._generate_evolution_report"), \
+             patch("loop.fire_hook"), \
+             pytest.raises(SystemExit) as exc:
+            evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
+
+        # Party mode and forever_restart should have been called
+        mock_party.assert_called_once()
+        mock_restart.assert_called_once()
+        assert exc.value.code == 42
+
+    def test_resume_forever_no_runs_dir_starts_fresh(self, tmp_path: Path):
+        """Resume + forever without runs/ dir creates fresh session."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "README.md").write_text("# Test\n")
+
+        with patch("loop._ensure_git"), \
+             patch("loop._setup_forever_branch") as mock_branch, \
+             patch("loop._run_rounds") as mock_run:
+            evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
+
+        mock_branch.assert_called_once()
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+        assert args[0][4] == 1  # start_round (fresh)
+        assert args[0][5] == 999999  # max_rounds
+        assert args[1].get("forever") is True
