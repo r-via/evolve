@@ -177,7 +177,7 @@ class RichTUI:
         elif pushed:
             self.console.print(f"  [green]\\[git][/green] {message} → pushed")
         else:
-            self.console.print(f"  [yellow]\\[git][/yellow] {message} (push failed: {error})")
+            self.console.print(f"  [yellow]\\[git][/yellow] {message} (push failed: {error or 'unknown'})")
 
     def progress_summary(self, checked: int, unchecked: int) -> None:
         self.console.print(f"\n  Progress: [green]{checked} done[/green], [yellow]{unchecked} remaining[/yellow]")
@@ -335,7 +335,7 @@ class PlainTUI:
         elif pushed:
             print(f"  [git] {message} → pushed")
         else:
-            print(f"  [git] {message} (push failed: {error})")
+            print(f"  [git] {message} (push failed: {error or 'unknown'})")
 
     def progress_summary(self, checked: int, unchecked: int) -> None:
         print(f"\n  Progress: {checked} done, {unchecked} remaining")
