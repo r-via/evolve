@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/imgs/logo_evolve.jpg" alt="evolve logo" width="400">
+</p>
+
 # evolve
 
 Self-improving evolution loop for any project, powered by Claude.
