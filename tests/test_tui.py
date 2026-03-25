@@ -38,10 +38,14 @@ class TestTUIProtocol:
         assert protocol_methods.issubset(json_methods), (
             f"JsonTUI missing: {protocol_methods - json_methods}"
         )
-        # Rich and Plain should match each other
+        # Rich, Plain, and Json should match each other
         assert rich_methods == plain_methods, (
             f"Mismatch: only in Rich={rich_methods - plain_methods}, "
             f"only in Plain={plain_methods - rich_methods}"
+        )
+        assert rich_methods == json_methods, (
+            f"Mismatch: only in Rich={rich_methods - json_methods}, "
+            f"only in Json={json_methods - rich_methods}"
         )
 
 
