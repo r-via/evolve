@@ -145,7 +145,7 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
 {check_section}"""
 
 
-def _patch_sdk_parser():
+def _patch_sdk_parser() -> None:
     """Monkey-patch SDK to not crash on malformed rate_limit_event.
 
     Wraps ``message_parser.parse_message`` so that malformed rate-limit

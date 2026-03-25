@@ -14,7 +14,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from tui import get_tui
+from tui import TUIProtocol, get_tui
 
 
 def _auto_detect_check(project_dir: Path) -> str | None:
@@ -373,7 +373,13 @@ MAX_DEBUG_RETRIES = 2
 WATCHDOG_TIMEOUT = 120
 
 
-def _run_monitored_subprocess(cmd, cwd, ui, round_num, watchdog_timeout=WATCHDOG_TIMEOUT):
+def _run_monitored_subprocess(
+    cmd: list[str],
+    cwd: str,
+    ui: TUIProtocol,
+    round_num: int,
+    watchdog_timeout: int = WATCHDOG_TIMEOUT,
+) -> tuple[int, str, bool]:
     """Run a subprocess with real-time output streaming and stall detection.
 
     Spawns the command, streams stdout in real-time, and monitors for
@@ -438,7 +444,14 @@ def _run_monitored_subprocess(cmd, cwd, ui, round_num, watchdog_timeout=WATCHDOG
     return rc, output, stalled
 
 
-def _save_subprocess_diagnostic(run_dir, round_num, cmd, output, reason, attempt):
+def _save_subprocess_diagnostic(
+    run_dir: Path,
+    round_num: int,
+    cmd: list[str],
+    output: str,
+    reason: str,
+    attempt: int,
+) -> None:
     """Write a diagnostic file for a failed/stalled subprocess round.
 
     Args:
@@ -461,7 +474,7 @@ def _run_rounds(
     project_dir: Path,
     run_dir: Path,
     improvements_path: Path,
-    ui,
+    ui: TUIProtocol,
     start_round: int,
     max_rounds: int,
     check_cmd: str | None,
@@ -853,7 +866,7 @@ def run_dry_run(
         ui.warn("No dry_run_report.md produced by the agent")
 
 
-def _run_party_mode(project_dir: Path, run_dir: Path, ui=None) -> None:
+def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = None) -> None:
     """Launch party mode: multi-agent brainstorming post-convergence.
 
     Loads agent personas and workflow definitions, then runs a Claude
@@ -997,7 +1010,7 @@ def _forever_restart(
     project_dir: Path,
     run_dir: Path,
     improvements_path: Path,
-    ui,
+    ui: TUIProtocol,
 ) -> None:
     """Post-convergence restart for forever mode.
 
@@ -1056,7 +1069,7 @@ def _setup_forever_branch(project_dir: Path) -> None:
     ui.info(f"  Forever mode: created branch {branch_name}")
 
 
-def _ensure_git(project_dir: Path, ui=None) -> None:
+def _ensure_git(project_dir: Path, ui: TUIProtocol | None = None) -> None:
     if ui is None:
         ui = get_tui()
     result = subprocess.run(
@@ -1080,7 +1093,7 @@ def _ensure_git(project_dir: Path, ui=None) -> None:
         )
 
 
-def _git_commit(project_dir: Path, message: str, ui=None) -> None:
+def _git_commit(project_dir: Path, message: str, ui: TUIProtocol | None = None) -> None:
     if ui is None:
         ui = get_tui()
     print(f"[probe] git: staging changes")
