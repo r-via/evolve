@@ -339,6 +339,11 @@ def evolve_loop(
 
     print(f"[probe] evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
 
+    # Load event hooks from project config
+    hooks = load_hooks(project_dir)
+    if hooks:
+        print(f"[probe] loaded {len(hooks)} hook(s): {', '.join(hooks.keys())}")
+
     # Auto-detect check command if not provided
     if check_cmd is None:
         detected = _auto_detect_check(project_dir)
@@ -386,7 +391,7 @@ def evolve_loop(
                 return _run_rounds(
                     project_dir, run_dir, improvements_path, ui,
                     start_round, max_rounds, check_cmd, yolo, timeout, model,
-                    forever=forever,
+                    forever=forever, hooks=hooks,
                 )
 
     # Create timestamped run directory
@@ -402,7 +407,7 @@ def evolve_loop(
     _run_rounds(
         project_dir, run_dir, improvements_path, ui,
         1, max_rounds, check_cmd, yolo, timeout, model,
-        forever=forever,
+        forever=forever, hooks=hooks,
     )
 
 
@@ -528,6 +533,7 @@ def _run_rounds(
     timeout: int,
     model: str,
     forever: bool = False,
+    hooks: dict[str, str] | None = None,
 ) -> None:
     """Run evolution rounds from start_round to max_rounds.
 
@@ -547,7 +553,10 @@ def _run_rounds(
         timeout: Timeout for the check command in seconds.
         model: Claude model identifier.
         forever: If True, restart after convergence instead of exiting.
+        hooks: Event hook configuration dict (from ``load_hooks``).
     """
+    if hooks is None:
+        hooks = {}
     print(f"[probe] _run_rounds starting from round {start_round} to {max_rounds}")
     while True:
         for round_num in range(start_round, max_rounds + 1):
@@ -569,6 +578,10 @@ def _run_rounds(
                 ui.round_header(round_num, max_rounds, target="(initial analysis)")
             else:
                 ui.round_header(round_num, max_rounds, target="(initial analysis)")
+
+            # Fire on_round_start hook
+            session_name = run_dir.name
+            fire_hook(hooks, "on_round_start", session=session_name, round_num=round_num, status="running")
 
             # Launch round as subprocess — picks up code changes from previous round
             evolve_script = Path(__file__).parent / "evolve.py"
@@ -637,6 +650,9 @@ def _run_rounds(
                         attempt=attempt,
                     )
 
+                # Fire on_error hook for failed round
+                fire_hook(hooks, "on_error", session=session_name, round_num=round_num, status="error")
+
                 # If retries remain, inform and loop
                 if attempt <= MAX_DEBUG_RETRIES:
                     ui.warn(
@@ -658,6 +674,9 @@ def _run_rounds(
             if not round_succeeded:
                 continue  # skip convergence check, move to next round
 
+            # Fire on_round_end hook for successful round
+            fire_hook(hooks, "on_round_end", session=session_name, round_num=round_num, status="success")
+
             # Clean up diagnostic file on success (no longer relevant)
             error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
             if error_log.is_file():
@@ -669,6 +688,9 @@ def _run_rounds(
                 reason = converged_path.read_text().strip()
                 print(f"[probe] CONVERGED at round {round_num}: {reason[:80]}")
                 ui.converged(round_num, reason)
+
+                # Fire on_converged hook
+                fire_hook(hooks, "on_converged", session=session_name, round_num=round_num, status="converged")
 
                 # Generate evolution report
                 _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True)
