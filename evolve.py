@@ -224,6 +224,7 @@ def main():
     start_p.add_argument("--resume", action="store_true", help="Resume the most recent interrupted session")
     start_p.add_argument("--forever", action="store_true", help="Autonomous forever mode — evolve indefinitely on a separate branch until convergence")
     start_p.add_argument("--dry-run", action="store_true", dest="dry_run", help="Read-only analysis mode — produces a report without modifying files")
+    start_p.add_argument("--validate", action="store_true", help="Validate spec compliance — pass/fail per README claim (exit 0=pass, 1=fail)")
     start_p.add_argument("--json", action="store_true", help="Emit structured JSON events to stdout (for CI/CD)")
 
     # --- status ---
@@ -256,7 +257,15 @@ def main():
         if args.json:
             import tui as _tui_mod
             _tui_mod._use_json = True
-        if args.dry_run:
+        if args.validate:
+            from loop import run_validate
+            sys.exit(run_validate(
+                project_dir=project_path,
+                check_cmd=args.check,
+                timeout=args.timeout,
+                model=args.model,
+            ))
+        elif args.dry_run:
             from loop import run_dry_run
             run_dry_run(
                 project_dir=project_path,

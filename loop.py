@@ -1129,6 +1129,108 @@ def run_dry_run(
         ui.warn("No dry_run_report.md produced by the agent")
 
 
+def run_validate(
+    project_dir: Path,
+    check_cmd: str | None = None,
+    timeout: int = 300,
+    model: str = "claude-opus-4-6",
+) -> int:
+    """Run spec compliance validation without modifying project files.
+
+    Launches the agent in read-only mode with a validation-focused prompt.
+    The agent checks every README claim against the code and produces a
+    ``validate_report.md`` with pass/fail per claim.
+
+    Args:
+        project_dir: Root directory of the project being validated.
+        check_cmd: Shell command to verify the project (run read-only).
+        timeout: Timeout in seconds for the check command.
+        model: Claude model identifier to use.
+
+    Returns:
+        Exit code: 0 if all claims pass, 1 if any fail, 2 on error.
+    """
+    ui = get_tui()
+
+    print(f"[probe] validate starting — project={project_dir.name}")
+
+    # Auto-detect check command if not provided
+    if check_cmd is None:
+        detected = _auto_detect_check(project_dir)
+        if detected:
+            ui.info(f"  Auto-detected check command: {detected}")
+            check_cmd = detected
+
+    # Create timestamped run directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = project_dir / "runs" / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ui.run_dir_info(str(run_dir))
+    ui.info("  Mode: VALIDATE (spec compliance check, no file changes)")
+    print(f"[probe] validate session: {run_dir}")
+
+    # 1. Run check command if provided
+    check_output = ""
+    if check_cmd:
+        ui.check_result("check", check_cmd, passed=None)
+        try:
+            result = subprocess.run(
+                check_cmd, shell=True, cwd=str(project_dir),
+                capture_output=True, text=True, timeout=timeout,
+            )
+            check_output = f"Exit code: {result.returncode}\n"
+            if result.stdout:
+                check_output += f"stdout:\n{result.stdout[-2000:]}\n"
+            if result.stderr:
+                check_output += f"stderr:\n{result.stderr[-2000:]}\n"
+            ok = result.returncode == 0
+            ui.check_result("check", check_cmd, passed=ok)
+        except subprocess.TimeoutExpired:
+            check_output = f"TIMEOUT after {timeout}s"
+            ui.check_result("check", check_cmd, timeout=True)
+    else:
+        ui.no_check()
+
+    # 2. Launch agent in validate mode (restricted tools)
+    from agent import run_validate_agent
+    import agent as _agent_mod
+    _agent_mod.MODEL = model
+
+    ui.agent_working()
+    run_validate_agent(
+        project_dir=project_dir,
+        check_output=check_output,
+        check_cmd=check_cmd,
+        run_dir=run_dir,
+    )
+
+    # 3. Parse the validate report for pass/fail determination
+    report_path = run_dir / "validate_report.md"
+    if not report_path.is_file():
+        ui.warn("No validate_report.md produced by the agent")
+        return 2
+
+    ui.info(f"  Validation report: {report_path}")
+
+    report_text = report_path.read_text(errors="replace")
+    # Count ✅ and ❌ markers
+    passed = len(re.findall(r"✅", report_text))
+    failed = len(re.findall(r"❌", report_text))
+
+    if failed > 0:
+        ui.info(f"  Result: FAIL — {passed} passed, {failed} failed")
+        print(f"[probe] validate result: FAIL ({passed} passed, {failed} failed)")
+        return 1
+    elif passed > 0:
+        ui.info(f"  Result: PASS — {passed} claims validated")
+        print(f"[probe] validate result: PASS ({passed} claims validated)")
+        return 0
+    else:
+        # No markers found — likely an error in report generation
+        ui.warn("Could not determine pass/fail from validate_report.md")
+        return 2
+
+
 def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = None) -> None:
     """Launch party mode: multi-agent brainstorming post-convergence.
 
