@@ -996,6 +996,38 @@ class TestEvolveLoopAutoDetect:
         args = mock_run.call_args
         assert args[0][6] == "pytest"  # check_cmd is the 7th positional arg
 
+    def test_auto_detect_returns_none(self, tmp_path: Path):
+        """When auto-detect finds nothing, check_cmd stays None."""
+        (tmp_path / "README.md").write_text("# Test")
+        (tmp_path / "runs").mkdir()
+
+        with patch("loop._auto_detect_check", return_value=None) as mock_detect, \
+             patch("loop._ensure_git"), \
+             patch("loop._run_rounds") as mock_run, \
+             patch("loop.get_tui"):
+            evolve_loop(tmp_path, max_rounds=5, check_cmd=None)
+
+        mock_detect.assert_called_once_with(tmp_path)
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+        assert args[0][6] is None  # check_cmd remains None
+
+    def test_explicit_check_cmd_bypasses_auto_detect(self, tmp_path: Path):
+        """When check_cmd is explicitly provided, _auto_detect_check is NOT called."""
+        (tmp_path / "README.md").write_text("# Test")
+        (tmp_path / "runs").mkdir()
+
+        with patch("loop._auto_detect_check") as mock_detect, \
+             patch("loop._ensure_git"), \
+             patch("loop._run_rounds") as mock_run, \
+             patch("loop.get_tui"):
+            evolve_loop(tmp_path, max_rounds=5, check_cmd="npm test")
+
+        mock_detect.assert_not_called()
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+        assert args[0][6] == "npm test"  # explicit check_cmd passed through
+
 
 # ---------------------------------------------------------------------------
 # _run_party_mode — agent persona read error (lines 887-888)
