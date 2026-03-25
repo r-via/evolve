@@ -6,10 +6,47 @@ from unittest.mock import patch
 
 from agent import (
     build_prompt,
+    _build_check_section,
     _is_benign_runtime_error,
     _load_project_context,
     _should_retry_rate_limit,
 )
+
+
+# ---------------------------------------------------------------------------
+# _build_check_section
+# ---------------------------------------------------------------------------
+
+class TestBuildCheckSection:
+    """Unit tests for _build_check_section covering all three branches."""
+
+    def test_cmd_and_output(self):
+        """When both check_cmd and check_output are provided, render full section."""
+        result = _build_check_section("pytest", "5 passed")
+        assert "## Check command: `pytest`" in result
+        assert "### Latest check output:" in result
+        assert "5 passed" in result
+
+    def test_cmd_only_no_output(self):
+        """When check_cmd is provided but check_output is empty, render 'not yet run'."""
+        result = _build_check_section("pytest", "")
+        assert "## Check command: `pytest` (not yet run)" in result
+        assert "Latest check output" not in result
+
+    def test_no_cmd_no_output(self):
+        """When check_cmd is None and output is empty, return empty string."""
+        result = _build_check_section(None, "")
+        assert result == ""
+
+    def test_no_cmd_with_output(self):
+        """When check_cmd is None but output exists, return empty string (no cmd = no section)."""
+        result = _build_check_section(None, "some output")
+        assert result == ""
+
+    def test_cmd_and_output_contains_markdown_fence(self):
+        """Output is wrapped in a Markdown code fence."""
+        result = _build_check_section("npm test", "PASS all tests")
+        assert "```\nPASS all tests\n```" in result
 
 
 # ---------------------------------------------------------------------------
