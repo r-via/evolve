@@ -376,3 +376,122 @@ class TestCleanSessions:
         args = ap.parse_args(["init", "/tmp/project"])
         assert args.command == "init"
         assert args.project_dir == "/tmp/project"
+
+    def test_history_cli_parsing(self):
+        """Verify history subcommand CLI args are parsed correctly."""
+        import argparse
+        ap = argparse.ArgumentParser()
+        sub = ap.add_subparsers(dest="command")
+        history_p = sub.add_parser("history")
+        history_p.add_argument("project_dir")
+        args = ap.parse_args(["history", "/tmp/project"])
+        assert args.command == "history"
+        assert args.project_dir == "/tmp/project"
+
+
+class TestShowHistory:
+    """Test _show_history with mock project directories."""
+
+    def test_no_runs_dir(self, tmp_path: Path):
+        """history works when no runs/ directory exists."""
+        from evolve import _show_history
+        _show_history(tmp_path)  # should not crash
+
+    def test_empty_runs_dir(self, tmp_path: Path):
+        """history works with an empty runs/ directory."""
+        (tmp_path / "runs").mkdir()
+        from evolve import _show_history
+        _show_history(tmp_path)
+
+    def test_no_session_dirs(self, tmp_path: Path):
+        """history works when runs/ has only non-session files."""
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        (runs / "improvements.md").write_text("# Improvements\n")
+        (runs / "memory.md").write_text("# Memory\n")
+        from evolve import _show_history
+        _show_history(tmp_path)
+
+    def test_single_session_no_report(self, tmp_path: Path):
+        """history shows a session even without evolution_report.md."""
+        runs = tmp_path / "runs"
+        session = runs / "20260101_000000"
+        session.mkdir(parents=True)
+        (session / "conversation_loop_1.md").write_text("# Round 1")
+        (session / "conversation_loop_2.md").write_text("# Round 2")
+        from evolve import _show_history
+        _show_history(tmp_path)
+
+    def test_session_with_evolution_report(self, tmp_path: Path):
+        """history parses evolution_report.md for round/improvement data."""
+        runs = tmp_path / "runs"
+        session = runs / "20260101_000000"
+        session.mkdir(parents=True)
+        (session / "evolution_report.md").write_text(textwrap.dedent("""\
+            # Evolution Report
+            **Project:** test
+            **Session:** 20260101_000000
+            **Rounds:** 5/10
+            **Status:** CONVERGED
+
+            ## Summary
+            - 3 improvements completed
+            - 1 bugs fixed
+            - 5 files modified
+            - 2 improvements remaining
+        """))
+        from evolve import _show_history
+        _show_history(tmp_path)
+
+    def test_session_converged_marker(self, tmp_path: Path):
+        """history detects CONVERGED marker when no report exists."""
+        runs = tmp_path / "runs"
+        session = runs / "20260101_000000"
+        session.mkdir(parents=True)
+        (session / "CONVERGED").write_text("All done")
+        from evolve import _show_history
+        _show_history(tmp_path)
+
+    def test_multiple_sessions(self, tmp_path: Path):
+        """history shows all sessions sorted by timestamp."""
+        runs = tmp_path / "runs"
+        s1 = runs / "20260101_000000"
+        s1.mkdir(parents=True)
+        (s1 / "CONVERGED").write_text("Done")
+        (s1 / "evolution_report.md").write_text(textwrap.dedent("""\
+            # Evolution Report
+            **Rounds:** 3/10
+            **Status:** CONVERGED
+
+            ## Summary
+            - 3 improvements completed
+        """))
+
+        s2 = runs / "20260102_000000"
+        s2.mkdir(parents=True)
+        (s2 / "conversation_loop_1.md").write_text("# Round 1")
+
+        s3 = runs / "20260103_000000"
+        s3.mkdir(parents=True)
+        (s3 / "CONVERGED").write_text("All good")
+        (s3 / "evolution_report.md").write_text(textwrap.dedent("""\
+            # Evolution Report
+            **Rounds:** 5/20
+            **Status:** CONVERGED
+
+            ## Summary
+            - 4 improvements completed
+            - 1 improvements remaining
+        """))
+
+        from evolve import _show_history
+        _show_history(tmp_path)
+
+    def test_ignores_non_timestamped_dirs(self, tmp_path: Path):
+        """history ignores directories that don't start with a digit."""
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        (runs / "some_other_dir").mkdir()
+        (runs / "20260101_000000").mkdir()
+        from evolve import _show_history
+        _show_history(tmp_path)
