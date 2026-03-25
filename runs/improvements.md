@@ -5,4 +5,5 @@
 - [x] [functional] Implement --dry-run flag — README describes read-only analysis mode that produces dry_run_report.md without modifying files
 - [x] [functional] Implement evolution_report.md generation — README describes a post-session summary with timeline table, rounds, files changed, and test counts, parsed from conversation logs and commit messages
 - [x] [functional] Implement `evolve status` subcommand — README describes `evolve status <project-dir>` to check evolution status, but it may not be fully implemented with meaningful output
-- [ ] [refactor] Refactor _resolve_config to use a data-driven loop over field definitions as described in the README Architecture section — current implementation has per-field duplication instead of iterating over a field spec table
+- [x] [refactor] Refactor _resolve_config to use a data-driven loop over field definitions as described in the README Architecture section — current implementation has per-field duplication instead of iterating over a field spec table
+- [ ] [performance] Eliminate RuntimeWarning noise in test suite — 4 tests produce "coroutine was never awaited" warnings from mocked async functions; properly close or await these coroutines to get clean test output

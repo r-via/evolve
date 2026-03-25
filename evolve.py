@@ -74,6 +74,9 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
     3. evolve.toml / pyproject.toml [tool.evolve]
     4. Built-in defaults
 
+    Settings are resolved via a data-driven loop over field definitions,
+    eliminating per-field duplication.
+
     Args:
         args: Parsed argparse Namespace from the CLI.
         project_dir: Root directory of the project.
@@ -85,73 +88,66 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
 
     file_config = _load_config(project_dir)
 
-    # Defaults
-    defaults = {
-        "check": None,
-        "rounds": 10,
-        "timeout": 300,
-        "model": "claude-opus-4-6",
-        "yolo": False,
-    }
+    # Field definitions: (name, env_var, default, type)
+    # type is "str", "int", or "bool" — controls parsing of env/file values
+    # and CLI-set detection logic.
+    fields = [
+        ("check", "EVOLVE_CHECK", None, "str"),
+        ("rounds", "EVOLVE_ROUNDS", 10, "int"),
+        ("timeout", "EVOLVE_TIMEOUT", 300, "int"),
+        ("model", "EVOLVE_MODEL", "claude-opus-4-6", "str"),
+        ("yolo", "EVOLVE_YOLO", False, "bool"),
+    ]
 
-    # For each setting, apply resolution order
-    # check: CLI (non-None) > env > file > default
-    if args.check is not None:
-        pass  # CLI wins
-    elif os.environ.get("EVOLVE_CHECK"):
-        args.check = os.environ["EVOLVE_CHECK"]
-    elif "check" in file_config and file_config["check"]:
-        args.check = file_config["check"]
-    else:
-        args.check = defaults["check"]
+    for name, env_var, default, ftype in fields:
+        current = getattr(args, name, None)
 
-    # rounds: CLI (non-default) > env > file > default
-    cli_rounds_set = any(a == "--rounds" or a.startswith("--rounds=") for a in sys.argv)
-    if cli_rounds_set:
-        pass  # CLI wins
-    elif os.environ.get("EVOLVE_ROUNDS"):
-        try:
-            args.rounds = int(os.environ["EVOLVE_ROUNDS"])
-        except ValueError:
-            pass
-    elif "rounds" in file_config:
-        args.rounds = int(file_config["rounds"])
-    elif args.rounds is None:
-        args.rounds = defaults["rounds"]
+        # Step 1: Check if CLI flag was explicitly set
+        if ftype == "bool":
+            cli_set = bool(current)
+        elif ftype == "int":
+            cli_set = any(
+                a == f"--{name}" or a.startswith(f"--{name}=") for a in sys.argv
+            )
+        else:  # str
+            cli_set = current is not None
 
-    # timeout: CLI (non-default) > env > file > default
-    cli_timeout_set = any(a == "--timeout" or a.startswith("--timeout=") for a in sys.argv)
-    if cli_timeout_set:
-        pass  # CLI wins
-    elif os.environ.get("EVOLVE_TIMEOUT"):
-        try:
-            args.timeout = int(os.environ["EVOLVE_TIMEOUT"])
-        except ValueError:
-            pass
-    elif "timeout" in file_config:
-        args.timeout = int(file_config["timeout"])
-    elif args.timeout is None:
-        args.timeout = defaults["timeout"]
+        if cli_set:
+            continue  # CLI wins
 
-    # model: CLI (non-None) > env > file > default
-    if args.model is not None:
-        pass  # CLI wins
-    elif os.environ.get("EVOLVE_MODEL"):
-        args.model = os.environ["EVOLVE_MODEL"]
-    elif "model" in file_config:
-        args.model = file_config["model"]
-    else:
-        args.model = defaults["model"]
+        # Step 2: Check environment variable
+        env_val = os.environ.get(env_var, "")
+        if env_val:
+            if ftype == "int":
+                try:
+                    setattr(args, name, int(env_val))
+                except ValueError:
+                    pass  # invalid int — leave as-is
+                continue  # env was present; skip file/default regardless
+            elif ftype == "bool":
+                if env_val.lower() in ("1", "true", "yes"):
+                    setattr(args, name, True)
+                    continue
+            else:  # str
+                setattr(args, name, env_val)
+                continue
 
-    # yolo: CLI (True) > env > file > default
-    if args.yolo:
-        pass  # CLI wins
-    elif os.environ.get("EVOLVE_YOLO", "").lower() in ("1", "true", "yes"):
-        args.yolo = True
-    elif "yolo" in file_config:
-        args.yolo = bool(file_config["yolo"])
-    elif args.yolo is None:
-        args.yolo = defaults["yolo"]
+        # Step 3: Check config file
+        if name in file_config:
+            file_val = file_config[name]
+            if ftype == "int":
+                setattr(args, name, int(file_val))
+            elif ftype == "bool":
+                setattr(args, name, bool(file_val))
+            elif file_val:  # str — only set if truthy (non-empty)
+                setattr(args, name, file_val)
+                continue
+            if ftype != "str":
+                continue
+
+        # Step 4: Apply default (only if not already set)
+        if getattr(args, name, None) is None:
+            setattr(args, name, default)
 
     return args
 
