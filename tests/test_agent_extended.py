@@ -88,7 +88,7 @@ class TestBuildPromptExtended:
         runs.mkdir()
         (runs / "improvements.md").write_text("- [x] [functional] all done\n")
         prompt = build_prompt(tmp_path)
-        assert "No improvements yet" in prompt
+        assert "create initial" in prompt
 
     def test_run_dir_interpolation(self, tmp_path: Path):
         """run_dir is used as fallback when no run_dir specified."""
