@@ -9,7 +9,7 @@ class TestPlainTUIExtended:
     def test_no_check(self, capsys):
         PlainTUI().no_check()
         out = capsys.readouterr().out
-        assert "no check" in out.lower() or "manual" in out.lower() or len(out) >= 0
+        assert "no check" in out.lower() or "manual" in out.lower()
 
     def test_agent_working(self, capsys):
         PlainTUI().agent_working()
@@ -42,7 +42,7 @@ class TestPlainTUIExtended:
     def test_git_status_no_changes(self, capsys):
         PlainTUI().git_status("chore: nothing", pushed=None)
         out = capsys.readouterr().out
-        assert "chore: nothing" in out or len(out) >= 0
+        assert "no changes" in out.lower()
 
     def test_max_rounds(self, capsys):
         PlainTUI().max_rounds(10, 7, 3)
