@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from pathlib import Path
 
 from loop import _is_needs_package
@@ -333,7 +334,6 @@ def analyze_and_fix(
             wait = _should_retry_rate_limit(e, attempt, max_retries)
             if wait is not None:
                 ui.sdk_rate_limited(wait, attempt, max_retries)
-                import time
                 time.sleep(wait)
                 continue
 
