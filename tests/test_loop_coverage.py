@@ -676,3 +676,201 @@ class TestRunPartyModeExtended:
             _run_party_mode(tmp_path, run_dir, ui)
 
         ui.warn.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _forever_restart path in _run_rounds (lines 620-639)
+# ---------------------------------------------------------------------------
+
+class TestForeverRestartInRunRounds:
+    """Test the forever-mode restart path inside _run_rounds."""
+
+    def _setup_project(self, tmp_path):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        run_dir = project_dir / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        imp_path = project_dir / "runs" / "improvements.md"
+        imp_path.write_text("- [ ] [functional] do something\n")
+        (project_dir / "README.md").write_text("# Test")
+        return project_dir, run_dir, imp_path
+
+    def test_forever_restarts_after_convergence(self, tmp_path: Path):
+        """When forever=True and CONVERGED, _forever_restart is called and loop restarts."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = MagicMock()
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            convo = Path(cwd) / "runs" / "session" / f"conversation_loop_{round_num}.md"
+            # First call: converge
+            if call_count == 1:
+                convo.parent.mkdir(parents=True, exist_ok=True)
+                convo.write_text("# Round 1")
+                (run_dir / "CONVERGED").write_text("All done")
+                imp_path.write_text("- [x] [functional] do something\n")
+                return 0, "output", False
+            # Second call (after restart): just complete normally, no convergence
+            # The run_dir changes on restart, so conversation goes to new dir
+            # Just create a conversation file wherever the cwd points
+            for d in Path(cwd).glob("runs/*/"):
+                if d.is_dir() and d.name != "session":
+                    (d / f"conversation_loop_{round_num}.md").write_text("# Round after restart")
+                    break
+            return 0, "output", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._forever_restart") as mock_restart, \
+             patch("loop._git_commit") as mock_commit, \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                yolo=False, timeout=300, model="claude-opus-4-6",
+                forever=True,
+            )
+
+        # _forever_restart should have been called
+        mock_restart.assert_called_once_with(project_dir, run_dir, imp_path, ui)
+        # _git_commit called for the forever restart
+        mock_commit.assert_called_once()
+        assert "forever mode" in mock_commit.call_args[0][1]
+        # ui.run_dir_info called with new session dir
+        ui.run_dir_info.assert_called_once()
+        # Second iteration hits max rounds and exits with 1
+        assert exc.value.code == 1
+
+    def test_forever_creates_new_session_dir(self, tmp_path: Path):
+        """Forever restart creates a new timestamped session directory."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = MagicMock()
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            if call_count == 1:
+                convo.write_text("# Round 1")
+                (run_dir / "CONVERGED").write_text("All done")
+                imp_path.write_text("- [x] [functional] do something\n")
+                return 0, "output", False
+            # On second call, create conversation in whatever run_dir was passed
+            return 0, "output", False
+
+        new_dirs_before = set(d.name for d in (project_dir / "runs").iterdir() if d.is_dir())
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._forever_restart"), \
+             patch("loop._git_commit"), \
+             pytest.raises(SystemExit):
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+                forever=True,
+            )
+
+        new_dirs_after = set(d.name for d in (project_dir / "runs").iterdir() if d.is_dir())
+        new_session_dirs = new_dirs_after - new_dirs_before
+        # A new timestamped session directory should have been created
+        assert len(new_session_dirs) == 1
+
+
+# ---------------------------------------------------------------------------
+# Party mode result handling (lines 987-993 of _run_party_mode)
+# ---------------------------------------------------------------------------
+
+class TestPartyModeResultHandling:
+    """Test the end of _run_party_mode where it checks for output files."""
+
+    def _setup_party(self, tmp_path):
+        """Set up a project with agents and required context for party mode."""
+        agents = tmp_path / "agents"
+        agents.mkdir()
+        (agents / "dev.md").write_text("# Dev Agent")
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        (tmp_path / "README.md").write_text("# Test Project")
+        (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
+        (tmp_path / "runs" / "memory.md").write_text("# Memory\n")
+        (run_dir / "CONVERGED").write_text("All done")
+        return run_dir
+
+    def _run_party_with_mock(self, tmp_path, run_dir, ui, asyncio_side_effect):
+        """Run _run_party_mode with mocked asyncio.run and agent."""
+        import asyncio as _asyncio
+        import agent as agent_mod
+
+        with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
+             patch.object(_asyncio, 'run', side_effect=asyncio_side_effect):
+            _run_party_mode(tmp_path, run_dir, ui)
+
+    def test_both_files_produced(self, tmp_path: Path):
+        """party_results called with both paths when both files exist."""
+        run_dir = self._setup_party(tmp_path)
+        ui = MagicMock()
+
+        def mock_asyncio_run(coro):
+            coro.close()
+            (run_dir / "party_report.md").write_text("# Party Report\n")
+            (run_dir / "README_proposal.md").write_text("# New README\n")
+
+        self._run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
+
+        ui.party_results.assert_called_once_with(
+            str(run_dir / "README_proposal.md"),
+            str(run_dir / "party_report.md"),
+        )
+
+    def test_no_files_produced(self, tmp_path: Path):
+        """party_results called with None when no files produced."""
+        run_dir = self._setup_party(tmp_path)
+        ui = MagicMock()
+
+        def mock_asyncio_run(coro):
+            coro.close()
+
+        self._run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
+
+        ui.party_results.assert_called_once_with(None, None)
+
+    def test_only_report_produced(self, tmp_path: Path):
+        """party_results called with report only when proposal missing."""
+        run_dir = self._setup_party(tmp_path)
+        ui = MagicMock()
+
+        def mock_asyncio_run(coro):
+            coro.close()
+            (run_dir / "party_report.md").write_text("# Report\n")
+
+        self._run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
+
+        ui.party_results.assert_called_once_with(
+            None,
+            str(run_dir / "party_report.md"),
+        )
+
+    def test_only_proposal_produced(self, tmp_path: Path):
+        """party_results called with proposal only when report missing."""
+        run_dir = self._setup_party(tmp_path)
+        ui = MagicMock()
+
+        def mock_asyncio_run(coro):
+            coro.close()
+            (run_dir / "README_proposal.md").write_text("# Proposal\n")
+
+        self._run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
+
+        ui.party_results.assert_called_once_with(
+            str(run_dir / "README_proposal.md"),
+            None,
+        )
