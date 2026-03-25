@@ -4,4 +4,5 @@
 - [x] [functional] Implement auto-detection of test framework when --check is omitted — README says evolve should look for pytest, npm test, cargo test, go test, make test and use the first found
 - [x] [functional] Implement --dry-run flag — README describes read-only analysis mode that produces dry_run_report.md without modifying files
 - [x] [functional] Implement evolution_report.md generation — README describes a post-session summary with timeline table, rounds, files changed, and test counts, parsed from conversation logs and commit messages
-- [ ] [functional] Implement `evolve status` subcommand — README describes `evolve status <project-dir>` to check evolution status, but it may not be fully implemented with meaningful output
+- [x] [functional] Implement `evolve status` subcommand — README describes `evolve status <project-dir>` to check evolution status, but it may not be fully implemented with meaningful output
+- [ ] [refactor] Refactor _resolve_config to use a data-driven loop over field definitions as described in the README Architecture section — current implementation has per-field duplication instead of iterating over a field spec table
