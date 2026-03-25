@@ -373,6 +373,49 @@ class TestGenerateEvolutionReport:
         report = (run_dir / "evolution_report.md").read_text()
         assert "# Evolution Report" in report
 
+    def test_report_arrow_format_test_counts(self, tmp_path: Path):
+        """Tests column shows arrow format (prev→current) when counts change."""
+        project_dir, run_dir = self._setup_project(tmp_path)
+        (run_dir / "check_round_1.txt").write_text("Round 1 PASS\n42 passed\n")
+        (run_dir / "check_round_2.txt").write_text("Round 2 PASS\n45 passed\n")
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
+        report = (run_dir / "evolution_report.md").read_text()
+        # Round 1 has no previous, shows "42 passed"
+        assert "42 passed" in report
+        # Round 2 should show arrow format "42→45"
+        assert "42\u219245" in report
+
+    def test_report_no_arrow_when_counts_unchanged(self, tmp_path: Path):
+        """Tests column shows plain format when counts don't change between rounds."""
+        project_dir, run_dir = self._setup_project(tmp_path)
+        (run_dir / "check_round_1.txt").write_text("Round 1 PASS\n42 passed\n")
+        (run_dir / "check_round_2.txt").write_text("Round 2 PASS\n42 passed\n")
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
+        report = (run_dir / "evolution_report.md").read_text()
+        # Both rounds should show "42 passed" (no arrow since unchanged)
+        assert report.count("42 passed") == 2
+        assert "\u2192" not in report
+
+    def test_report_deduplicates_files(self, tmp_path: Path):
+        """Files changed are deduplicated per round."""
+        project_dir, run_dir = self._setup_project(tmp_path)
+        (run_dir / "conversation_loop_1.md").write_text(
+            "Edit → src/foo.py\nEdit → src/foo.py\nEdit → src/bar.py\n"
+        )
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
+        report = (run_dir / "evolution_report.md").read_text()
+        # src/foo.py should appear only once in the files column
+        # Find the timeline row for round 1
+        for line in report.splitlines():
+            if line.startswith("| 1 |"):
+                assert line.count("src/foo.py") == 1
+                assert "src/bar.py" in line
+                break
+        else:
+            raise AssertionError("Timeline row for round 1 not found")  # pragma: no cover
 
     def test_detect_last_round_malformed_name(self, tmp_path: Path):
         """Malformed conversation file name doesn't crash."""

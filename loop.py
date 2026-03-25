@@ -158,6 +158,7 @@ def _generate_evolution_report(
     files_modified: set[str] = set()
     bugs_fixed = 0
     improvements_done = 0
+    prev_passed: int | None = None  # track test counts for arrow format
 
     for r in range(1, final_round + 1):
         # Try to get the commit message for this round from git log
@@ -201,31 +202,40 @@ def _generate_evolution_report(
         elif action.startswith("feat"):
             improvements_done += 1
 
-        # Parse check results
+        # Parse check results — show arrow format (prev→current) when possible
         tests_info = ""
         check_path = run_dir / f"check_round_{r}.txt"
+        cur_passed: int | None = None
         if check_path.is_file():
             check_text = check_path.read_text(errors="replace")
             pass_fail = "PASS" if "PASS" in check_text else "FAIL"
             # Try to extract test counts (pytest format: "N passed")
             m = re.search(r"(\d+)\s+passed", check_text)
             if m:
-                tests_info = f"{m.group(1)} passed"
+                cur_passed = int(m.group(1))
+                if prev_passed is not None and cur_passed != prev_passed:
+                    tests_info = f"{prev_passed}\u2192{cur_passed}"
+                else:
+                    tests_info = f"{cur_passed} passed"
                 m2 = re.search(r"(\d+)\s+failed", check_text)
                 if m2:
                     tests_info += f", {m2.group(1)} failed"
             else:
                 tests_info = pass_fail
+        prev_passed = cur_passed if cur_passed is not None else prev_passed
 
-        # Parse files changed from conversation log
+        # Parse files changed from conversation log (deduplicated)
         round_files: list[str] = []
+        seen_files: set[str] = set()
         convo_path = run_dir / f"conversation_loop_{r}.md"
         if convo_path.is_file():
             convo_text = convo_path.read_text(errors="replace")
             # Look for file edit patterns: Edit → filename, Write → filename
             for fm in re.finditer(r"(?:Edit|Write)\s*→?\s*[`]?([^\s`\n]+\.\w+)", convo_text):
                 fname = fm.group(1)
-                round_files.append(fname)
+                if fname not in seen_files:
+                    seen_files.add(fname)
+                    round_files.append(fname)
                 files_modified.add(fname)
 
         files_str = ", ".join(round_files[:3]) if round_files else ""
