@@ -471,3 +471,162 @@ class TestBuildPromptCrashLogs:
         (run_dir / "check_round_2.txt").write_text("Round 2: MID")
         prompt = build_prompt(tmp_path, run_dir=run_dir)
         assert "Round 3: LATEST" in prompt
+
+
+# ---------------------------------------------------------------------------
+# _patch_sdk_parser — patched function invocation (lines 181-186)
+# ---------------------------------------------------------------------------
+
+class TestPatchSdkParserInvocation:
+    """Test that the patched parse_message function works correctly."""
+
+    def test_patched_fn_returns_none_on_rate_limit_event_error(self):
+        """Patched parse_message returns None for rate_limit_event errors."""
+        def original(data):
+            raise ValueError("bad event data")
+
+        original._patched = False
+
+        mock_parser = MagicMock()
+        mock_parser.parse_message = original
+
+        with patch.dict("sys.modules", {
+            "claude_agent_sdk": MagicMock(),
+            "claude_agent_sdk._internal": MagicMock(message_parser=mock_parser),
+            "claude_agent_sdk._internal.message_parser": mock_parser,
+        }):
+            _patch_sdk_parser()
+
+        # The patched function should return None for rate_limit_event
+        result = mock_parser.parse_message({"type": "rate_limit_event"})
+        assert result is None
+
+    def test_patched_fn_reraises_non_rate_limit_errors(self):
+        """Patched parse_message re-raises errors for non-rate_limit_event data."""
+        def original(data):
+            raise ValueError("parse error")
+
+        original._patched = False
+
+        mock_parser = MagicMock()
+        mock_parser.parse_message = original
+
+        with patch.dict("sys.modules", {
+            "claude_agent_sdk": MagicMock(),
+            "claude_agent_sdk._internal": MagicMock(message_parser=mock_parser),
+            "claude_agent_sdk._internal.message_parser": mock_parser,
+        }):
+            _patch_sdk_parser()
+
+        with pytest.raises(ValueError, match="parse error"):
+            mock_parser.parse_message({"type": "other_event"})
+
+    def test_patched_fn_passes_through_on_success(self):
+        """Patched parse_message returns original result when no exception."""
+        sentinel = object()
+
+        def original(data):
+            return sentinel
+
+        original._patched = False
+
+        mock_parser = MagicMock()
+        mock_parser.parse_message = original
+
+        with patch.dict("sys.modules", {
+            "claude_agent_sdk": MagicMock(),
+            "claude_agent_sdk._internal": MagicMock(message_parser=mock_parser),
+            "claude_agent_sdk._internal.message_parser": mock_parser,
+        }):
+            _patch_sdk_parser()
+
+        result = mock_parser.parse_message({"type": "anything"})
+        assert result is sentinel
+
+    def test_patched_fn_reraises_for_non_dict_data(self):
+        """Patched parse_message re-raises when data is not a dict."""
+        def original(data):
+            raise TypeError("not a dict")
+
+        original._patched = False
+
+        mock_parser = MagicMock()
+        mock_parser.parse_message = original
+
+        with patch.dict("sys.modules", {
+            "claude_agent_sdk": MagicMock(),
+            "claude_agent_sdk._internal": MagicMock(message_parser=mock_parser),
+            "claude_agent_sdk._internal.message_parser": mock_parser,
+        }):
+            _patch_sdk_parser()
+
+        with pytest.raises(TypeError, match="not a dict"):
+            mock_parser.parse_message("string data")
+
+
+# ---------------------------------------------------------------------------
+# analyze_and_fix — _run() inner function (lines 390-393)
+# ---------------------------------------------------------------------------
+
+class TestAnalyzeAndFixRunInner:
+    """Test the _run() closure inside analyze_and_fix covers attempt counting."""
+
+    def _setup_project(self, tmp_path: Path):
+        (tmp_path / "README.md").write_text("# P")
+        (tmp_path / "runs").mkdir()
+
+    def test_first_attempt_uses_default_log_filename(self, tmp_path: Path):
+        """First attempt passes log_filename=None to run_claude_agent."""
+        self._setup_project(tmp_path)
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir()
+        mock_ui = MagicMock()
+
+        captured_calls = []
+
+        async def mock_run_agent(prompt, project_dir, round_num=1, run_dir=None, log_filename=None):
+            captured_calls.append({"round_num": round_num, "log_filename": log_filename})
+
+        mock_sdk = MagicMock()
+
+        with patch("agent.get_tui", return_value=mock_ui), \
+             patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
+             patch("agent.run_claude_agent", side_effect=mock_run_agent):
+            analyze_and_fix(tmp_path, round_num=3, run_dir=run_dir)
+
+        assert len(captured_calls) == 1
+        assert captured_calls[0]["log_filename"] is None
+        assert captured_calls[0]["round_num"] == 3
+
+    def test_retry_attempts_use_numbered_log_filenames(self, tmp_path: Path):
+        """Retry attempts generate conversation_loop_N_attempt_M.md filenames."""
+        self._setup_project(tmp_path)
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir()
+        mock_ui = MagicMock()
+
+        captured_calls = []
+        call_count = 0
+
+        async def mock_run_agent(prompt, project_dir, round_num=1, run_dir=None, log_filename=None):
+            nonlocal call_count
+            call_count += 1
+            captured_calls.append({"round_num": round_num, "log_filename": log_filename, "attempt": call_count})
+            if call_count < 3:
+                raise Exception("rate_limit_exceeded")
+
+        mock_sdk = MagicMock()
+
+        with patch("agent.get_tui", return_value=mock_ui), \
+             patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
+             patch("agent.run_claude_agent", side_effect=mock_run_agent), \
+             patch("agent.time.sleep"):
+            analyze_and_fix(tmp_path, round_num=5, run_dir=run_dir, max_retries=5)
+
+        assert len(captured_calls) == 3
+        # First attempt: no special filename
+        assert captured_calls[0]["log_filename"] is None
+        # Second attempt: attempt_2
+        assert captured_calls[1]["log_filename"] == "conversation_loop_5_attempt_2.md"
+        # Third attempt: attempt_3
+        assert captured_calls[2]["log_filename"] == "conversation_loop_5_attempt_3.md"
