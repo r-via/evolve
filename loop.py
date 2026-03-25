@@ -376,6 +376,10 @@ def _run_rounds(
         # --- Debug retry loop: run the round, diagnose failures, retry ---
         round_succeeded = False
         for attempt in range(1, MAX_DEBUG_RETRIES + 2):  # 1..MAX_DEBUG_RETRIES+1
+            # Snapshot conversation log size before subprocess so we can detect new output
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo_size_before = convo.stat().st_size if convo.is_file() else 0
+
             returncode, output, stalled = _run_monitored_subprocess(
                 cmd, str(project_dir), ui, round_num,
             )
@@ -403,11 +407,10 @@ def _run_rounds(
                 checked = _count_checked(improvements_path)
                 ui.progress_summary(checked, unchecked)
 
-                convo = run_dir / f"conversation_loop_{round_num}.md"
                 made_progress = (
                     checked != prev_checked
                     or unchecked != prev_unchecked
-                    or (convo.is_file() and convo.stat().st_size >= 100)
+                    or (convo.is_file() and convo.stat().st_size > convo_size_before)
                 )
                 if made_progress:
                     round_succeeded = True
