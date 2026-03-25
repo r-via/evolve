@@ -97,7 +97,12 @@ def _has_rich() -> bool:
 # ---------------------------------------------------------------------------
 
 class RichTUI:
-    """TUI powered by the `rich` library."""
+    """TUI powered by the ``rich`` library.
+
+    Uses rich panels, progress bars, and styled text for a polished
+    terminal experience.  Implements all ``TUIProtocol`` methods.
+    Falls back to ``PlainTUI`` when rich is unavailable (see ``get_tui``).
+    """
 
     def __init__(self):
         from rich.console import Console
@@ -283,7 +288,11 @@ class RichTUI:
 # ---------------------------------------------------------------------------
 
 class PlainTUI:
-    """Plain text fallback when `rich` is not installed."""
+    """Plain text fallback when ``rich`` is not installed.
+
+    Outputs all status information via ``print()`` using plain ASCII.
+    Implements all ``TUIProtocol`` methods with no external dependencies.
+    """
 
     def round_header(self, round_num: int, max_rounds: int,
                      target: str | None = None, checked: int = 0,
@@ -418,9 +427,9 @@ class PlainTUI:
 class JsonTUI:
     """Emit structured JSON events to stdout for CI/CD integration.
 
-    Each call emits a single JSON line with a ``type``, ``timestamp``, and
-    event-specific fields.  Implements the same ``TUIProtocol`` as RichTUI
-    and PlainTUI so the orchestrator needs zero changes.
+    Each call emits a single JSON line with a ``type``, ``timestamp`` (UTC
+    ISO-8601), and event-specific fields.  Implements all ``TUIProtocol``
+    methods so the orchestrator needs zero changes.  Enabled via ``--json``.
     """
 
     def __init__(self):

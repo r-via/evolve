@@ -10,6 +10,7 @@ from pathlib import Path
 from loop import _is_needs_package
 from tui import get_tui
 
+#: Default Claude model used by the agent for code analysis and fixes.
 MODEL = "claude-opus-4-6"
 
 
@@ -20,7 +21,21 @@ def build_prompt(
     yolo: bool = False,
     run_dir: Path | None = None,
 ) -> str:
-    """Build the prompt for the opus agent."""
+    """Build the system prompt for the opus agent from project context.
+
+    Assembles README, improvements list, memory, check results, and crash
+    logs into a single prompt string that guides the agent's behavior.
+
+    Args:
+        project_dir: Root directory of the project being evolved.
+        check_output: Output from the most recent check command run.
+        check_cmd: Shell command used to verify the project (e.g. 'pytest').
+        yolo: If True, allow improvements tagged [needs-package].
+        run_dir: Session run directory containing round artifacts.
+
+    Returns:
+        The fully interpolated prompt string.
+    """
     # Load system prompt
     prompt_path = Path(__file__).parent / "prompts" / "system.md"
     # Project can override with its own prompts/evolve-system.md
@@ -131,7 +146,12 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
 
 
 def _patch_sdk_parser():
-    """Monkey-patch SDK to not crash on malformed rate_limit_event."""
+    """Monkey-patch SDK to not crash on malformed rate_limit_event.
+
+    Wraps ``message_parser.parse_message`` so that malformed rate-limit
+    events return None instead of raising.  The patch is idempotent —
+    repeated calls are safe due to a ``_patched`` sentinel attribute.
+    """
     try:
         from claude_agent_sdk._internal import message_parser
         if getattr(message_parser.parse_message, '_patched', False):
@@ -157,7 +177,18 @@ async def run_claude_agent(
     run_dir: Path | None = None,
     log_filename: str | None = None,
 ) -> None:
-    """Run Claude Code agent with the given prompt. Logs conversation to run_dir/."""
+    """Run Claude Code agent with the given prompt. Logs conversation to run_dir/.
+
+    Streams SDK messages, deduplicates partial updates, and writes a
+    Markdown conversation log.  Tool calls are shown live in the TUI.
+
+    Args:
+        prompt: The assembled system prompt for the agent.
+        project_dir: Root directory of the project (used as cwd).
+        round_num: Current evolution round number (for log naming).
+        run_dir: Directory to write the conversation log into.
+        log_filename: Override the default log filename.
+    """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
 
@@ -282,7 +313,11 @@ async def run_claude_agent(
 
 
 def _is_benign_runtime_error(e: RuntimeError) -> bool:
-    """Check if a RuntimeError is a benign async teardown issue we can ignore."""
+    """Check if a RuntimeError is a benign async teardown issue we can ignore.
+
+    Returns True for known harmless messages like 'cancel scope' or
+    'Event loop is closed' that occur during asyncio shutdown.
+    """
     msg = str(e)
     return "cancel scope" in msg or "Event loop is closed" in msg
 
@@ -290,7 +325,13 @@ def _is_benign_runtime_error(e: RuntimeError) -> bool:
 def _should_retry_rate_limit(e: Exception, attempt: int, max_retries: int) -> int | None:
     """Return wait time in seconds if the error is a rate limit and retries remain.
 
-    Returns None if the error is not retryable.
+    Uses linear backoff (60s * attempt).  Returns None if the error is not
+    a rate-limit error or if all retries have been exhausted.
+
+    Args:
+        e: The exception raised by the SDK.
+        attempt: Current attempt number (1-based).
+        max_retries: Maximum number of retry attempts allowed.
     """
     if "rate_limit" in str(e).lower() and attempt < max_retries:
         return 60 * attempt
@@ -306,7 +347,20 @@ def analyze_and_fix(
     round_num: int = 1,
     run_dir: Path | None = None,
 ) -> None:
-    """Run Claude opus agent to analyze and fix code."""
+    """Run Claude opus agent to analyze and fix code.
+
+    Builds a prompt, then invokes the agent with retry logic for rate limits
+    and graceful handling of benign async teardown errors.
+
+    Args:
+        project_dir: Root directory of the project being evolved.
+        check_output: Output from the most recent check command.
+        check_cmd: Shell command used to verify the project.
+        yolo: If True, allow improvements tagged [needs-package].
+        max_retries: Maximum SDK call attempts on rate-limit errors.
+        round_num: Current evolution round number.
+        run_dir: Session run directory for conversation logs.
+    """
     ui = get_tui()
     try:
         from claude_agent_sdk import query

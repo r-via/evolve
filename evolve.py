@@ -28,6 +28,12 @@ def _load_config(project_dir: Path) -> dict:
     3. evolve.toml in project root
     4. pyproject.toml [tool.evolve] section
     5. Built-in defaults (caller handles)
+
+    Args:
+        project_dir: Root directory of the project to load config from.
+
+    Returns:
+        A dict of configuration values, or empty dict if no config found.
     """
     try:
         import tomllib
@@ -67,6 +73,13 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
     2. Environment variables
     3. evolve.toml / pyproject.toml [tool.evolve]
     4. Built-in defaults
+
+    Args:
+        args: Parsed argparse Namespace from the CLI.
+        project_dir: Root directory of the project.
+
+    Returns:
+        The mutated args Namespace with resolved values.
     """
     import os
 
@@ -144,7 +157,12 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
 
 
 def _check_deps():
-    """Check that required dependencies are installed. Exit with install instructions if not."""
+    """Check that required dependencies are installed.
+
+    Exits with code 2 and prints install instructions if claude-agent-sdk
+    is not importable.  Detects whether a venv exists and tailors the
+    instructions accordingly.
+    """
     evolve_dir = Path(__file__).parent
     venv_dir = evolve_dir / ".venv"
 
@@ -179,6 +197,11 @@ def _check_deps():
 
 
 def main():
+    """Entry point for the evolve CLI.
+
+    Parses command-line arguments and dispatches to the appropriate
+    subcommand: init, start, status, or clean.
+    """
     _check_deps()
 
     ap = argparse.ArgumentParser(
@@ -291,7 +314,11 @@ yolo = false
 
 
 def _init_config(project_dir: Path) -> None:
-    """Scaffold an evolve.toml with default settings."""
+    """Scaffold an evolve.toml with default settings.
+
+    Args:
+        project_dir: Root directory where evolve.toml will be created.
+    """
     config_path = project_dir / "evolve.toml"
     if config_path.is_file():
         print(f"evolve.toml already exists at {config_path}")
@@ -302,7 +329,12 @@ def _init_config(project_dir: Path) -> None:
 
 
 def _clean_sessions(project_dir: Path, keep: int = 5) -> None:
-    """Remove old session directories, keeping the N most recent."""
+    """Remove old session directories, keeping the N most recent.
+
+    Args:
+        project_dir: Root directory of the project.
+        keep: Number of most-recent sessions to retain.
+    """
     import shutil
 
     runs_dir = project_dir / "runs"

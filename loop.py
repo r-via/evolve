@@ -35,12 +35,19 @@ def _is_needs_package(text: str) -> bool:
       [functional] [needs-package] description
       [performance] [needs-package] description
     Does NOT match [needs-package] mentioned in the description body.
+
+    Args:
+        text: The improvement line text (without the checkbox prefix).
     """
     return bool(re.match(r"\[[\w-]+\]\s+\[needs-package\]", text))
 
 
 def _count_blocked(path: Path) -> int:
-    """Count unchecked items that require [needs-package] (blocked without --yolo)."""
+    """Count unchecked items that require [needs-package] (blocked without --yolo).
+
+    Args:
+        path: Path to the improvements.md file.
+    """
     if not path.is_file():
         return 0
     count = 0
@@ -76,6 +83,13 @@ def _generate_evolution_report(
 
     Parses conversation logs, commit messages (from git log), and check results
     to produce a timeline table and summary stats.
+
+    Args:
+        project_dir: Root directory of the project.
+        run_dir: Session directory where the report will be written.
+        max_rounds: Maximum rounds configured for the session.
+        final_round: Last round that was actually executed.
+        converged: Whether the session converged successfully.
     """
     session_name = run_dir.name
     improvements_path = project_dir / "runs" / "improvements.md"
@@ -200,7 +214,22 @@ def evolve_loop(
     resume: bool = False,
     forever: bool = False,
 ) -> None:
-    """Orchestrate evolution by launching each round as a subprocess."""
+    """Orchestrate evolution by launching each round as a subprocess.
+
+    Creates a timestamped session directory, then delegates to ``_run_rounds``
+    for the main loop.  Supports ``--resume`` to continue an interrupted
+    session and ``--forever`` for autonomous indefinite evolution.
+
+    Args:
+        project_dir: Root directory of the project being evolved.
+        max_rounds: Maximum number of evolution rounds.
+        check_cmd: Shell command to verify the project after each round.
+        yolo: If True, allow improvements requiring new packages.
+        timeout: Timeout in seconds for the check command.
+        model: Claude model identifier to use.
+        resume: If True, resume the most recent interrupted session.
+        forever: If True, run indefinitely on a dedicated branch.
+    """
     improvements_path = project_dir / "runs" / "improvements.md"
 
     start_round = 1
@@ -269,8 +298,20 @@ WATCHDOG_TIMEOUT = 120
 def _run_monitored_subprocess(cmd, cwd, ui, round_num, watchdog_timeout=WATCHDOG_TIMEOUT):
     """Run a subprocess with real-time output streaming and stall detection.
 
-    Returns ``(returncode, output, stalled)`` where *stalled* is True when the
-    watchdog killed the process due to inactivity.
+    Spawns the command, streams stdout in real-time, and monitors for
+    inactivity.  If no output is produced for ``watchdog_timeout`` seconds
+    the process is killed.
+
+    Args:
+        cmd: Command list to execute.
+        cwd: Working directory for the subprocess.
+        ui: TUI instance for status messages.
+        round_num: Current round number (for diagnostic messages).
+        watchdog_timeout: Seconds of silence before killing the process.
+
+    Returns:
+        A tuple ``(returncode, output, stalled)`` where *stalled* is True
+        when the watchdog killed the process due to inactivity.
     """
     # -u ensures Python doesn't buffer stdout/stderr in the child process.
     if cmd[0] == sys.executable and "-u" not in cmd:
@@ -320,7 +361,16 @@ def _run_monitored_subprocess(cmd, cwd, ui, round_num, watchdog_timeout=WATCHDOG
 
 
 def _save_subprocess_diagnostic(run_dir, round_num, cmd, output, reason, attempt):
-    """Write a diagnostic file for a failed/stalled subprocess round."""
+    """Write a diagnostic file for a failed/stalled subprocess round.
+
+    Args:
+        run_dir: Session directory to write the diagnostic into.
+        round_num: The round number that failed.
+        cmd: The command that was executed.
+        output: Captured subprocess output (may be truncated).
+        reason: Human-readable description of the failure.
+        attempt: Which retry attempt produced this failure.
+    """
     error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
     error_log.write_text(
         f"Round {round_num} — {reason} (attempt {attempt})\n"
@@ -342,7 +392,25 @@ def _run_rounds(
     model: str,
     forever: bool = False,
 ) -> None:
-    """Run evolution rounds from start_round to max_rounds."""
+    """Run evolution rounds from start_round to max_rounds.
+
+    Each round is launched as a subprocess via ``_run_monitored_subprocess``.
+    Failed rounds are retried up to ``MAX_DEBUG_RETRIES`` times.  On
+    convergence the session exits (or restarts in forever mode).
+
+    Args:
+        project_dir: Root directory of the project.
+        run_dir: Session directory for round artifacts.
+        improvements_path: Path to the improvements.md file.
+        ui: TUI instance for status output.
+        start_round: First round number to execute.
+        max_rounds: Maximum round number (inclusive).
+        check_cmd: Shell command to verify the project.
+        yolo: If True, allow improvements requiring new packages.
+        timeout: Timeout for the check command in seconds.
+        model: Claude model identifier.
+        forever: If True, restart after convergence instead of exiting.
+    """
     while True:
         for round_num in range(start_round, max_rounds + 1):
             current = _get_current_improvement(improvements_path, yolo=yolo)
@@ -510,7 +578,21 @@ def run_single_round(
     run_dir: Path | None = None,
     model: str = "claude-opus-4-6",
 ) -> None:
-    """Execute a single evolution round (called as subprocess)."""
+    """Execute a single evolution round (called as subprocess).
+
+    Runs the check command, invokes the agent, commits changes, and
+    re-runs the check to verify fixes.  This function is the entry
+    point for each subprocess spawned by ``_run_rounds``.
+
+    Args:
+        project_dir: Root directory of the project.
+        round_num: Current evolution round number.
+        check_cmd: Shell command to verify the project.
+        yolo: If True, allow improvements requiring new packages.
+        timeout: Timeout for the check command in seconds.
+        run_dir: Session directory for round artifacts.
+        model: Claude model identifier to use.
+    """
     from agent import analyze_and_fix
     import agent as _agent_mod
     _agent_mod.MODEL = model
@@ -592,7 +674,17 @@ def run_single_round(
 
 
 def _run_party_mode(project_dir: Path, run_dir: Path, ui=None) -> None:
-    """Launch party mode: multi-agent brainstorming post-convergence."""
+    """Launch party mode: multi-agent brainstorming post-convergence.
+
+    Loads agent personas and workflow definitions, then runs a Claude
+    session that simulates a multi-agent discussion and produces a
+    party report and README proposal.
+
+    Args:
+        project_dir: Root directory of the project.
+        run_dir: Session directory for party mode artifacts.
+        ui: TUI instance for status output (auto-created if None).
+    """
     if ui is None:
         ui = get_tui()
     ui.party_mode()
@@ -720,6 +812,12 @@ def _forever_restart(
 
     1. Merge README_proposal.md into README.md (if produced by party mode)
     2. Reset improvements.md for the next evolution cycle
+
+    Args:
+        project_dir: Root directory of the project.
+        run_dir: Session directory containing the README proposal.
+        improvements_path: Path to improvements.md to reset.
+        ui: TUI instance for status messages.
     """
     proposal = run_dir / "README_proposal.md"
     readme = project_dir / "README.md"
@@ -746,6 +844,9 @@ def _setup_forever_branch(project_dir: Path) -> None:
 
     Creates a branch named ``evolve/forever-<timestamp>`` from the current HEAD
     so that forever-mode changes are isolated from the main branch.
+
+    Args:
+        project_dir: Root directory of the project (must be a git repo).
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     branch_name = f"evolve/forever-{timestamp}"
