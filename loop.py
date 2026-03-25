@@ -5,13 +5,14 @@ Each round runs as a separate subprocess so code changes are picked up immediate
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from hooks import fire_hook, load_hooks
@@ -137,6 +138,81 @@ def _count_blocked(path: Path) -> int:
         if m and _is_needs_package(m.group(1)):
             count += 1
     return count
+
+
+def _write_state_json(
+    run_dir: Path,
+    project_dir: Path,
+    round_num: int,
+    max_rounds: int,
+    phase: str,
+    status: str,
+    improvements_path: Path,
+    check_passed: bool | None = None,
+    check_tests: int | None = None,
+    check_duration_s: float | None = None,
+    started_at: str | None = None,
+) -> None:
+    """Write or update the real-time state.json file in the session directory.
+
+    The state file provides structured status queryable by external tools
+    (CI systems, dashboards, monitoring). It is updated after every round.
+
+    Args:
+        run_dir: Session directory where state.json is written.
+        project_dir: Root directory of the project.
+        round_num: Current round number.
+        max_rounds: Maximum rounds configured for the session.
+        phase: Current phase (``"error"``, ``"improvement"``, ``"convergence"``).
+        status: Current status (``"running"``, ``"converged"``, ``"max_rounds"``,
+                ``"error"``, ``"party_mode"``).
+        improvements_path: Path to the improvements.md file.
+        check_passed: Whether the last check command passed (None if not run).
+        check_tests: Number of tests passed in the last check (None if unknown).
+        check_duration_s: Duration of the last check in seconds (None if unknown).
+        started_at: ISO timestamp when the session started. If None, read from
+                    existing state.json or use current time.
+    """
+    done = _count_checked(improvements_path)
+    remaining = _count_unchecked(improvements_path)
+    blocked = _count_blocked(improvements_path)
+
+    # Determine started_at: use provided value, or read from existing state, or now
+    if started_at is None:
+        existing = run_dir / "state.json"
+        if existing.is_file():
+            try:
+                prev = json.loads(existing.read_text())
+                started_at = prev.get("started_at")
+            except (json.JSONDecodeError, OSError):
+                pass
+        if started_at is None:
+            started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    last_check: dict[str, bool | int | float | None] = {}
+    if check_passed is not None:
+        last_check["passed"] = check_passed
+    if check_tests is not None:
+        last_check["tests"] = check_tests
+    if check_duration_s is not None:
+        last_check["duration_s"] = round(check_duration_s, 1)
+
+    state = {
+        "version": 1,
+        "session": run_dir.name,
+        "project": project_dir.name,
+        "round": round_num,
+        "max_rounds": max_rounds,
+        "phase": phase,
+        "status": status,
+        "improvements": {"done": done, "remaining": remaining, "blocked": blocked},
+        "last_check": last_check if last_check else {},
+        "started_at": started_at,
+        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    state_path = run_dir / "state.json"
+    state_path.write_text(json.dumps(state, indent=2) + "\n")
 
 
 def _get_current_improvement(path: Path, yolo: bool = False) -> str | None:
@@ -592,6 +668,7 @@ def _run_rounds(
     if hooks is None:
         hooks = {}
     _rounds_start_time = time.monotonic()
+    _started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"[probe] _run_rounds starting from round {start_round} to {max_rounds}")
     while True:
         for round_num in range(start_round, max_rounds + 1):
@@ -712,6 +789,36 @@ def _run_rounds(
             # Fire on_round_end hook for successful round
             fire_hook(hooks, "on_round_end", session=session_name, round_num=round_num, status="success")
 
+            # Parse last check results for state.json
+            _check_passed: bool | None = None
+            _check_tests: int | None = None
+            _check_duration: float | None = None
+            check_file = run_dir / f"check_round_{round_num}.txt"
+            if check_file.is_file():
+                _ct = check_file.read_text(errors="replace")
+                _check_passed = "PASS" in _ct
+                _tm = re.search(r"(\d+)\s+passed", _ct)
+                if _tm:
+                    _check_tests = int(_tm.group(1))
+                _dm = re.search(r"in\s+([\d.]+)s", _ct)
+                if _dm:
+                    _check_duration = float(_dm.group(1))
+
+            # Update state.json after every round
+            _write_state_json(
+                run_dir=run_dir,
+                project_dir=project_dir,
+                round_num=round_num,
+                max_rounds=max_rounds,
+                phase="improvement",
+                status="running",
+                improvements_path=improvements_path,
+                check_passed=_check_passed,
+                check_tests=_check_tests,
+                check_duration_s=_check_duration,
+                started_at=_started_at,
+            )
+
             # Clean up diagnostic file on success (no longer relevant)
             error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
             if error_log.is_file():
@@ -726,6 +833,21 @@ def _run_rounds(
 
                 # Fire on_converged hook
                 fire_hook(hooks, "on_converged", session=session_name, round_num=round_num, status="converged")
+
+                # Update state.json to converged
+                _write_state_json(
+                    run_dir=run_dir,
+                    project_dir=project_dir,
+                    round_num=round_num,
+                    max_rounds=max_rounds,
+                    phase="convergence",
+                    status="converged",
+                    improvements_path=improvements_path,
+                    check_passed=_check_passed,
+                    check_tests=_check_tests,
+                    check_duration_s=_check_duration,
+                    started_at=_started_at,
+                )
 
                 # Generate evolution report
                 _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True)
@@ -773,6 +895,18 @@ def _run_rounds(
             unchecked = _count_unchecked(improvements_path)
             checked = _count_checked(improvements_path)
             print(f"[probe] max rounds reached ({max_rounds}) — checked={checked}, unchecked={unchecked}")
+
+            # Update state.json to max_rounds
+            _write_state_json(
+                run_dir=run_dir,
+                project_dir=project_dir,
+                round_num=max_rounds,
+                max_rounds=max_rounds,
+                phase="improvement",
+                status="max_rounds",
+                improvements_path=improvements_path,
+                started_at=_started_at,
+            )
 
             # Generate evolution report
             _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False)
