@@ -14,6 +14,7 @@ from loop import (
     _auto_detect_check,
     _setup_forever_branch,
     _forever_restart,
+    _write_state_json,
 )
 
 
@@ -293,3 +294,221 @@ class TestForeverRestart:
         self.ui.warn.assert_called_once_with(
             "No README_proposal.md produced — restarting with current README"
         )
+
+
+# ---------------------------------------------------------------------------
+# _write_state_json
+# ---------------------------------------------------------------------------
+
+class TestWriteStateJson:
+    """Tests for the real-time state.json writer."""
+
+    def test_basic_state_json(self, tmp_path: Path):
+        """Write state.json and verify all required fields."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text(
+            "# Improvements\n"
+            "- [x] [functional] done one\n"
+            "- [x] [functional] done two\n"
+            "- [ ] [functional] pending one\n"
+        )
+        project_dir = tmp_path / "myproject"
+        project_dir.mkdir()
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=3,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            check_passed=True,
+            check_tests=42,
+            check_duration_s=1.234,
+            started_at="2026-03-25T15:00:00Z",
+        )
+
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["version"] == 1
+        assert state["session"] == "session"
+        assert state["project"] == "myproject"
+        assert state["round"] == 3
+        assert state["max_rounds"] == 10
+        assert state["phase"] == "improvement"
+        assert state["status"] == "running"
+        assert state["improvements"] == {"done": 2, "remaining": 1, "blocked": 0}
+        assert state["last_check"]["passed"] is True
+        assert state["last_check"]["tests"] == 42
+        assert state["last_check"]["duration_s"] == 1.2
+        assert state["started_at"] == "2026-03-25T15:00:00Z"
+        assert "updated_at" in state
+
+    def test_state_json_no_check(self, tmp_path: Path):
+        """State.json with no check results has empty last_check."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=5,
+            phase="error",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-03-25T15:00:00Z",
+        )
+
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["last_check"] == {}
+        assert state["improvements"] == {"done": 0, "remaining": 0, "blocked": 0}
+
+    def test_state_json_preserves_started_at(self, tmp_path: Path):
+        """When started_at is None, reads from existing state.json."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n- [ ] [functional] todo\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        import json
+        # Write initial state with a known started_at
+        (run_dir / "state.json").write_text(json.dumps({
+            "started_at": "2026-01-01T00:00:00Z",
+        }))
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=2,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at=None,  # should read from existing
+        )
+
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["started_at"] == "2026-01-01T00:00:00Z"
+
+    def test_state_json_blocked_count(self, tmp_path: Path):
+        """Blocked items are counted separately in improvements."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text(
+            "# Improvements\n"
+            "- [x] [functional] done\n"
+            "- [ ] [functional] [needs-package] blocked item\n"
+            "- [ ] [functional] regular pending\n"
+        )
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=5,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-03-25T15:00:00Z",
+        )
+
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["improvements"]["done"] == 1
+        assert state["improvements"]["remaining"] == 2
+        assert state["improvements"]["blocked"] == 1
+
+    def test_state_json_converged_status(self, tmp_path: Path):
+        """State.json reflects converged status correctly."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text(
+            "# Improvements\n- [x] [functional] all done\n"
+        )
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=5,
+            max_rounds=20,
+            phase="convergence",
+            status="converged",
+            improvements_path=improvements,
+            check_passed=True,
+            check_tests=100,
+            check_duration_s=2.5,
+            started_at="2026-03-25T15:00:00Z",
+        )
+
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["status"] == "converged"
+        assert state["phase"] == "convergence"
+        assert state["improvements"]["done"] == 1
+        assert state["improvements"]["remaining"] == 0
+
+    def test_state_json_missing_improvements_file(self, tmp_path: Path):
+        """State.json works even when improvements.md doesn't exist."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        missing = tmp_path / "nonexistent_improvements.md"
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=10,
+            phase="error",
+            status="running",
+            improvements_path=missing,
+            started_at="2026-03-25T15:00:00Z",
+        )
+
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["improvements"] == {"done": 0, "remaining": 0, "blocked": 0}
+
+    def test_state_json_no_existing_generates_started_at(self, tmp_path: Path):
+        """When no existing state.json and no started_at, generates current time."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at=None,
+        )
+
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        # Should have a valid ISO timestamp
+        assert "T" in state["started_at"]
+        assert state["started_at"].endswith("Z")
