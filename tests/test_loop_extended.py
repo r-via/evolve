@@ -494,3 +494,91 @@ class TestSaveSubprocessDiagnostic:
         assert "crashed" in content
         assert "attempt 2" in content
         assert "SyntaxError" in content
+
+
+# ---------------------------------------------------------------------------
+# _parse_report_summary
+# ---------------------------------------------------------------------------
+
+class TestParseReportSummary:
+    """Tests for _parse_report_summary extraction from evolution_report.md."""
+
+    def test_full_report(self, tmp_path: Path):
+        """Extracts all stats from a well-formed report."""
+        (tmp_path / "evolution_report.md").write_text(
+            "## Summary\n- 6 improvements completed\n- 2 bugs fixed\n- 12 files modified\n"
+        )
+        (tmp_path / "check_round_3.txt").write_text("47 passed in 1.3s\n")
+        result = _parse_report_summary(tmp_path)
+        assert result["improvements"] == 6
+        assert result["bugs_fixed"] == 2
+        assert result["tests_passing"] == 47
+
+    def test_no_report_file(self, tmp_path: Path):
+        """Returns zeros when evolution_report.md does not exist."""
+        result = _parse_report_summary(tmp_path)
+        assert result["improvements"] == 0
+        assert result["bugs_fixed"] == 0
+        assert result["tests_passing"] is None
+
+    def test_empty_report(self, tmp_path: Path):
+        """Returns zeros when report is empty."""
+        (tmp_path / "evolution_report.md").write_text("")
+        result = _parse_report_summary(tmp_path)
+        assert result["improvements"] == 0
+        assert result["bugs_fixed"] == 0
+        assert result["tests_passing"] is None
+
+    def test_malformed_report_no_numbers(self, tmp_path: Path):
+        """Returns zeros when report has text but no matching patterns."""
+        (tmp_path / "evolution_report.md").write_text(
+            "# Report\nSome random text without numbers in expected format.\n"
+        )
+        result = _parse_report_summary(tmp_path)
+        assert result["improvements"] == 0
+        assert result["bugs_fixed"] == 0
+
+    def test_partial_report_only_improvements(self, tmp_path: Path):
+        """Extracts improvements when bugs line is missing."""
+        (tmp_path / "evolution_report.md").write_text(
+            "## Summary\n- 3 improvements completed\n"
+        )
+        result = _parse_report_summary(tmp_path)
+        assert result["improvements"] == 3
+        assert result["bugs_fixed"] == 0
+
+    def test_partial_report_only_bugs(self, tmp_path: Path):
+        """Extracts bugs when improvements line is missing."""
+        (tmp_path / "evolution_report.md").write_text(
+            "## Summary\n- 5 bugs fixed\n"
+        )
+        result = _parse_report_summary(tmp_path)
+        assert result["improvements"] == 0
+        assert result["bugs_fixed"] == 5
+
+    def test_multiple_check_files_uses_latest(self, tmp_path: Path):
+        """Uses the last check_round file (sorted) for test count."""
+        (tmp_path / "evolution_report.md").write_text("- 1 improvements completed\n")
+        (tmp_path / "check_round_1.txt").write_text("10 passed\n")
+        (tmp_path / "check_round_5.txt").write_text("42 passed\n")
+        (tmp_path / "check_round_3.txt").write_text("30 passed\n")
+        result = _parse_report_summary(tmp_path)
+        assert result["tests_passing"] == 42
+
+    def test_check_file_no_passed_pattern(self, tmp_path: Path):
+        """Returns None for tests_passing when check file has no 'passed' line."""
+        (tmp_path / "evolution_report.md").write_text("- 1 improvements completed\n")
+        (tmp_path / "check_round_1.txt").write_text("FAILED - exit code 1\n")
+        result = _parse_report_summary(tmp_path)
+        assert result["tests_passing"] is None
+
+    def test_large_numbers(self, tmp_path: Path):
+        """Handles large numbers correctly."""
+        (tmp_path / "evolution_report.md").write_text(
+            "- 150 improvements completed\n- 42 bugs fixed\n"
+        )
+        (tmp_path / "check_round_99.txt").write_text("1234 passed in 60s\n")
+        result = _parse_report_summary(tmp_path)
+        assert result["improvements"] == 150
+        assert result["bugs_fixed"] == 42
+        assert result["tests_passing"] == 1234
