@@ -302,10 +302,27 @@ def _run_rounds(
         if yolo:
             cmd += ["--yolo"]
 
-        result = subprocess.run(cmd, cwd=str(project_dir))
+        result = subprocess.run(
+            cmd, cwd=str(project_dir),
+            capture_output=True, text=True,
+        )
+
+        # Stream captured output to console so the TUI still shows progress
+        if result.stdout:
+            sys.stdout.write(result.stdout)
+        if result.stderr:
+            sys.stderr.write(result.stderr)
 
         if result.returncode != 0:
             ui.round_failed(round_num, result.returncode)
+            # Persist subprocess error so the next round's agent can see it
+            error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
+            error_log.write_text(
+                f"Round {round_num} subprocess crashed (exit code {result.returncode})\n"
+                f"Command: {' '.join(str(c) for c in cmd)}\n\n"
+                f"stdout (last 3000 chars):\n{(result.stdout or '')[-3000:]}\n\n"
+                f"stderr (last 3000 chars):\n{(result.stderr or '')[-3000:]}\n"
+            )
 
         # Re-read improvements
         prev_checked = checked
@@ -666,6 +683,16 @@ def _git_commit(project_dir: Path, message: str, ui=None) -> None:
         return
     subprocess.run(["git", "commit", "-m", message], cwd=project_dir, capture_output=True)
     result = subprocess.run(["git", "push"], cwd=project_dir, capture_output=True, text=True)
+    if result.returncode != 0 and "has no upstream branch" in (result.stderr or ""):
+        # First push on a new branch — set upstream and retry
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=project_dir,
+            capture_output=True, text=True,
+        ).stdout.strip()
+        result = subprocess.run(
+            ["git", "push", "-u", "origin", branch], cwd=project_dir,
+            capture_output=True, text=True,
+        )
     if result.returncode == 0:
         ui.git_status(message, pushed=True)
     else:

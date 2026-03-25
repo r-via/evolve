@@ -218,6 +218,31 @@ class TestGitCommit:
         with patch("loop.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "feat: test")  # should not raise
 
+    def test_commit_push_no_upstream_retries_with_set_upstream(self, tmp_path: Path):
+        """Push with 'no upstream branch' error retries with -u origin <branch>."""
+        calls = []
+
+        def side_effect(cmd, **kwargs):
+            calls.append(cmd)
+            if "diff" in cmd:
+                return MagicMock(returncode=1)
+            if "branch" in cmd and "--show-current" in cmd:
+                return MagicMock(returncode=0, stdout="evolve/forever-123\n")
+            if "push" in cmd and "-u" in cmd:
+                return MagicMock(returncode=0, stderr="")
+            if "push" in cmd:
+                return MagicMock(
+                    returncode=1,
+                    stderr="fatal: The current branch has no upstream branch.",
+                )
+            return MagicMock(returncode=0)
+
+        with patch("loop.subprocess.run", side_effect=side_effect):
+            _git_commit(tmp_path, "feat: test")
+
+        cmd_strs = [" ".join(str(c) for c in cmd) for cmd in calls]
+        assert any("-u" in s and "origin" in s for s in cmd_strs)
+
 
 # ---------------------------------------------------------------------------
 # _run_party_mode — early exits

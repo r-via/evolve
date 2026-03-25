@@ -64,6 +64,13 @@ def build_prompt(
             prev_check = f.read_text()
             break
 
+    # Previous round subprocess crash logs (orchestrator-level errors)
+    prev_crash = ""
+    if run_dir:
+        for f in sorted(Path(run_dir).glob("subprocess_error_round_*.txt"), reverse=True):
+            prev_crash = f.read_text()
+            break
+
     yolo_note = ""
     if not yolo:
         yolo_note = """
@@ -86,6 +93,7 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
     target_section = f"Current target improvement: {current}" if current else "No improvements yet — create initial runs/improvements.md based on your analysis."
     memory_section = f"\n## Memory (errors from previous rounds — do NOT repeat these)\n{memory}\n" if memory else ""
     prev_check_section = f"\n## Previous round check results\n{prev_check}\n" if prev_check else ""
+    prev_crash_section = f"\n## CRITICAL — Previous round CRASHED (fix this first!)\n```\n{prev_crash}\n```\n" if prev_crash else ""
 
     check_section = ""
     if check_cmd and check_output:
@@ -113,6 +121,7 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
 {improvements_section}
 
 {target_section}
+{prev_crash_section}
 {memory_section}
 {prev_check_section}
 {check_section}"""
