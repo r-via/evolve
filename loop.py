@@ -730,6 +730,19 @@ def _run_rounds(
                 # Generate evolution report
                 _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True)
 
+                # Display completion summary panel
+                duration_s = time.monotonic() - _rounds_start_time
+                summary_stats = _parse_report_summary(run_dir)
+                ui.completion_summary(
+                    status="CONVERGED",
+                    round_num=round_num,
+                    duration_s=duration_s,
+                    improvements=summary_stats["improvements"],
+                    bugs_fixed=summary_stats["bugs_fixed"],
+                    tests_passing=summary_stats["tests_passing"],
+                    report_path=str(run_dir / "evolution_report.md"),
+                )
+
                 # Launch party mode
                 _run_party_mode(project_dir, run_dir, ui)
 
@@ -763,6 +776,19 @@ def _run_rounds(
 
             # Generate evolution report
             _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False)
+
+            # Display completion summary panel
+            duration_s = time.monotonic() - _rounds_start_time
+            summary_stats = _parse_report_summary(run_dir)
+            ui.completion_summary(
+                status="MAX_ROUNDS",
+                round_num=max_rounds,
+                duration_s=duration_s,
+                improvements=summary_stats["improvements"],
+                bugs_fixed=summary_stats["bugs_fixed"],
+                tests_passing=summary_stats["tests_passing"],
+                report_path=str(run_dir / "evolution_report.md"),
+            )
 
             ui.max_rounds(max_rounds, checked, unchecked)
             sys.exit(1)

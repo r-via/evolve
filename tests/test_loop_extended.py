@@ -29,6 +29,7 @@ from loop import (
     _run_monitored_subprocess,
     _save_subprocess_diagnostic,
     _generate_evolution_report,
+    _parse_report_summary,
 )
 
 
