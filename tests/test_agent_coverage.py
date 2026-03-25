@@ -585,6 +585,7 @@ class TestAnalyzeAndFixRetry:
         mock_sdk = MagicMock()
 
         def mock_asyncio_run(coro):
+            coro.close()  # prevent "coroutine was never awaited" warning
             raise RuntimeError("cancel scope blah")
 
         with patch("agent.get_tui", return_value=mock_ui), \
@@ -606,6 +607,7 @@ class TestAnalyzeAndFixRetry:
 
         def mock_asyncio_run(coro):
             nonlocal call_count
+            coro.close()  # prevent "coroutine was never awaited" warning
             call_count += 1
             if call_count < 3:
                 raise Exception("rate_limit_exceeded")
@@ -628,6 +630,7 @@ class TestAnalyzeAndFixRetry:
         mock_sdk = MagicMock()
 
         def mock_asyncio_run(coro):
+            coro.close()  # prevent "coroutine was never awaited" warning
             raise Exception("some random error")
 
         with patch("agent.get_tui", return_value=mock_ui), \

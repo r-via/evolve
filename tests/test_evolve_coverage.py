@@ -253,5 +253,5 @@ class TestMainDispatch:
         ]), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
              patch("loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("agent.asyncio.run"):
+             patch("agent.asyncio.run", side_effect=lambda coro: coro.close()):
             main()

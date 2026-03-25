@@ -23,6 +23,11 @@ from loop import (
 )
 
 
+def _close_coro(coro):
+    """Mock side_effect for asyncio.run that closes the coroutine to prevent warnings."""
+    coro.close()
+
+
 # ---------------------------------------------------------------------------
 # run_single_round
 # ---------------------------------------------------------------------------
@@ -42,7 +47,7 @@ class TestRunSingleRound:
         mock_subprocess = MagicMock(returncode=0, stdout="42 passed", stderr="")
 
         with patch("loop.subprocess.run", return_value=mock_subprocess), \
-             patch("agent.asyncio.run"), \
+             patch("agent.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1, check_cmd="pytest",
@@ -58,7 +63,7 @@ class TestRunSingleRound:
         (tmp_path / "README.md").write_text("# Test")
 
         with patch("loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("agent.asyncio.run"), \
+             patch("agent.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1,
@@ -78,7 +83,7 @@ class TestRunSingleRound:
         (run_dir / "COMMIT_MSG").write_text("feat(parser): add validation")
 
         with patch("loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="ok", stderr="")), \
-             patch("agent.asyncio.run"), \
+             patch("agent.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1, check_cmd="pytest",
@@ -102,7 +107,7 @@ class TestRunSingleRound:
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("loop.subprocess.run", side_effect=mock_run), \
-             patch("agent.asyncio.run"), \
+             patch("agent.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1, check_cmd="pytest",
@@ -164,7 +169,7 @@ class TestRunSingleRound:
         original_model = agent_mod.MODEL
 
         with patch("loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("agent.asyncio.run"), \
+             patch("agent.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1,
@@ -188,7 +193,7 @@ class TestRunSingleRound:
             return MagicMock(returncode=0, stdout="", stderr="")
 
         with patch("loop.subprocess.run", side_effect=mock_run), \
-             patch("agent.asyncio.run"), \
+             patch("agent.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1, check_cmd="pytest",
@@ -202,7 +207,7 @@ class TestRunSingleRound:
         (tmp_path / "README.md").write_text("# Test")
 
         with patch("loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("agent.asyncio.run"), \
+             patch("agent.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(tmp_path, round_num=1, run_dir=None)
 
