@@ -160,10 +160,10 @@ class TestAnalyzeAndFix:
         """Returns gracefully when SDK is not installed."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
-        with patch.dict("sys.modules", {"claude_agent_sdk": None}):
-            with patch("builtins.__import__", side_effect=ImportError("no module")):
-                # This tests the ImportError branch in analyze_and_fix
-                # We need to reimport to hit the branch
-                pass
-        # Just verify it doesn't crash when called with mock
-        # The actual ImportError path is tested via the function itself
+        mock_ui = MagicMock()
+        with patch.dict("sys.modules", {"claude_agent_sdk": None}), \
+             patch("agent.get_tui", return_value=mock_ui):
+            analyze_and_fix(tmp_path)
+        mock_ui.warn.assert_called_once_with(
+            "claude-agent-sdk not installed, skipping agent"
+        )
