@@ -29,69 +29,74 @@ def _run_async(coro):
 class TestRunClaudeAgent:
     """Test run_claude_agent with mocked SDK to cover lines 195-312."""
 
-    def _setup_mock_sdk(self, messages, AssistantMessage=None, ResultMessage=None):
-        """Create mock SDK with given messages."""
-        if AssistantMessage is None:
-            AssistantMessage = type("AssistantMessage", (), {})
-        if ResultMessage is None:
-            ResultMessage = type("ResultMessage", (), {})
+    # Shared mock block types — allocated once per class, not per test
+    class AM:
+        """Shared AssistantMessage mock with optional content."""
+        def __init__(self, content=None):
+            self.content = content
 
-        class MockClaudeAgentOptions:
-            def __init__(self, **kwargs):
-                pass
+    class RM:
+        """Shared ResultMessage mock with optional content."""
+        def __init__(self, content=None):
+            self.content = content
 
-        async def mock_query(prompt, options):
-            for msg in messages:
-                yield msg
+    class MockTextBlock:
+        def __init__(self, text):
+            self.text = text
 
+    class MockToolBlock:
+        def __init__(self, name="Tool", input_data=None, block_id="t0"):
+            self.name = name
+            self.input = input_data
+            self.id = block_id
+
+    class MockThinkingBlock:
+        def __init__(self, thinking):
+            self.thinking = thinking
+
+    class ToolResultBlock:
+        def __init__(self, content, is_error=False):
+            self.content = content
+            self.is_error = is_error
+
+    def _make_sdk(self, messages):
+        """Create a mock SDK wired to yield the given messages."""
         mock_sdk = MagicMock()
-        mock_sdk.query = mock_query
-        mock_sdk.ClaudeAgentOptions = MockClaudeAgentOptions
-        mock_sdk.AssistantMessage = AssistantMessage
-        mock_sdk.ResultMessage = ResultMessage
-        return mock_sdk
-
-    def test_run_with_text_messages(self, tmp_path: Path):
-        """Agent receives text messages and logs them."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class MockTextBlock:
-            def __init__(self, text):
-                self.text = text
-
-        class AM:
-            def __init__(self, content):
-                self.content = content
-
-        class RM:
-            def __init__(self, content):
-                self.content = content
-
-        messages = [
-            AM([MockTextBlock("Hello from agent")]),
-            RM([MockTextBlock("Done working")]),
-        ]
-
-        mock_sdk = _run_async(asyncio.coroutine(lambda: None)()) if False else None
-        mock_sdk = MagicMock()
-
-        class MockOpts:
-            def __init__(self, **kw):
-                pass
 
         async def mock_query(prompt, options):
             for m in messages:
                 yield m
 
         mock_sdk.query = mock_query
-        mock_sdk.ClaudeAgentOptions = MockOpts
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
+        mock_sdk.ClaudeAgentOptions = lambda **kw: None
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
+        return mock_sdk
 
+    def _make_run_dir(self, tmp_path: Path) -> Path:
+        """Create and return the standard run directory."""
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        return run_dir
+
+    def _run_agent(self, tmp_path, run_dir, mock_sdk, **kwargs):
+        """Run the agent with the given SDK mock and standard patches."""
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
              patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test prompt", tmp_path, round_num=1, run_dir=run_dir))
+            _run_async(run_claude_agent(
+                kwargs.pop("prompt", "test"), tmp_path,
+                round_num=kwargs.pop("round_num", 1),
+                run_dir=run_dir, **kwargs,
+            ))
+
+    def test_run_with_text_messages(self, tmp_path: Path):
+        """Agent receives text messages and logs them."""
+        run_dir = self._make_run_dir(tmp_path)
+        messages = [
+            self.AM([self.MockTextBlock("Hello from agent")]),
+            self.RM([self.MockTextBlock("Done working")]),
+        ]
+        self._run_agent(tmp_path, run_dir, self._make_sdk(messages))
 
         log_path = run_dir / "conversation_loop_1.md"
         assert log_path.is_file()
@@ -101,44 +106,15 @@ class TestRunClaudeAgent:
 
     def test_run_with_tool_use(self, tmp_path: Path):
         """Agent uses tools and they are logged."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class MockToolBlock:
-            def __init__(self, name, input_data, block_id):
-                self.name = name
-                self.input = input_data
-                self.id = block_id
-
-        class AM:
-            def __init__(self, content):
-                self.content = content
-
-        class RM:
-            pass
-
+        run_dir = self._make_run_dir(tmp_path)
         messages = [
-            AM([MockToolBlock("Bash", {"command": "pytest tests/"}, "t1")]),
-            AM([MockToolBlock("Read", {"file_path": "/tmp/foo.py"}, "t2")]),
-            AM([MockToolBlock("Edit", {"old_string": "x", "file_path": "bar.py"}, "t3")]),
-            AM([MockToolBlock("Grep", {"pattern": "def main"}, "t4")]),
-            AM([MockToolBlock("Write", {"content": "hello " * 200}, "t5")]),
+            self.AM([self.MockToolBlock("Bash", {"command": "pytest tests/"}, "t1")]),
+            self.AM([self.MockToolBlock("Read", {"file_path": "/tmp/foo.py"}, "t2")]),
+            self.AM([self.MockToolBlock("Edit", {"old_string": "x", "file_path": "bar.py"}, "t3")]),
+            self.AM([self.MockToolBlock("Grep", {"pattern": "def main"}, "t4")]),
+            self.AM([self.MockToolBlock("Write", {"content": "hello " * 200}, "t5")]),
         ]
-
-        mock_sdk = MagicMock()
-
-        async def mock_query(prompt, options):
-            for m in messages:
-                yield m
-
-        mock_sdk.query = mock_query
-        mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        self._run_agent(tmp_path, run_dir, self._make_sdk(messages))
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert "Bash" in content
@@ -146,36 +122,9 @@ class TestRunClaudeAgent:
 
     def test_run_with_thinking_block(self, tmp_path: Path):
         """Thinking blocks are logged."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class MockThinkingBlock:
-            def __init__(self, thinking):
-                self.thinking = thinking
-
-        class AM:
-            def __init__(self, content):
-                self.content = content
-
-        class RM:
-            pass
-
-        messages = [AM([MockThinkingBlock("Let me analyze this...")])]
-
-        mock_sdk = MagicMock()
-
-        async def mock_query(prompt, options):
-            for m in messages:
-                yield m
-
-        mock_sdk.query = mock_query
-        mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        run_dir = self._make_run_dir(tmp_path)
+        messages = [self.AM([self.MockThinkingBlock("Let me analyze this...")])]
+        self._run_agent(tmp_path, run_dir, self._make_sdk(messages))
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert "Thinking" in content
@@ -183,15 +132,7 @@ class TestRunClaudeAgent:
 
     def test_run_with_none_messages(self, tmp_path: Path):
         """None messages in stream are skipped."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class AM:
-            pass
-
-        class RM:
-            pass
-
+        run_dir = self._make_run_dir(tmp_path)
         mock_sdk = MagicMock()
 
         async def mock_query(prompt, options):
@@ -200,25 +141,15 @@ class TestRunClaudeAgent:
 
         mock_sdk.query = mock_query
         mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
+        self._run_agent(tmp_path, run_dir, mock_sdk)
 
     def test_run_with_stream_event(self, tmp_path: Path):
         """StreamEvent messages are skipped."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
+        run_dir = self._make_run_dir(tmp_path)
 
         class StreamEvent:
-            pass
-
-        class AM:
-            pass
-
-        class RM:
             pass
 
         mock_sdk = MagicMock()
@@ -228,25 +159,15 @@ class TestRunClaudeAgent:
 
         mock_sdk.query = mock_query
         mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
+        self._run_agent(tmp_path, run_dir, mock_sdk)
 
     def test_run_with_rate_limit_event(self, tmp_path: Path):
         """RateLimitEvent messages are logged."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
+        run_dir = self._make_run_dir(tmp_path)
 
         class RateLimitEvent:
-            pass
-
-        class AM:
-            pass
-
-        class RM:
             pass
 
         mock_sdk = MagicMock()
@@ -256,28 +177,18 @@ class TestRunClaudeAgent:
 
         mock_sdk.query = mock_query
         mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
+        self._run_agent(tmp_path, run_dir, mock_sdk)
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert "Rate limited" in content
 
     def test_run_with_system_message(self, tmp_path: Path):
         """SystemMessage messages are logged."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
+        run_dir = self._make_run_dir(tmp_path)
 
         class SystemMessage:
-            pass
-
-        class AM:
-            pass
-
-        class RM:
             pass
 
         mock_sdk = MagicMock()
@@ -287,27 +198,16 @@ class TestRunClaudeAgent:
 
         mock_sdk.query = mock_query
         mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
+        self._run_agent(tmp_path, run_dir, mock_sdk)
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert "Session initialized" in content
 
     def test_run_with_sdk_error(self, tmp_path: Path):
         """SDK errors during streaming are caught and logged."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class AM:
-            pass
-
-        class RM:
-            pass
-
+        run_dir = self._make_run_dir(tmp_path)
         mock_sdk = MagicMock()
 
         async def mock_query(prompt, options):
@@ -316,53 +216,21 @@ class TestRunClaudeAgent:
 
         mock_sdk.query = mock_query
         mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
+        self._run_agent(tmp_path, run_dir, mock_sdk)
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert "SDK error" in content
 
     def test_run_with_tool_result_block(self, tmp_path: Path):
         """ToolResultBlock messages are logged."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class ToolResultBlock:
-            def __init__(self, content, is_error=False):
-                self.content = content
-                self.is_error = is_error
-
-        class AM:
-            def __init__(self, content):
-                self.content = content
-
-        class RM:
-            def __init__(self, content):
-                self.content = content
-
+        run_dir = self._make_run_dir(tmp_path)
         messages = [
-            AM([ToolResultBlock("result output")]),
-            AM([ToolResultBlock("error output", is_error=True)]),
+            self.AM([self.ToolResultBlock("result output")]),
+            self.AM([self.ToolResultBlock("error output", is_error=True)]),
         ]
-
-        mock_sdk = MagicMock()
-
-        async def mock_query(prompt, options):
-            for m in messages:
-                yield m
-
-        mock_sdk.query = mock_query
-        mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        self._run_agent(tmp_path, run_dir, self._make_sdk(messages))
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert "result output" in content
@@ -370,95 +238,31 @@ class TestRunClaudeAgent:
 
     def test_run_deduplicates_tool_ids(self, tmp_path: Path):
         """Duplicate tool block IDs are only logged once."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class MockToolBlock:
-            def __init__(self, name, input_data, block_id):
-                self.name = name
-                self.input = input_data
-                self.id = block_id
-
-        class AM:
-            def __init__(self, content):
-                self.content = content
-
-        class RM:
-            pass
-
+        run_dir = self._make_run_dir(tmp_path)
         messages = [
-            AM([MockToolBlock("Bash", {"command": "ls"}, "tool_1")]),
-            AM([MockToolBlock("Bash", {"command": "ls"}, "tool_1")]),
+            self.AM([self.MockToolBlock("Bash", {"command": "ls"}, "tool_1")]),
+            self.AM([self.MockToolBlock("Bash", {"command": "ls"}, "tool_1")]),
         ]
-
-        mock_sdk = MagicMock()
-
-        async def mock_query(prompt, options):
-            for m in messages:
-                yield m
-
-        mock_sdk.query = mock_query
-        mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        self._run_agent(tmp_path, run_dir, self._make_sdk(messages))
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert content.count("**Bash**") == 1
 
     def test_run_deduplicates_text_hashes(self, tmp_path: Path):
         """Duplicate text blocks are only logged once."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class MockTextBlock:
-            def __init__(self, text):
-                self.text = text
-
-        class AM:
-            def __init__(self, content):
-                self.content = content
-
-        class RM:
-            pass
-
+        run_dir = self._make_run_dir(tmp_path)
         messages = [
-            AM([MockTextBlock("duplicate text")]),
-            AM([MockTextBlock("duplicate text")]),
+            self.AM([self.MockTextBlock("duplicate text")]),
+            self.AM([self.MockTextBlock("duplicate text")]),
         ]
-
-        mock_sdk = MagicMock()
-
-        async def mock_query(prompt, options):
-            for m in messages:
-                yield m
-
-        mock_sdk.query = mock_query
-        mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("test", tmp_path, round_num=1, run_dir=run_dir))
+        self._run_agent(tmp_path, run_dir, self._make_sdk(messages))
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert content.count("duplicate text") == 1
 
     def test_run_custom_log_filename(self, tmp_path: Path):
         """Custom log filename is used when provided."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class AM:
-            pass
-
-        class RM:
-            pass
-
+        run_dir = self._make_run_dir(tmp_path)
         mock_sdk = MagicMock()
 
         async def mock_query(prompt, options):
@@ -467,29 +271,19 @@ class TestRunClaudeAgent:
 
         mock_sdk.query = mock_query
         mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("prompt", tmp_path, round_num=1, run_dir=run_dir,
-                                         log_filename="custom_log.md"))
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
+        self._run_agent(tmp_path, run_dir, mock_sdk,
+                        prompt="prompt", log_filename="custom_log.md")
 
         assert (run_dir / "custom_log.md").is_file()
 
     def test_run_empty_content_message_skipped(self, tmp_path: Path):
         """Messages with empty/None content are skipped."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class AM:
-            def __init__(self, content):
-                self.content = content
-
-        class RM:
-            pass
-
+        run_dir = self._make_run_dir(tmp_path)
         mock_sdk = MagicMock()
+
+        AM = self.AM
 
         async def mock_query(prompt, options):
             yield AM([])
@@ -499,44 +293,16 @@ class TestRunClaudeAgent:
 
         mock_sdk.query = mock_query
         mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("prompt", tmp_path, round_num=1, run_dir=run_dir))
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
+        self._run_agent(tmp_path, run_dir, mock_sdk, prompt="prompt")
 
     def test_run_tool_with_string_input(self, tmp_path: Path):
         """Tool blocks with non-dict input are handled."""
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-
-        class MockToolBlock:
-            def __init__(self):
-                self.name = "CustomTool"
-                self.input = "raw string input that is longer than 100 chars " * 3
-                self.id = "tool_1"
-
-        class AM:
-            def __init__(self, content):
-                self.content = content
-
-        class RM:
-            pass
-
-        mock_sdk = MagicMock()
-
-        async def mock_query(prompt, options):
-            yield AM([MockToolBlock()])
-
-        mock_sdk.query = mock_query
-        mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
-
-        with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
-            _run_async(run_claude_agent("prompt", tmp_path, round_num=1, run_dir=run_dir))
+        run_dir = self._make_run_dir(tmp_path)
+        tool = self.MockToolBlock("CustomTool", "raw string input that is longer than 100 chars " * 3, "tool_1")
+        messages = [self.AM([tool])]
+        self._run_agent(tmp_path, run_dir, self._make_sdk(messages), prompt="prompt")
 
         content = (run_dir / "conversation_loop_1.md").read_text()
         assert "CustomTool" in content
@@ -544,13 +310,6 @@ class TestRunClaudeAgent:
     def test_run_no_run_dir_uses_project_runs(self, tmp_path: Path):
         """When run_dir is None, uses project/runs."""
         (tmp_path / "runs").mkdir()
-
-        class AM:
-            pass
-
-        class RM:
-            pass
-
         mock_sdk = MagicMock()
 
         async def mock_query(prompt, options):
@@ -559,8 +318,8 @@ class TestRunClaudeAgent:
 
         mock_sdk.query = mock_query
         mock_sdk.ClaudeAgentOptions = lambda **kw: None
-        mock_sdk.AssistantMessage = AM
-        mock_sdk.ResultMessage = RM
+        mock_sdk.AssistantMessage = self.AM
+        mock_sdk.ResultMessage = self.RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
              patch("agent._patch_sdk_parser"):
@@ -576,20 +335,25 @@ class TestRunClaudeAgent:
 class TestAnalyzeAndFixRetry:
     """Test analyze_and_fix retry paths (lines 371-396)."""
 
-    def test_benign_runtime_error_returns(self, tmp_path: Path):
-        """Benign RuntimeError (cancel scope) returns gracefully."""
+    # Shared mock SDK — allocated once per class
+    _mock_sdk = MagicMock()
+
+    def _setup_project(self, tmp_path: Path):
+        """Create minimal project structure for analyze_and_fix."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
+    def test_benign_runtime_error_returns(self, tmp_path: Path):
+        """Benign RuntimeError (cancel scope) returns gracefully."""
+        self._setup_project(tmp_path)
         mock_ui = MagicMock()
-        mock_sdk = MagicMock()
 
         def mock_asyncio_run(coro):
             coro.close()  # prevent "coroutine was never awaited" warning
             raise RuntimeError("cancel scope blah")
 
         with patch("agent.get_tui", return_value=mock_ui), \
-             patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
+             patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
              patch("agent.asyncio.run", side_effect=mock_asyncio_run):
             analyze_and_fix(tmp_path)
 
@@ -597,11 +361,8 @@ class TestAnalyzeAndFixRetry:
 
     def test_rate_limit_retries(self, tmp_path: Path):
         """Rate limit error triggers retry with backoff."""
-        (tmp_path / "README.md").write_text("# P")
-        (tmp_path / "runs").mkdir()
-
+        self._setup_project(tmp_path)
         mock_ui = MagicMock()
-        mock_sdk = MagicMock()
 
         call_count = 0
 
@@ -613,7 +374,7 @@ class TestAnalyzeAndFixRetry:
                 raise Exception("rate_limit_exceeded")
 
         with patch("agent.get_tui", return_value=mock_ui), \
-             patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
+             patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
              patch("agent.asyncio.run", side_effect=mock_asyncio_run), \
              patch("agent.time.sleep"):
             analyze_and_fix(tmp_path, max_retries=5)
@@ -623,18 +384,15 @@ class TestAnalyzeAndFixRetry:
 
     def test_non_retryable_error_gives_up(self, tmp_path: Path):
         """Non-retryable error calls warn and returns."""
-        (tmp_path / "README.md").write_text("# P")
-        (tmp_path / "runs").mkdir()
-
+        self._setup_project(tmp_path)
         mock_ui = MagicMock()
-        mock_sdk = MagicMock()
 
         def mock_asyncio_run(coro):
             coro.close()  # prevent "coroutine was never awaited" warning
             raise Exception("some random error")
 
         with patch("agent.get_tui", return_value=mock_ui), \
-             patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
+             patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
              patch("agent.asyncio.run", side_effect=mock_asyncio_run):
             analyze_and_fix(tmp_path, max_retries=3)
 

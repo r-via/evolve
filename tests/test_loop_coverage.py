@@ -550,15 +550,21 @@ class TestRunRounds:
 # ---------------------------------------------------------------------------
 
 class TestEvolutionReportExtended:
-    def test_report_with_git_log_match(self, tmp_path: Path):
-        """Report uses git log commit messages when available."""
+
+    def _setup_report_project(self, tmp_path, improvements_text="- [x] done\n"):
+        """Create project structure for report tests — shared setup."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         runs_dir = project_dir / "runs"
         runs_dir.mkdir()
         run_dir = runs_dir / "session"
         run_dir.mkdir()
-        (runs_dir / "improvements.md").write_text("- [x] done\n")
+        (runs_dir / "improvements.md").write_text(improvements_text)
+        return project_dir, run_dir
+
+    def test_report_with_git_log_match(self, tmp_path: Path):
+        """Report uses git log commit messages when available."""
+        project_dir, run_dir = self._setup_report_project(tmp_path)
 
         def mock_run(cmd, **kwargs):
             if "log" in cmd:
@@ -573,14 +579,7 @@ class TestEvolutionReportExtended:
 
     def test_report_with_failed_check_counts(self, tmp_path: Path):
         """Report shows failed count in check results with pass/fail format."""
-        project_dir = tmp_path / "proj"
-        project_dir.mkdir()
-        runs_dir = project_dir / "runs"
-        runs_dir.mkdir()
-        run_dir = runs_dir / "session"
-        run_dir.mkdir()
-        (runs_dir / "improvements.md").write_text("- [ ] pending\n")
-        # Use pytest-style format that the parser recognizes
+        project_dir, run_dir = self._setup_report_project(tmp_path, "- [ ] pending\n")
         (run_dir / "check_round_1.txt").write_text(
             "Round 1: FAIL\n10 passed, 3 failed\n"
         )
@@ -594,13 +593,7 @@ class TestEvolutionReportExtended:
 
     def test_report_truncates_many_files(self, tmp_path: Path):
         """Report truncates file list when >3 files."""
-        project_dir = tmp_path / "proj"
-        project_dir.mkdir()
-        runs_dir = project_dir / "runs"
-        runs_dir.mkdir()
-        run_dir = runs_dir / "session"
-        run_dir.mkdir()
-        (runs_dir / "improvements.md").write_text("- [x] done\n")
+        project_dir, run_dir = self._setup_report_project(tmp_path)
         (run_dir / "conversation_loop_1.md").write_text(
             "Edit → a.py\nEdit → b.py\nEdit → c.py\nEdit → d.py\nEdit → e.py\n"
         )
@@ -613,13 +606,7 @@ class TestEvolutionReportExtended:
 
     def test_report_git_timeout(self, tmp_path: Path):
         """Git log timeout is handled gracefully."""
-        project_dir = tmp_path / "proj"
-        project_dir.mkdir()
-        runs_dir = project_dir / "runs"
-        runs_dir.mkdir()
-        run_dir = runs_dir / "session"
-        run_dir.mkdir()
-        (runs_dir / "improvements.md").write_text("# Improvements\n")
+        project_dir, run_dir = self._setup_report_project(tmp_path, "# Improvements\n")
 
         def mock_run(cmd, **kwargs):
             if "log" in cmd:
@@ -789,34 +776,36 @@ class TestForeverRestartInRunRounds:
 # Party mode result handling (lines 987-993 of _run_party_mode)
 # ---------------------------------------------------------------------------
 
+def _setup_party_project(tmp_path):
+    """Shared helper: set up a project with agents and context for party mode tests."""
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    (agents / "dev.md").write_text("# Dev Agent")
+    run_dir = tmp_path / "runs" / "session"
+    run_dir.mkdir(parents=True)
+    (tmp_path / "README.md").write_text("# Test Project")
+    (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
+    (tmp_path / "runs" / "memory.md").write_text("# Memory\n")
+    (run_dir / "CONVERGED").write_text("All done")
+    return run_dir
+
+
+def _run_party_with_mock(tmp_path, run_dir, ui, asyncio_side_effect):
+    """Shared helper: run _run_party_mode with mocked asyncio.run and agent."""
+    import asyncio as _asyncio
+    import agent as agent_mod
+
+    with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
+         patch.object(_asyncio, 'run', side_effect=asyncio_side_effect):
+        _run_party_mode(tmp_path, run_dir, ui)
+
+
 class TestPartyModeResultHandling:
     """Test the end of _run_party_mode where it checks for output files."""
 
-    def _setup_party(self, tmp_path):
-        """Set up a project with agents and required context for party mode."""
-        agents = tmp_path / "agents"
-        agents.mkdir()
-        (agents / "dev.md").write_text("# Dev Agent")
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-        (tmp_path / "README.md").write_text("# Test Project")
-        (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
-        (tmp_path / "runs" / "memory.md").write_text("# Memory\n")
-        (run_dir / "CONVERGED").write_text("All done")
-        return run_dir
-
-    def _run_party_with_mock(self, tmp_path, run_dir, ui, asyncio_side_effect):
-        """Run _run_party_mode with mocked asyncio.run and agent."""
-        import asyncio as _asyncio
-        import agent as agent_mod
-
-        with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
-             patch.object(_asyncio, 'run', side_effect=asyncio_side_effect):
-            _run_party_mode(tmp_path, run_dir, ui)
-
     def test_both_files_produced(self, tmp_path: Path):
         """party_results called with both paths when both files exist."""
-        run_dir = self._setup_party(tmp_path)
+        run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
 
         def mock_asyncio_run(coro):
@@ -824,7 +813,7 @@ class TestPartyModeResultHandling:
             (run_dir / "party_report.md").write_text("# Party Report\n")
             (run_dir / "README_proposal.md").write_text("# New README\n")
 
-        self._run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
+        _run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
 
         ui.party_results.assert_called_once_with(
             str(run_dir / "README_proposal.md"),
@@ -833,26 +822,26 @@ class TestPartyModeResultHandling:
 
     def test_no_files_produced(self, tmp_path: Path):
         """party_results called with None when no files produced."""
-        run_dir = self._setup_party(tmp_path)
+        run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
 
         def mock_asyncio_run(coro):
             coro.close()
 
-        self._run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
+        _run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
 
         ui.party_results.assert_called_once_with(None, None)
 
     def test_only_report_produced(self, tmp_path: Path):
         """party_results called with report only when proposal missing."""
-        run_dir = self._setup_party(tmp_path)
+        run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
 
         def mock_asyncio_run(coro):
             coro.close()
             (run_dir / "party_report.md").write_text("# Report\n")
 
-        self._run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
+        _run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
 
         ui.party_results.assert_called_once_with(
             None,
@@ -861,14 +850,14 @@ class TestPartyModeResultHandling:
 
     def test_only_proposal_produced(self, tmp_path: Path):
         """party_results called with proposal only when report missing."""
-        run_dir = self._setup_party(tmp_path)
+        run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
 
         def mock_asyncio_run(coro):
             coro.close()
             (run_dir / "README_proposal.md").write_text("# Proposal\n")
 
-        self._run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
+        _run_party_with_mock(tmp_path, run_dir, ui, mock_asyncio_run)
 
         ui.party_results.assert_called_once_with(
             str(run_dir / "README_proposal.md"),
@@ -883,22 +872,9 @@ class TestPartyModeResultHandling:
 class TestPartyModeRetryPaths:
     """Test the retry/error-handling logic inside _run_party_mode agent execution."""
 
-    def _setup_party(self, tmp_path):
-        """Set up a project with agents and required context for party mode."""
-        agents = tmp_path / "agents"
-        agents.mkdir()
-        (agents / "dev.md").write_text("# Dev Agent")
-        run_dir = tmp_path / "runs" / "session"
-        run_dir.mkdir(parents=True)
-        (tmp_path / "README.md").write_text("# Test Project")
-        (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
-        (tmp_path / "runs" / "memory.md").write_text("# Memory\n")
-        (run_dir / "CONVERGED").write_text("All done")
-        return run_dir
-
     def test_benign_runtime_error_breaks_loop(self, tmp_path: Path):
         """Benign RuntimeError (cancel scope) should be treated as success."""
-        run_dir = self._setup_party(tmp_path)
+        run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
         import asyncio as _asyncio
         import agent as agent_mod
@@ -924,7 +900,7 @@ class TestPartyModeRetryPaths:
 
     def test_rate_limit_retries_with_sleep(self, tmp_path: Path):
         """Rate limit error should trigger retry with sleep."""
-        run_dir = self._setup_party(tmp_path)
+        run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
         import asyncio as _asyncio
         import agent as agent_mod
@@ -954,7 +930,7 @@ class TestPartyModeRetryPaths:
 
     def test_non_retryable_exception_warns_and_returns(self, tmp_path: Path):
         """Non-retryable, non-benign exception should warn and return early."""
-        run_dir = self._setup_party(tmp_path)
+        run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
         import asyncio as _asyncio
         import agent as agent_mod
