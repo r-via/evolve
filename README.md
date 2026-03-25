@@ -54,6 +54,9 @@ evolve start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--m
 # Preview what the agent would do (read-only, no file changes)
 evolve start <project-dir> --dry-run [--check "pytest"]
 
+# Validate spec compliance without evolving (pass/fail per README claim)
+evolve start <project-dir> --validate [--check "pytest"]
+
 # Resume an interrupted session
 evolve start <project-dir> --resume
 
@@ -94,6 +97,9 @@ evolve start ~/projects/my-tool --check "pytest" --model claude-sonnet-4-2025051
 # Dry run — see what the agent would change without modifying files
 evolve start ~/projects/my-tool --check "pytest" --dry-run
 
+# Validate — check spec compliance without modifying files
+evolve start ~/projects/my-tool --check "pytest" --validate
+
 # Resume after interruption (continues from last completed round)
 evolve start ~/projects/my-tool --check "pytest" --resume
 
@@ -129,6 +135,12 @@ rounds = 20
 timeout = 300
 model = "claude-opus-4-6"
 yolo = false
+
+# Event hooks — shell commands executed on lifecycle events
+[hooks]
+on_round_end = "echo 'Round complete'"
+on_converged = "curl -s -X POST https://hooks.slack.com/services/YOUR/WEBHOOK/URL -d '{\"text\": \"evolve converged!\"}'"
+on_error = "notify-send 'evolve encountered an error'"
 ```
 
 Or add an `[tool.evolve]` section to your existing `pyproject.toml`:
@@ -138,6 +150,9 @@ Or add an `[tool.evolve]` section to your existing `pyproject.toml`:
 check = "pytest"
 rounds = 20
 timeout = 300
+
+[tool.evolve.hooks]
+on_converged = "curl -s -X POST https://your-webhook-url"
 ```
 
 ### Resolution order
@@ -187,13 +202,35 @@ Evolve features a modern terminal UI powered by `rich`:
   Progress: 6 done, 3 remaining
 ```
 
-Features:
+### Completion summary
+
+When evolution finishes (converged or max rounds), evolve prints a summary panel
+to the terminal:
+
+```
+╭──────────── Evolution Complete ─────────────╮
+│ ✅ CONVERGED in 8 rounds (12m 34s)          │
+│                                              │
+│ 6 improvements completed                    │
+│ 2 bugs fixed                                │
+│ 47 tests passing                            │
+│                                              │
+│ Report: runs/20260325/evolution_report.md    │
+╰──────────────────────────────────────────────╯
+```
+
+The summary is generated from the session's `evolution_report.md` and displayed
+through the TUI (Rich panel, plain text, or JSON event depending on output mode).
+
+### TUI features
+
 - Colored panels for round headers with progress bars
 - Real-time agent activity feed (tools used, files edited)
 - Check command results with pass/fail indicators
 - Git commit + push status
+- Completion summary panel on exit
 - Graceful fallback to plain text when `rich` is not installed
-- TUI interface enforced via Protocol — RichTUI and PlainTUI both implement the same `TUIProtocol`, guaranteeing method parity at type-check time
+- TUI interface enforced via Protocol — RichTUI, PlainTUI, and JsonTUI all implement the same `TUIProtocol`, guaranteeing method parity at type-check time
 
 ### JSON output mode
 
@@ -212,6 +249,7 @@ Each line is a JSON object with a `type`, `timestamp`, and event-specific fields
 {"type": "agent_tool", "timestamp": "2026-03-24T16:01:00Z", "tool": "Edit", "input": "src/parser.py"}
 {"type": "improvement_completed", "timestamp": "2026-03-24T16:02:00Z", "description": "Add input validation"}
 {"type": "converged", "timestamp": "2026-03-24T16:05:00Z", "round": 3, "reason": "All README claims verified"}
+{"type": "hook_fired", "timestamp": "2026-03-24T16:05:01Z", "event": "on_converged", "success": true}
 ```
 
 The `JsonTUI` class implements the same `TUIProtocol` as `RichTUI` and `PlainTUI`,
@@ -231,12 +269,14 @@ automatically detected and killed.
 │   ├── improvements.md                # shared — one improvement added per round
 │   ├── memory.md                      # shared — cumulative error log, compacted each round
 │   ├── 20260324_160000/               # session 1
+│   │   ├── state.json                 # real-time session state (queryable)
 │   │   ├── conversation_loop_1.md     # full opus conversation log
 │   │   ├── conversation_loop_2.md
 │   │   ├── check_round_1.txt          # post-fix check results
 │   │   ├── subprocess_error_round_3.txt  # diagnostic from crashed/stalled round
 │   │   ├── evolution_report.md        # post-session summary with timeline
 │   │   ├── dry_run_report.md          # (dry-run only) read-only analysis
+│   │   ├── validate_report.md         # (validate only) spec compliance report
 │   │   ├── COMMIT_MSG                 # (transient) commit message from opus
 │   │   └── CONVERGED                  # written by opus when done
 │   └── 20260324_170000/               # session 2
@@ -262,27 +302,84 @@ automatically detected and killed.
 8. Opus verifies every file it wrote by reading it back
 9. Opus writes COMMIT_MSG with conventional commit message
 10. Git commit + push
-11. Orchestrator re-runs check → saves check_round_N.txt
-12. Next round starts as fresh subprocess (reloaded code)
+11. Fire event hooks (on_round_end)
+12. Orchestrator re-runs check → saves check_round_N.txt
+13. Write updated state.json
+14. Next round starts as fresh subprocess (reloaded code)
 
 --- watchdog & debug retry ---
 
 If a subprocess crashes, stalls (no output for 120s), or makes no progress,
 the orchestrator:
   a. Saves a diagnostic file (subprocess_error_round_N.txt)
-  b. Retries the round (up to 2 debug retries per round)
-  c. The retry receives the crash diagnostic in its prompt
-  d. In --forever mode, exhausted retries skip to the next round
+  b. Fires on_error hook
+  c. Retries the round (up to 2 debug retries per round)
+  d. The retry receives the crash diagnostic in its prompt
+  e. In --forever mode, exhausted retries skip to the next round
 
 --- after convergence ---
 
-13. Party mode: all agents brainstorm next evolution
-14. Agents produce:
+13. Fire on_converged hook
+14. Party mode: all agents brainstorm next evolution
+15. Agents produce:
     - party_report.md — full discussion log with each agent's reasoning
     - README_proposal.md — proposed updated README
-15. Operator reviews both files
-16. If approved: replace README.md → new evolution loop
+16. Operator reviews both files
+17. If approved: replace README.md → new evolution loop
 ```
+
+### Real-time state file
+
+Each session maintains a `state.json` file updated after every round, providing
+structured status queryable by external tools (CI systems, dashboards, monitoring):
+
+```json
+{
+  "version": 1,
+  "session": "20260325_153156",
+  "project": "my-tool",
+  "round": 5,
+  "max_rounds": 20,
+  "phase": "improvement",
+  "status": "running",
+  "improvements": {"done": 12, "remaining": 3, "blocked": 1},
+  "last_check": {"passed": true, "tests": 143, "duration_s": 1.3},
+  "started_at": "2026-03-25T15:31:56Z",
+  "updated_at": "2026-03-25T16:05:00Z"
+}
+```
+
+The `status` field can be: `running`, `converged`, `max_rounds`, `error`, or `party_mode`.
+The schema is versioned for forward compatibility.
+
+### Event hooks
+
+Evolve fires lifecycle events that can trigger external commands. Configure hooks
+in `evolve.toml`:
+
+```toml
+[hooks]
+on_round_start = "echo 'Starting round'"
+on_round_end = "echo 'Round complete'"
+on_converged = "curl -s -X POST https://hooks.slack.com/services/T00/B00/xxx -d '{\"text\": \"Project converged!\"}'"
+on_error = "notify-send 'evolve error'"
+```
+
+**Supported events:**
+
+| Event | Fires when |
+|-------|-----------|
+| `on_round_start` | A new round begins |
+| `on_round_end` | A round completes successfully |
+| `on_converged` | The project reaches convergence |
+| `on_error` | A round fails (crash, stall, or check failure) |
+
+**Hook execution model:**
+- Hooks run as fire-and-forget subprocesses with a 30-second timeout
+- A failing hook never blocks the evolution loop — failures are logged and skipped
+- Hook commands receive event context via environment variables (`EVOLVE_SESSION`,
+  `EVOLVE_ROUND`, `EVOLVE_STATUS`)
+- Hooks are managed by the `hooks.py` module, keeping orchestration logic clean
 
 ### Evolution report
 
@@ -310,7 +407,7 @@ After each session completes (converged or max rounds reached), evolve writes
 ```
 
 The report is generated by parsing conversation logs, commit messages, and check
-results from the session directory. It serves both human review (post-run summary)
+results from the session directory. It serves both human review (post-session summary)
 and CI/CD integration (PR description content).
 
 ### Subprocess monitoring & debug retries
@@ -325,10 +422,11 @@ When a round fails (crash, stall, or zero progress), the orchestrator enters a
 
 1. Writes `subprocess_error_round_N.txt` with full diagnostic (exit code,
    last 3000 chars of output, reason for failure)
-2. Retries the round — the agent receives the diagnostic in its prompt under a
+2. Fires `on_error` hook
+3. Retries the round — the agent receives the diagnostic in its prompt under a
    "CRITICAL — Previous round CRASHED" header and fixes the root cause
-3. Up to 2 debug retries per round (3 total attempts)
-4. In `--forever` mode, exhausted retries skip to the next round instead of
+4. Up to 2 debug retries per round (3 total attempts)
+5. In `--forever` mode, exhausted retries skip to the next round instead of
    exiting
 
 The agent is aware of the watchdog via the system prompt and is instructed to:
@@ -404,6 +502,41 @@ Useful for:
 - Auditing what the agent considers "missing" from the spec
 - Estimating effort for a new project
 - CI/CD gates that check spec compliance without modifying code
+
+### The --validate flag
+
+Runs a **spec compliance check** — verifies every claim in the README against the
+actual codebase and reports pass/fail for each one. Similar to `--dry-run` but
+focused specifically on validation rather than improvement planning.
+
+```bash
+evolve start ~/projects/my-tool --check "pytest" --validate
+```
+
+**How it works:**
+
+1. Runs the check command (if provided) to verify current test state
+2. Launches the agent in read-only mode with a validation-focused prompt
+3. Agent systematically checks every README claim against the code
+4. Produces `runs/<session>/validate_report.md` with:
+   - Each README claim listed with ✅ (implemented) or ❌ (missing/broken)
+   - Overall compliance percentage
+   - Specific gaps identified with file references
+5. No files are modified, no git commits are created
+
+**Exit codes for --validate:**
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 0 | All README claims validated — spec compliant |
+| 1 | One or more claims failed validation |
+| 2 | Error during validation |
+
+Useful for:
+- CI quality gates ("does the code match the spec?")
+- Pre-merge checks on PRs that modify the README
+- Auditing spec compliance on a schedule
+- Replacing manual code review for spec adherence
 
 ### The --resume flag
 
@@ -594,9 +727,133 @@ if [ $EXIT_CODE -eq 0 ]; then
 fi
 ```
 
+## CI/CD Integration
+
+### GitHub Actions
+
+Evolve works in CI/CD pipelines out of the box. Here's a GitHub Actions workflow
+that evolves a project and creates a PR with the results:
+
+```yaml
+name: Evolve
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly on Monday at 2am
+
+jobs:
+  evolve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install evolve
+        run: pip install .
+
+      - name: Run evolution
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          evolve start . --check "pytest" --rounds 20 --json > evolve-output.jsonl
+          echo "EXIT_CODE=$?" >> $GITHUB_ENV
+
+      - name: Create PR on convergence
+        if: env.EXIT_CODE == '0'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: 'feat: evolve convergence'
+          body: |
+            Automated evolution run converged.
+            See `runs/*/evolution_report.md` for details.
+          branch: evolve/ci-run
+```
+
+### Validation in CI
+
+Use `--validate` as a quality gate in pull request checks:
+
+```yaml
+name: Spec Compliance
+on: [pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install .
+      - name: Validate spec compliance
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: evolve start . --validate --check "pytest"
+```
+
+## Writing specs for evolve
+
+Evolve treats your README as the specification. The quality of your README directly
+affects how well evolve can converge your project. Here are guidelines for writing
+effective specs:
+
+### Be specific and verifiable
+
+```markdown
+# Good — evolve can verify this
+"The CLI returns exit code 0 on success and exit code 1 on failure."
+"Tests target 80% coverage minimum."
+
+# Vague — evolve can't objectively verify this
+"The CLI has good error handling."
+"The code is well-tested."
+```
+
+### Include command examples
+
+Evolve can literally run examples from your README to verify they work:
+
+```markdown
+# Good — testable commands
+$ my-tool parse input.json --format csv
+$ my-tool validate schema.json
+
+# Vague — not testable
+"my-tool supports various input formats"
+```
+
+### Describe the architecture
+
+Architectural descriptions help the agent make consistent design decisions:
+
+```markdown
+# Good — clear structure
+| Module | Responsibility |
+|--------|---------------|
+| cli.py | Argument parsing, entry point |
+| core.py | Business logic |
+| io.py | File I/O, serialization |
+```
+
+### State test expectations
+
+Explicit test targets give the agent a clear convergence criterion:
+
+```markdown
+# Good — measurable
+"The project targets 80% test coverage minimum."
+"All public functions have type annotations and docstrings."
+```
+
+### Keep it current
+
+The README should describe what the project *should* be, not what it was. Update
+it when requirements change — evolve will converge to the new spec.
+
 ## Architecture
 
-Evolve is organized into four modules with clear responsibilities:
+Evolve is organized into five modules with clear responsibilities:
 
 | Module | Responsibility |
 |--------|---------------|
@@ -604,6 +861,7 @@ Evolve is organized into four modules with clear responsibilities:
 | `loop.py` | Evolution orchestrator — monitored subprocesses, watchdog, debug retries, party mode |
 | `agent.py` | Claude SDK interface — prompt building, agent execution, retry logic |
 | `tui.py` | Terminal UI — `TUIProtocol` with Rich, Plain, and JSON implementations |
+| `hooks.py` | Event hooks — loading config, matching events, fire-and-forget execution |
 
 ### Config resolution
 
@@ -626,6 +884,16 @@ watchdog timer and retries failed rounds:
 - `_save_subprocess_diagnostic` writes crash/stall context to disk
 - Debug retry loop re-runs the round with the diagnostic injected into the
   agent's prompt, up to 2 retries per round
+
+### Hook execution
+
+The `hooks.py` module manages event hook lifecycle:
+- Loads hook configuration from `evolve.toml` or `pyproject.toml`
+- Matches lifecycle events to configured shell commands
+- Executes hooks as fire-and-forget subprocesses with 30-second timeout
+- Sets environment variables for hook context (`EVOLVE_SESSION`, `EVOLVE_ROUND`, `EVOLVE_STATUS`)
+- Logs failures without blocking the evolution loop
+- Fully testable in isolation from the orchestrator
 
 ## Development
 
@@ -656,7 +924,8 @@ tests/
 ├── test_loop_extended.py   # _git_commit, _run_monitored_subprocess, _save_subprocess_diagnostic, resume, reports
 ├── test_agent.py           # build_prompt, error helpers, retry logic
 ├── test_tui.py             # factory function, TUI Protocol parity, JsonTUI
-└── test_evolve.py          # CLI arg parsing, _show_status, config resolution, init, clean, history
+├── test_evolve.py          # CLI arg parsing, _show_status, config resolution, init, clean, history
+└── test_hooks.py           # hook loading, event matching, execution, timeout, failure handling
 ```
 
 Tests cover all pure utility functions without requiring the Claude SDK. Integration
@@ -685,9 +954,9 @@ Evolve works with any Claude model supported by the Agent SDK. Recommended:
 These are under consideration for future evolution cycles:
 
 - **Multi-repo evolution** — evolve multiple related projects in coordination
-- **Watch mode** — re-evolve automatically when README changes
+- **Spec drift detection** — detect when code drifts from README over time and auto-fix
 - **Parallel analysis** — run read-only analysis in parallel before sequential implementation
-- **Plugin system** — custom check commands, reporters, and post-convergence hooks
+- **GitHub App / hosted service** — managed evolution service for teams
 
 <!-- checked-by-anatoly -->
 [![Checked by Anatoly](https://img.shields.io/badge/checked%20by-Anatoly-blue)](https://github.com/r-via/anatoly)
