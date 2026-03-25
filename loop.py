@@ -140,6 +140,39 @@ def _count_blocked(path: Path) -> int:
     return count
 
 
+def _parse_check_output(text: str) -> tuple[bool | None, int | None, float | None]:
+    """Parse check command output to extract pass/fail, test count, and duration.
+
+    Extracts structured information from check command output (e.g. pytest output)
+    for inclusion in state.json.
+
+    Args:
+        text: Raw text content of a check_round_N.txt file.
+
+    Returns:
+        A tuple of (passed, tests, duration_s):
+        - passed: True if "PASS" appears in the text, False otherwise, None if text is empty
+        - tests: Number of tests passed (from "N passed" pattern), or None
+        - duration_s: Duration in seconds (from "in N.Ns" pattern), or None
+    """
+    if not text.strip():
+        return (None, None, None)
+
+    passed = "PASS" in text
+    tests: int | None = None
+    duration: float | None = None
+
+    tm = re.search(r"(\d+)\s+passed", text)
+    if tm:
+        tests = int(tm.group(1))
+
+    dm = re.search(r"in\s+([\d.]+)s", text)
+    if dm:
+        duration = float(dm.group(1))
+
+    return (passed, tests, duration)
+
+
 def _write_state_json(
     run_dir: Path,
     project_dir: Path,
@@ -802,13 +835,7 @@ def _run_rounds(
             check_file = run_dir / f"check_round_{round_num}.txt"
             if check_file.is_file():
                 _ct = check_file.read_text(errors="replace")
-                _check_passed = "PASS" in _ct
-                _tm = re.search(r"(\d+)\s+passed", _ct)
-                if _tm:
-                    _check_tests = int(_tm.group(1))
-                _dm = re.search(r"in\s+([\d.]+)s", _ct)
-                if _dm:
-                    _check_duration = float(_dm.group(1))
+                _check_passed, _check_tests, _check_duration = _parse_check_output(_ct)
 
             # Update state.json after every round
             _write_state_json(

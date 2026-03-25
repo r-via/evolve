@@ -12,6 +12,7 @@ from loop import (
     _count_blocked,
     _get_current_improvement,
     _auto_detect_check,
+    _parse_check_output,
     _setup_forever_branch,
     _forever_restart,
     _write_state_json,
@@ -897,6 +898,138 @@ class TestWriteStateJson:
         # Should have generated a fresh timestamp
         assert "T" in state["started_at"]
         assert state["started_at"].endswith("Z")
+
+
+# ---------------------------------------------------------------------------
+# _parse_check_output
+# ---------------------------------------------------------------------------
+
+class TestParseCheckOutput:
+    """Tests for _parse_check_output — extracting pass/fail, test count, duration."""
+
+    def test_standard_pytest_output(self):
+        """Parse standard pytest PASS output with test count and duration."""
+        text = (
+            "Round 1 post-fix check: PASS\n"
+            "Command: pytest\n"
+            "Exit code: 0\n\n"
+            "stdout:\n"
+            "============================= test session starts ==============================\n"
+            "collected 42 items\n\n"
+            "tests/test_foo.py ..........................................\n\n"
+            "============================= 42 passed in 1.23s ==============================\n"
+        )
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is True
+        assert tests == 42
+        assert duration == 1.23
+
+    def test_pytest_failure_output(self):
+        """Parse pytest output with failures (no PASS marker)."""
+        text = (
+            "Round 2 post-fix check: FAIL\n"
+            "Command: pytest\n"
+            "Exit code: 1\n\n"
+            "stdout:\n"
+            "============================= test session starts ==============================\n"
+            "collected 10 items\n\n"
+            "tests/test_foo.py ..F..F....\n\n"
+            "============================= 8 passed, 2 failed in 0.45s =====================\n"
+        )
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is False
+        assert tests == 8
+        assert duration == 0.45
+
+    def test_empty_text(self):
+        """Empty text returns all None."""
+        passed, tests, duration = _parse_check_output("")
+        assert passed is None
+        assert tests is None
+        assert duration is None
+
+    def test_whitespace_only(self):
+        """Whitespace-only text returns all None."""
+        passed, tests, duration = _parse_check_output("   \n\n  ")
+        assert passed is None
+        assert tests is None
+        assert duration is None
+
+    def test_no_test_count_or_duration(self):
+        """Output with PASS but no pytest-style test count or duration."""
+        text = "Round 1 post-fix check: PASS\nCommand: make test\nExit code: 0\n\nAll good.\n"
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is True
+        assert tests is None
+        assert duration is None
+
+    def test_npm_test_output(self):
+        """Non-pytest output (npm test) — no 'N passed' pattern."""
+        text = (
+            "Round 1 post-fix check: PASS\n"
+            "Command: npm test\n"
+            "Exit code: 0\n\n"
+            "Test Suites: 3 passed, 3 total\n"
+            "Tests:       15 passed, 15 total\n"
+            "Time:        2.345 s\n"
+        )
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is True
+        # "3 passed" from Test Suites line matches first
+        assert tests == 3
+        # No "in N.Ns" pattern — npm uses different format
+        assert duration is None
+
+    def test_cargo_test_output(self):
+        """Cargo test output format."""
+        text = (
+            "Round 1 post-fix check: PASS\n"
+            "Command: cargo test\n"
+            "Exit code: 0\n\n"
+            "running 23 tests\n"
+            "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; "
+            "finished in 0.82s\n"
+        )
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is True
+        assert tests == 23
+        assert duration == 0.82
+
+    def test_large_test_count(self):
+        """Large test counts are parsed correctly."""
+        text = "PASS\n560 passed in 6.93s\n"
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is True
+        assert tests == 560
+        assert duration == 6.93
+
+    def test_duration_without_test_count(self):
+        """Duration present but no 'N passed' pattern."""
+        text = "PASS\nAll checks completed in 12.5s\n"
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is True
+        assert tests is None
+        assert duration == 12.5
+
+    def test_multiple_passed_patterns_takes_first(self):
+        """When multiple 'N passed' patterns exist, first match is used."""
+        text = "PASS\n10 passed in 1.0s\nAlso 5 passed in 0.5s\n"
+        passed, tests, duration = _parse_check_output(text)
+        assert tests == 10
+        assert duration == 1.0
+
+    def test_pass_marker_case_sensitive(self):
+        """PASS detection is case-sensitive — 'pass' does not match."""
+        text = "All tests pass\n42 passed in 1.0s\n"
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is False
+        assert tests == 42
+
+    def test_pass_marker_in_word(self):
+        """PASS substring in other words still triggers True."""
+        text = "PASSED all checks\n10 passed in 2.0s\n"
+        passed, tests, duration = _parse_check_output(text)
+        assert passed is True
 
 
 # ---------------------------------------------------------------------------
