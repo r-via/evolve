@@ -6,6 +6,7 @@ Each round runs as a separate subprocess so code changes are picked up immediate
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -14,6 +15,61 @@ from datetime import datetime
 from pathlib import Path
 
 from tui import get_tui
+
+
+def _auto_detect_check(project_dir: Path) -> str | None:
+    """Auto-detect the test framework for a project.
+
+    Looks for common project files and checks whether the corresponding
+    test runner is available on PATH.  Returns the first match or None.
+
+    Detection order:
+      1. pytest      — pyproject.toml, setup.py, setup.cfg, or test_*.py files
+      2. npm test    — package.json
+      3. cargo test  — Cargo.toml
+      4. go test ./...  — go.mod
+      5. make test   — Makefile with a 'test' target
+
+    Args:
+        project_dir: Root directory of the project to inspect.
+
+    Returns:
+        A shell command string (e.g. ``"pytest"``) or None if nothing found.
+    """
+    # pytest: Python project indicators
+    py_markers = ["pyproject.toml", "setup.py", "setup.cfg", "tox.ini", "pytest.ini"]
+    has_python = any((project_dir / m).is_file() for m in py_markers)
+    if not has_python:
+        # Also check for test_*.py files at top level or in tests/
+        has_python = bool(list(project_dir.glob("test_*.py")))
+        if not has_python and (project_dir / "tests").is_dir():
+            has_python = bool(list((project_dir / "tests").glob("test_*.py")))
+    if has_python and shutil.which("pytest"):
+        return "pytest"
+
+    # npm test: Node.js project
+    if (project_dir / "package.json").is_file() and shutil.which("npm"):
+        return "npm test"
+
+    # cargo test: Rust project
+    if (project_dir / "Cargo.toml").is_file() and shutil.which("cargo"):
+        return "cargo test"
+
+    # go test: Go project
+    if (project_dir / "go.mod").is_file() and shutil.which("go"):
+        return "go test ./..."
+
+    # make test: Makefile with test target
+    makefile = project_dir / "Makefile"
+    if makefile.is_file() and shutil.which("make"):
+        try:
+            content = makefile.read_text(errors="replace")
+            if re.search(r"^test\s*:", content, re.MULTILINE):
+                return "make test"
+        except OSError:
+            pass
+
+    return None
 
 
 def _count_checked(path: Path) -> int:
@@ -231,6 +287,14 @@ def evolve_loop(
         forever: If True, run indefinitely on a dedicated branch.
     """
     improvements_path = project_dir / "runs" / "improvements.md"
+
+    # Auto-detect check command if not provided
+    if check_cmd is None:
+        detected = _auto_detect_check(project_dir)
+        if detected:
+            ui_early = get_tui()
+            ui_early.info(f"  Auto-detected check command: {detected}")
+            check_cmd = detected
 
     start_round = 1
 
