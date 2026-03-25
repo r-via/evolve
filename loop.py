@@ -73,12 +73,36 @@ def _auto_detect_check(project_dir: Path) -> str | None:
 
 
 def _count_checked(path: Path) -> int:
+    """Count the number of completed improvements in an improvements.md file.
+
+    Scans for lines matching ``- [x]`` (checked checkboxes) to determine
+    how many improvements have been implemented and verified.
+
+    Args:
+        path: Path to the improvements.md file.
+
+    Returns:
+        Number of checked (completed) improvement items, or 0 if the file
+        does not exist.
+    """
     if not path.is_file():
         return 0
     return len(re.findall(r"^- \[x\]", path.read_text(), re.MULTILINE))
 
 
 def _count_unchecked(path: Path) -> int:
+    """Count the number of pending improvements in an improvements.md file.
+
+    Scans for lines matching ``- [ ]`` (unchecked checkboxes) to determine
+    how many improvements are still outstanding.
+
+    Args:
+        path: Path to the improvements.md file.
+
+    Returns:
+        Number of unchecked (pending) improvement items, or 0 if the file
+        does not exist.
+    """
     if not path.is_file():
         return 0
     return len(re.findall(r"^- \[ \]", path.read_text(), re.MULTILINE))
@@ -115,6 +139,20 @@ def _count_blocked(path: Path) -> int:
 
 
 def _get_current_improvement(path: Path, yolo: bool = False) -> str | None:
+    """Return the text of the next pending improvement to implement.
+
+    Finds the first unchecked ``- [ ]`` item in improvements.md. Items tagged
+    with ``[needs-package]`` are skipped unless *yolo* mode is enabled, since
+    installing new packages requires explicit opt-in.
+
+    Args:
+        path: Path to the improvements.md file.
+        yolo: If True, allow improvements that require new package installs.
+
+    Returns:
+        The improvement description text (everything after ``- [ ] ``), or
+        None if no actionable improvement is found or the file does not exist.
+    """
     if not path.is_file():
         return None
     for line in path.read_text().splitlines():
