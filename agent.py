@@ -133,6 +133,8 @@ def _patch_sdk_parser():
     """Monkey-patch SDK to not crash on malformed rate_limit_event."""
     try:
         from claude_agent_sdk._internal import message_parser
+        if getattr(message_parser.parse_message, '_patched', False):
+            return
         original = message_parser.parse_message
         def patched(data):
             try:
@@ -141,6 +143,7 @@ def _patch_sdk_parser():
                 if isinstance(data, dict) and data.get("type") == "rate_limit_event":
                     return None
                 raise
+        patched._patched = True
         message_parser.parse_message = patched
     except Exception:
         pass
