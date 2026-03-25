@@ -121,6 +121,41 @@ class TestPlainTUIExtended:
         out = capsys.readouterr().out
         assert "pytest" in out
 
+    def test_completion_summary_converged(self, capsys):
+        self.ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="runs/s1/evolution_report.md",
+        )
+        out = capsys.readouterr().out
+        assert "CONVERGED" in out
+        assert "8 rounds" in out
+        assert "6 improvements" in out
+        assert "2 bugs fixed" in out
+        assert "47 tests passing" in out
+        assert "evolution_report.md" in out
+
+    def test_completion_summary_max_rounds(self, capsys):
+        self.ui.completion_summary(
+            status="MAX_ROUNDS", round_num=20, duration_s=60.0,
+            improvements=3, bugs_fixed=0, tests_passing=None,
+            report_path="runs/s1/evolution_report.md",
+        )
+        out = capsys.readouterr().out
+        assert "MAX_ROUNDS" in out
+        assert "3 improvements" in out
+        # tests_passing=None should not appear
+        assert "tests passing" not in out
+
+    def test_completion_summary_duration_format(self, capsys):
+        self.ui.completion_summary(
+            status="CONVERGED", round_num=1, duration_s=125.0,
+            improvements=1, bugs_fixed=0, tests_passing=10,
+            report_path="report.md",
+        )
+        out = capsys.readouterr().out
+        assert "2m 05s" in out
+
 
 class TestRichTUIExtended:
     """Cover RichTUI methods if rich is available."""
@@ -198,6 +233,32 @@ class TestRichTUIExtended:
              "checked": 2, "unchecked": 3},
         ]
         self.ui.history_table("/tmp/proj", rows, 2, 8, 5)
+
+    def test_rich_completion_summary(self, capsys):
+        if not self._rich:
+            return
+        self.ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="runs/s1/evolution_report.md",
+        )
+        out = capsys.readouterr().out
+        assert "CONVERGED" in out
+        assert "8 rounds" in out
+        assert "6 improvements" in out
+        assert "evolution_report.md" in out
+
+    def test_rich_completion_summary_no_tests(self, capsys):
+        if not self._rich:
+            return
+        self.ui.completion_summary(
+            status="MAX_ROUNDS", round_num=10, duration_s=60.0,
+            improvements=2, bugs_fixed=0, tests_passing=None,
+            report_path="report.md",
+        )
+        out = capsys.readouterr().out
+        assert "MAX_ROUNDS" in out
+        assert "tests passing" not in out
 
 
 class TestPlainTUIHistoryAndStatus:
@@ -325,3 +386,28 @@ class TestJsonTUIExtended:
         obj = self._parse_line(capsys)
         assert obj["type"] == "history"
         assert obj["num_sessions"] == 1
+
+    def test_completion_summary(self, capsys):
+        self.ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="runs/20260325/evolution_report.md",
+        )
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "completion_summary"
+        assert obj["status"] == "CONVERGED"
+        assert obj["round"] == 8
+        assert obj["improvements"] == 6
+        assert obj["bugs_fixed"] == 2
+        assert obj["tests_passing"] == 47
+        assert "evolution_report.md" in obj["report_path"]
+
+    def test_completion_summary_max_rounds(self, capsys):
+        self.ui.completion_summary(
+            status="MAX_ROUNDS", round_num=20, duration_s=120.0,
+            improvements=3, bugs_fixed=1, tests_passing=None,
+            report_path="runs/s1/evolution_report.md",
+        )
+        obj = self._parse_line(capsys)
+        assert obj["status"] == "MAX_ROUNDS"
+        assert obj["tests_passing"] is None
