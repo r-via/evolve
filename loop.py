@@ -93,6 +93,7 @@ def _generate_evolution_report(
         # Try to get the commit message for this round from git log
         action = ""
         commit_msg_line = ""
+        from_git_log = False
         try:
             git_result = subprocess.run(
                 ["git", "log", "--oneline", f"--grep=round {r}", "--grep=evolve", "--all-match", "-1"],
@@ -100,6 +101,7 @@ def _generate_evolution_report(
             )
             if git_result.stdout.strip():
                 commit_msg_line = git_result.stdout.strip()
+                from_git_log = True
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
@@ -116,6 +118,9 @@ def _generate_evolution_report(
                         break
 
         if commit_msg_line:
+            # Strip the git hash prefix from 'git log --oneline' output (<hash> <msg>)
+            if from_git_log:
+                commit_msg_line = commit_msg_line.split(" ", 1)[-1]
             action = commit_msg_line[:70]
         else:
             action = f"round {r}"
