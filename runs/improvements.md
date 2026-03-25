@@ -10,4 +10,5 @@
 - [x] [functional] Add dedicated unit tests for the new _build_check_section helper in agent.py to verify all three branches (cmd+output, cmd-only, no cmd) and ensure the helper is tested independently from the prompt builders
 - [x] [functional] Add auto-detection of test framework when --check is omitted: scan project for pytest, npm test, cargo test, go test, make test and use the first found, as described in the README's "--check flag" section
 - [x] [functional] Add unit tests for _auto_detect_check integration in evolve_loop: verify that when check_cmd=None, evolve_loop calls _auto_detect_check and uses the detected command, and that an explicit --check flag bypasses auto-detection
-- [ ] [functional] Add tests for _generate_evolution_report to verify it produces correct timeline tables, summary stats, and handles edge cases (empty sessions, missing commit messages, partial round data)
+- [x] [functional] Add tests for _generate_evolution_report to verify it produces correct timeline tables, summary stats, and handles edge cases (empty sessions, missing commit messages, partial round data)
+- [ ] [functional] Add tests for _parse_report_summary to verify it correctly extracts improvements completed, bugs fixed, files modified, and remaining counts from evolution_report.md content, including malformed and empty reports

@@ -620,6 +620,155 @@ class TestEvolutionReportExtended:
         report = (run_dir / "evolution_report.md").read_text()
         assert "round 1" in report
 
+    def test_report_missing_improvements_file(self, tmp_path: Path):
+        """Report handles missing improvements.md gracefully (0 checked, 0 unchecked)."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        run_dir = runs_dir / "session"
+        run_dir.mkdir()
+        # No improvements.md file
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, 10, 1, True)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "0 improvements completed" in report
+        assert "0 bugs fixed" in report
+        # No "remaining" line when unchecked is 0
+        assert "remaining" not in report
+
+    def test_report_check_fail_no_passed_count(self, tmp_path: Path):
+        """Check results with FAIL and no passed count shows FAIL."""
+        project_dir, run_dir = self._setup_report_project(tmp_path)
+        (run_dir / "check_round_1.txt").write_text("Round 1: FAIL\nERROR: compilation failed\n")
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, 10, 1, False)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "FAIL" in report
+
+    def test_report_check_pass_no_count(self, tmp_path: Path):
+        """Check results with PASS but no numeric count shows PASS."""
+        project_dir, run_dir = self._setup_report_project(tmp_path)
+        (run_dir / "check_round_1.txt").write_text("PASS\nAll good\n")
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, 10, 1, True)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "PASS" in report
+
+    def test_report_multiple_rounds_mixed_actions(self, tmp_path: Path):
+        """Report correctly counts bugs_fixed and improvements_done across mixed rounds."""
+        project_dir, run_dir = self._setup_report_project(
+            tmp_path, "- [x] a\n- [x] b\n- [x] c\n"
+        )
+        (run_dir / "conversation_loop_1.md").write_text("fix(cli): crash on startup\n")
+        (run_dir / "conversation_loop_2.md").write_text("feat(api): add endpoint\n")
+        (run_dir / "conversation_loop_3.md").write_text("refactor(core): simplify logic\n")
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, 10, 3, True)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "1 bugs fixed" in report
+        # refactor doesn't count as fix or feat — only 1 of each
+        assert "fix(cli): crash on startup" in report
+        assert "feat(api): add endpoint" in report
+        assert "refactor(core): simplify logic" in report
+
+    def test_report_partial_round_data(self, tmp_path: Path):
+        """Report handles rounds where only some have check files or conversation logs."""
+        project_dir, run_dir = self._setup_report_project(tmp_path)
+        # Round 1 has check but no conversation
+        (run_dir / "check_round_1.txt").write_text("PASS\n10 passed\n")
+        # Round 2 has conversation but no check
+        (run_dir / "conversation_loop_2.md").write_text("feat(ui): add button\nEdit → ui.py\n")
+        # Round 3 has neither
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, 10, 3, False)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "3/10" in report
+        # All 3 rounds should appear in timeline
+        assert "| 1 |" in report
+        assert "| 2 |" in report
+        assert "| 3 |" in report
+        assert "10 passed" in report
+        assert "ui.py" in report
+        # Round 3 has no data — falls back to "round 3"
+        assert "round 3" in report
+
+    def test_report_project_and_session_name(self, tmp_path: Path):
+        """Report header includes correct project and session names."""
+        project_dir = tmp_path / "my-cool-project"
+        project_dir.mkdir()
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        run_dir = runs_dir / "20260325_120000"
+        run_dir.mkdir()
+        (runs_dir / "improvements.md").write_text("# Improvements\n")
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, 5, 0, False)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "**Project:** my-cool-project" in report
+        assert "**Session:** 20260325_120000" in report
+
+    def test_report_git_file_not_found(self, tmp_path: Path):
+        """Git FileNotFoundError is handled gracefully (no git installed)."""
+        project_dir, run_dir = self._setup_report_project(tmp_path)
+        (run_dir / "conversation_loop_1.md").write_text("some text, no commit pattern\n")
+
+        def mock_run(cmd, **kwargs):
+            if "log" in cmd:
+                raise FileNotFoundError("git not found")
+            return MagicMock(returncode=1, stdout="")
+
+        with patch("loop.subprocess.run", side_effect=mock_run):
+            _generate_evolution_report(project_dir, run_dir, 10, 1, True)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        # Falls back to "round 1" since no commit pattern in convo
+        assert "round 1" in report
+
+    def test_report_empty_improvements(self, tmp_path: Path):
+        """Report with empty improvements.md (no checkboxes) shows 0 counts."""
+        project_dir, run_dir = self._setup_report_project(tmp_path, "# Improvements\n")
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, 10, 0, False)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "0 improvements completed" in report
+        assert "0 bugs fixed" in report
+        assert "0 files modified" in report
+        assert "remaining" not in report
+
+    def test_report_action_truncated_at_70_chars(self, tmp_path: Path):
+        """Long commit messages are truncated to 70 characters in the timeline."""
+        project_dir, run_dir = self._setup_report_project(tmp_path)
+        long_msg = "feat(parser): " + "x" * 80
+        (run_dir / "conversation_loop_1.md").write_text(long_msg + "\n")
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, 10, 1, True)
+
+        report = (run_dir / "evolution_report.md").read_text()
+        # Find the timeline row - action should be at most 70 chars
+        for line in report.splitlines():
+            if line.startswith("| 1 |"):
+                # Extract action between first and second pipe after round
+                parts = line.split("|")
+                action = parts[2].strip()
+                assert len(action) <= 70
+                break
+
 
 # ---------------------------------------------------------------------------
 # _run_party_mode — workflow and agent loading paths
