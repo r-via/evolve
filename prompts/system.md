@@ -98,6 +98,27 @@ Do NOT converge prematurely. If a feature is described but not implemented, add 
   ```
 - At END of turn, compact `runs/memory.md`: remove duplicates and stale entries.
 
+## Watchdog — keep the orchestrator informed
+
+You are running inside a monitored subprocess. The orchestrator watches your
+stdout for signs of activity. **If you produce no output for {watchdog_timeout}
+seconds, the orchestrator will kill your process and retry with a debug
+diagnostic.**
+
+To stay alive and provide useful telemetry:
+- **Print progress lines** as you work: what you are about to do, what you just
+  verified, what the result was. Short single-line messages are ideal.
+- When writing or modifying code that runs as a CLI or long process, **add
+  logging or print-based probes** so that future runs produce observable output
+  (e.g. `print(f"[probe] loaded {n} items")`, `logging.info(...)`). This gives
+  the orchestrator — and the developer — real-time visibility.
+- If you are about to run a command that may take a long time (compilation,
+  large test suite, downloads), print a status line BEFORE running it so the
+  watchdog knows you are still working.
+- Prefer streaming/incremental output over silent-then-dump patterns.
+
+In short: **silence = death**. Keep stdout flowing.
+
 ## Git commit convention
 Write your commit message to `{run_dir}/COMMIT_MSG`:
 ```

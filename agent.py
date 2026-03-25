@@ -83,9 +83,11 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
     # Interpolate using str.replace() instead of .format() to avoid KeyError
     # when the template (or project-specific override) contains literal curly braces
     # (e.g. JSON examples, Rust code, Go generics).
+    from loop import WATCHDOG_TIMEOUT
     system_prompt = system_prompt.replace("{project_dir}", str(project_dir))
     system_prompt = system_prompt.replace("{run_dir}", rdir)
     system_prompt = system_prompt.replace("{yolo_note}", yolo_note)
+    system_prompt = system_prompt.replace("{watchdog_timeout}", str(WATCHDOG_TIMEOUT))
 
     # Build sections
     readme_section = f"## README (specification)\n{readme}" if readme else "## README\n(no README found)"

@@ -26,6 +26,8 @@ from loop import (
     _ensure_git,
     _git_commit,
     _run_party_mode,
+    _run_monitored_subprocess,
+    _save_subprocess_diagnostic,
     _generate_evolution_report,
 )
 
@@ -384,3 +386,66 @@ class TestGenerateEvolutionReport:
         except (ValueError, IndexError):
             last_round = None
         assert last_round is None
+
+
+# ---------------------------------------------------------------------------
+# _run_monitored_subprocess — watchdog and output streaming
+# ---------------------------------------------------------------------------
+
+class TestRunMonitoredSubprocess:
+    def test_successful_subprocess(self, tmp_path: Path):
+        """A fast subprocess returns output and exit code 0."""
+        import sys
+        ui = MagicMock()
+        cmd = [sys.executable, "-c", "print('hello')"]
+        returncode, output, stalled = _run_monitored_subprocess(
+            cmd, str(tmp_path), ui, round_num=1, watchdog_timeout=10,
+        )
+        assert returncode == 0
+        assert "hello" in output
+        assert stalled is False
+
+    def test_failing_subprocess(self, tmp_path: Path):
+        """A subprocess that exits with error returns non-zero code."""
+        import sys
+        ui = MagicMock()
+        cmd = [sys.executable, "-c", "import sys; print('boom'); sys.exit(42)"]
+        returncode, output, stalled = _run_monitored_subprocess(
+            cmd, str(tmp_path), ui, round_num=1, watchdog_timeout=10,
+        )
+        assert returncode == 42
+        assert "boom" in output
+        assert stalled is False
+
+    def test_stalled_subprocess_killed(self, tmp_path: Path):
+        """A subprocess producing no output is killed by the watchdog."""
+        import sys
+        ui = MagicMock()
+        # sleep for 60s but watchdog is 2s — should be killed quickly
+        cmd = [sys.executable, "-c", "import time; time.sleep(60)"]
+        returncode, output, stalled = _run_monitored_subprocess(
+            cmd, str(tmp_path), ui, round_num=1, watchdog_timeout=2,
+        )
+        assert stalled is True
+        ui.warn.assert_called_once()
+        assert "stalled" in ui.warn.call_args[0][0]
+
+
+# ---------------------------------------------------------------------------
+# _save_subprocess_diagnostic
+# ---------------------------------------------------------------------------
+
+class TestSaveSubprocessDiagnostic:
+    def test_writes_diagnostic_file(self, tmp_path: Path):
+        _save_subprocess_diagnostic(
+            tmp_path, round_num=3, cmd=["python", "evolve.py", "_round"],
+            output="Traceback:\n  File main.py\nSyntaxError",
+            reason="crashed (exit code 1)", attempt=2,
+        )
+        diag = tmp_path / "subprocess_error_round_3.txt"
+        assert diag.is_file()
+        content = diag.read_text()
+        assert "Round 3" in content
+        assert "crashed" in content
+        assert "attempt 2" in content
+        assert "SyntaxError" in content

@@ -8,6 +8,8 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -253,6 +255,75 @@ def evolve_loop(
     )
 
 
+# Maximum number of debug retries when a round fails, stalls, or makes no progress.
+MAX_DEBUG_RETRIES = 2
+# Seconds of silence before the watchdog considers a subprocess stalled.
+WATCHDOG_TIMEOUT = 120
+
+
+def _run_monitored_subprocess(cmd, cwd, ui, round_num, watchdog_timeout=WATCHDOG_TIMEOUT):
+    """Run a subprocess with real-time output streaming and stall detection.
+
+    Returns ``(returncode, output, stalled)`` where *stalled* is True when the
+    watchdog killed the process due to inactivity.
+    """
+    # -u ensures Python doesn't buffer stdout/stderr in the child process.
+    if cmd[0] == sys.executable and "-u" not in cmd:
+        cmd = [cmd[0], "-u"] + cmd[1:]
+
+    proc = subprocess.Popen(
+        cmd, cwd=cwd,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
+    )
+
+    output_lines: list[str] = []
+    last_activity = time.monotonic()
+    lock = threading.Lock()
+
+    def _reader():
+        nonlocal last_activity
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            with lock:
+                output_lines.append(line)
+                last_activity = time.monotonic()
+            sys.stdout.write(line)
+            sys.stdout.flush()
+
+    reader_thread = threading.Thread(target=_reader, daemon=True)
+    reader_thread.start()
+
+    stalled = False
+    while proc.poll() is None:
+        time.sleep(1)
+        with lock:
+            idle = time.monotonic() - last_activity
+        if idle > watchdog_timeout:
+            stalled = True
+            ui.warn(
+                f"Round {round_num} stalled ({int(idle)}s without output) "
+                "— killing subprocess"
+            )
+            proc.kill()
+            break
+
+    reader_thread.join(timeout=5)
+    output = "".join(output_lines)
+    rc = proc.returncode if proc.returncode is not None else -9
+    return rc, output, stalled
+
+
+def _save_subprocess_diagnostic(run_dir, round_num, cmd, output, reason, attempt):
+    """Write a diagnostic file for a failed/stalled subprocess round."""
+    error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
+    error_log.write_text(
+        f"Round {round_num} — {reason} (attempt {attempt})\n"
+        f"Command: {' '.join(str(c) for c in cmd)}\n\n"
+        f"Output (last 3000 chars):\n{(output or '')[-3000:]}\n"
+    )
+
+
 def _run_rounds(
     project_dir: Path,
     run_dir: Path,
@@ -302,41 +373,78 @@ def _run_rounds(
         if yolo:
             cmd += ["--yolo"]
 
-        result = subprocess.run(
-            cmd, cwd=str(project_dir),
-            capture_output=True, text=True,
-        )
-
-        # Stream captured output to console so the TUI still shows progress
-        if result.stdout:
-            sys.stdout.write(result.stdout)
-        if result.stderr:
-            sys.stderr.write(result.stderr)
-
-        if result.returncode != 0:
-            ui.round_failed(round_num, result.returncode)
-            # Persist subprocess error so the next round's agent can see it
-            error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
-            error_log.write_text(
-                f"Round {round_num} subprocess crashed (exit code {result.returncode})\n"
-                f"Command: {' '.join(str(c) for c in cmd)}\n\n"
-                f"stdout (last 3000 chars):\n{(result.stdout or '')[-3000:]}\n\n"
-                f"stderr (last 3000 chars):\n{(result.stderr or '')[-3000:]}\n"
+        # --- Debug retry loop: run the round, diagnose failures, retry ---
+        round_succeeded = False
+        for attempt in range(1, MAX_DEBUG_RETRIES + 2):  # 1..MAX_DEBUG_RETRIES+1
+            returncode, output, stalled = _run_monitored_subprocess(
+                cmd, str(project_dir), ui, round_num,
             )
 
-        # Re-read improvements
-        prev_checked = checked
-        prev_unchecked = unchecked
-        unchecked = _count_unchecked(improvements_path)
-        checked = _count_checked(improvements_path)
-        ui.progress_summary(checked, unchecked)
+            # --- Diagnose subprocess outcome ---
+            if stalled:
+                ui.round_failed(round_num, returncode)
+                _save_subprocess_diagnostic(
+                    run_dir, round_num, cmd, output,
+                    reason=f"stalled ({WATCHDOG_TIMEOUT}s without output, killed)",
+                    attempt=attempt,
+                )
+            elif returncode != 0:
+                ui.round_failed(round_num, returncode)
+                _save_subprocess_diagnostic(
+                    run_dir, round_num, cmd, output,
+                    reason=f"crashed (exit code {returncode})",
+                    attempt=attempt,
+                )
+            else:
+                # Subprocess exited OK — check for actual progress
+                prev_checked = checked
+                prev_unchecked = unchecked
+                unchecked = _count_unchecked(improvements_path)
+                checked = _count_checked(improvements_path)
+                ui.progress_summary(checked, unchecked)
 
-        # Stop if agent did nothing
-        convo = run_dir / f"conversation_loop_{round_num}.md"
-        if checked == prev_checked and unchecked == prev_unchecked:
-            if not convo.is_file() or convo.stat().st_size < 100:
+                convo = run_dir / f"conversation_loop_{round_num}.md"
+                made_progress = (
+                    checked != prev_checked
+                    or unchecked != prev_unchecked
+                    or (convo.is_file() and convo.stat().st_size >= 100)
+                )
+                if made_progress:
+                    round_succeeded = True
+                    break
+
+                # No progress — save diagnostic for retry
+                _save_subprocess_diagnostic(
+                    run_dir, round_num, cmd, output,
+                    reason="no progress (agent ran but changed nothing)",
+                    attempt=attempt,
+                )
+
+            # If retries remain, inform and loop
+            if attempt <= MAX_DEBUG_RETRIES:
+                ui.warn(
+                    f"Debug retry {attempt}/{MAX_DEBUG_RETRIES} for round {round_num} "
+                    "— re-running with diagnostic context"
+                )
+            else:
+                # All retries exhausted
                 ui.no_progress()
-                sys.exit(2)
+                if not forever:
+                    sys.exit(2)
+                # In forever mode, don't exit — move on to next round
+                ui.warn(
+                    f"Round {round_num} failed after {MAX_DEBUG_RETRIES + 1} attempts "
+                    "— skipping to next round"
+                )
+                break
+
+        if not round_succeeded:
+            continue  # skip convergence check, move to next round
+
+        # Clean up diagnostic file on success (no longer relevant)
+        error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
+        if error_log.is_file():
+            error_log.unlink()
 
         # Check convergence
         converged_path = run_dir / "CONVERGED"
