@@ -246,8 +246,8 @@ class TestResolveConfig:
     def _make_args(self, **overrides):
         import argparse
         args = argparse.Namespace(
-            check=None, rounds=10, timeout=300,
-            model=None, yolo=False, resume=False,
+            check=None, rounds=None, timeout=None,
+            model=None, yolo=None, resume=False,
         )
         for k, v in overrides.items():
             setattr(args, k, v)

@@ -103,6 +103,8 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
             pass
     elif "rounds" in file_config:
         args.rounds = int(file_config["rounds"])
+    elif args.rounds is None:
+        args.rounds = defaults["rounds"]
 
     # timeout: CLI (non-default) > env > file > default
     cli_timeout_set = any(a == "--timeout" or a.startswith("--timeout=") for a in sys.argv)
@@ -115,6 +117,8 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
             pass
     elif "timeout" in file_config:
         args.timeout = int(file_config["timeout"])
+    elif args.timeout is None:
+        args.timeout = defaults["timeout"]
 
     # model: CLI (non-None) > env > file > default
     if args.model is not None:
@@ -133,6 +137,8 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         args.yolo = True
     elif "yolo" in file_config:
         args.yolo = bool(file_config["yolo"])
+    elif args.yolo is None:
+        args.yolo = defaults["yolo"]
 
     return args
 
