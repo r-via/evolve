@@ -298,6 +298,8 @@ def evolve_loop(
     """
     improvements_path = project_dir / "runs" / "improvements.md"
 
+    print(f"[probe] evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
+
     # Auto-detect check command if not provided
     if check_cmd is None:
         detected = _auto_detect_check(project_dir)
@@ -305,11 +307,13 @@ def evolve_loop(
             ui_early = get_tui()
             ui_early.info(f"  Auto-detected check command: {detected}")
             check_cmd = detected
+            print(f"[probe] auto-detected check command: {detected}")
 
     start_round = 1
 
     # In forever mode, create a separate branch and run indefinitely
     if forever:
+        print("[probe] forever mode enabled — creating dedicated branch")
         _setup_forever_branch(project_dir)
         # Use a very large max_rounds so the loop runs until convergence
         max_rounds = 999999
@@ -485,11 +489,13 @@ def _run_rounds(
         model: Claude model identifier.
         forever: If True, restart after convergence instead of exiting.
     """
+    print(f"[probe] _run_rounds starting from round {start_round} to {max_rounds}")
     while True:
         for round_num in range(start_round, max_rounds + 1):
             current = _get_current_improvement(improvements_path, yolo=yolo)
             checked = _count_checked(improvements_path)
             unchecked = _count_unchecked(improvements_path)
+            print(f"[probe] round {round_num}/{max_rounds} — checked={checked}, unchecked={unchecked}, target={current or '(none)'}")
 
             if current:
                 ui.round_header(round_num, max_rounds, target=current,
@@ -522,6 +528,7 @@ def _run_rounds(
                 cmd += ["--yolo"]
 
             # --- Debug retry loop: run the round, diagnose failures, retry ---
+            print(f"[probe] launching subprocess for round {round_num}")
             round_succeeded = False
             for attempt in range(1, MAX_DEBUG_RETRIES + 2):  # 1..MAX_DEBUG_RETRIES+1
                 # Snapshot conversation log size before subprocess so we can detect new output
@@ -601,6 +608,7 @@ def _run_rounds(
             converged_path = run_dir / "CONVERGED"
             if converged_path.is_file():
                 reason = converged_path.read_text().strip()
+                print(f"[probe] CONVERGED at round {round_num}: {reason[:80]}")
                 ui.converged(round_num, reason)
 
                 # Generate evolution report
@@ -635,6 +643,7 @@ def _run_rounds(
             # for loop completed without break — max rounds reached
             unchecked = _count_unchecked(improvements_path)
             checked = _count_checked(improvements_path)
+            print(f"[probe] max rounds reached ({max_rounds}) — checked={checked}, unchecked={unchecked}")
 
             # Generate evolution report
             _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False)
@@ -676,9 +685,12 @@ def run_single_round(
     improvements_path = project_dir / "runs" / "improvements.md"
     ui = get_tui()
 
+    print(f"[probe] round {round_num} starting — project={project_dir.name}, model={model}")
+
     # 1. Run check command if provided
     check_output = ""
     if check_cmd:
+        print(f"[probe] running pre-check: {check_cmd}")
         ui.check_result("check", check_cmd, passed=None)
         try:
             result = subprocess.run(
@@ -692,14 +704,18 @@ def run_single_round(
                 check_output += f"stderr:\n{result.stderr[-2000:]}\n"
             ok = result.returncode == 0
             ui.check_result("check", check_cmd, passed=ok)
+            print(f"[probe] pre-check {'PASSED' if ok else 'FAILED'} (exit {result.returncode})")
         except subprocess.TimeoutExpired:
             check_output = f"TIMEOUT after {timeout}s"
             ui.check_result("check", check_cmd, timeout=True)
+            print(f"[probe] pre-check TIMEOUT after {timeout}s")
     else:
         ui.no_check()
+        print("[probe] no check command configured")
 
     # 2. Let opus agent analyze and fix
     current = _get_current_improvement(improvements_path, yolo=yolo)
+    print(f"[probe] invoking agent — target: {current or '(initial analysis)'}")
     ui.agent_working()
     analyze_and_fix(
         project_dir=project_dir,
@@ -709,6 +725,7 @@ def run_single_round(
         round_num=round_num,
         run_dir=rdir,
     )
+    print("[probe] agent finished")
 
     # 3. Git commit + push
     commit_msg_path = rdir / "COMMIT_MSG"
@@ -721,10 +738,12 @@ def run_single_round(
             msg = f"feat(evolve): ✓ {current}"
         else:
             msg = f"chore(evolve): round {round_num}"
+    print(f"[probe] git commit: {msg[:80]}")
     _git_commit(project_dir, msg, ui)
 
     # 4. Re-run check after fixes
     if check_cmd:
+        print(f"[probe] running post-check: {check_cmd}")
         ui.check_result("verify", check_cmd, passed=None)
         try:
             result = subprocess.run(
@@ -733,6 +752,7 @@ def run_single_round(
             )
             ok = result.returncode == 0
             ui.check_result("verify", check_cmd, passed=ok)
+            print(f"[probe] post-check {'PASSED' if ok else 'FAILED'} (exit {result.returncode})")
 
             probe_path = rdir / f"check_round_{round_num}.txt"
             with open(probe_path, "w") as f:
@@ -745,6 +765,9 @@ def run_single_round(
                     f.write(f"\nstderr:\n{result.stderr[-2000:]}\n")
         except subprocess.TimeoutExpired:
             ui.check_result("verify", check_cmd, timeout=True)
+            print(f"[probe] post-check TIMEOUT after {timeout}s")
+
+    print(f"[probe] round {round_num} complete")
 
 
 def run_dry_run(
@@ -770,6 +793,8 @@ def run_dry_run(
     """
     ui = get_tui()
 
+    print(f"[probe] dry-run starting — project={project_dir.name}")
+
     # Auto-detect check command if not provided
     if check_cmd is None:
         detected = _auto_detect_check(project_dir)
@@ -783,6 +808,7 @@ def run_dry_run(
     run_dir.mkdir(parents=True, exist_ok=True)
     ui.run_dir_info(str(run_dir))
     ui.info("  Mode: DRY RUN (read-only analysis, no file changes)")
+    print(f"[probe] dry-run session: {run_dir}")
 
     # 1. Run check command if provided
     check_output = ""
@@ -1046,9 +1072,11 @@ def _ensure_git(project_dir: Path, ui=None) -> None:
 def _git_commit(project_dir: Path, message: str, ui=None) -> None:
     if ui is None:
         ui = get_tui()
+    print(f"[probe] git: staging changes")
     subprocess.run(["git", "add", "-A"], cwd=project_dir)
     status = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=project_dir)
     if status.returncode == 0:
+        print("[probe] git: nothing to commit")
         ui.git_status(message, pushed=None)
         return
     subprocess.run(["git", "commit", "-m", message], cwd=project_dir, capture_output=True)

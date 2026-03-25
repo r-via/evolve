@@ -7,4 +7,5 @@
 - [x] [functional] Implement `evolve status` subcommand — README describes `evolve status <project-dir>` to check evolution status, but it may not be fully implemented with meaningful output
 - [x] [refactor] Refactor _resolve_config to use a data-driven loop over field definitions as described in the README Architecture section — current implementation has per-field duplication instead of iterating over a field spec table
 - [x] [performance] Eliminate RuntimeWarning noise in test suite — 4 tests produce "coroutine was never awaited" warnings from mocked async functions; properly close or await these coroutines to get clean test output
-- [ ] [functional] Add probe/logging output in delivered code paths — README watchdog section says agents should add logging or print-based probes for runtime observability, but run_single_round and evolve_loop produce minimal stdout during execution
+- [x] [functional] Add probe/logging output in delivered code paths — README watchdog section says agents should add logging or print-based probes for runtime observability, but run_single_round and evolve_loop produce minimal stdout during execution
+- [ ] [functional] Ensure _run_party_mode prints probe lines for watchdog observability — party mode can be a long-running agent call with no stdout, risking watchdog kills
