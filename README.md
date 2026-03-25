@@ -6,63 +6,107 @@ Point it at any git repo with a README → it reads the README as the specificat
 iteratively fixes bugs and implements improvements, one at a time, until the project
 fully converges to its spec.
 
+## Installation
+
+Install evolve as a Python package:
+
+```bash
+pip install .
+```
+
+Or with the optional rich TUI:
+
+```bash
+pip install ".[rich]"
+```
+
+For development:
+
+```bash
+pip install -e ".[rich,dev]"
+```
+
+After installation, the `evolve` command is available globally:
+
+```bash
+evolve start ~/projects/my-tool --check "pytest"
+```
+
+You can also run directly without installing:
+
+```bash
+python evolve.py start ~/projects/my-tool --check "pytest"
+```
+
 ## Usage
 
 ```bash
 # Initialize a config file for your project
-python evolve.py init <project-dir>
+evolve init <project-dir>
 
 # Evolve a project (README = spec)
-python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo] [--json]
+evolve start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo] [--json]
+
+# Preview what the agent would do (read-only, no file changes)
+evolve start <project-dir> --dry-run [--check "pytest"]
 
 # Resume an interrupted session
-python evolve.py start <project-dir> --resume
+evolve start <project-dir> --resume
 
 # Autonomous forever mode (runs on a separate branch)
-python evolve.py start <project-dir> --forever [--check "pytest"]
+evolve start <project-dir> --forever [--check "pytest"]
 
 # Check evolution status
-python evolve.py status <project-dir>
+evolve status <project-dir>
+
+# Show evolution timeline across all sessions
+evolve history <project-dir>
 
 # Clean up old session directories
-python evolve.py clean <project-dir> [--keep 5]
+evolve clean <project-dir> [--keep 5]
 ```
 
 ## Examples
 
 ```bash
 # Evolve a Python project, verify with pytest
-python evolve.py start ~/projects/my-tool --check "pytest" --rounds 20
+evolve start ~/projects/my-tool --check "pytest" --rounds 20
 
 # Evolve a Node project, verify with npm test
-python evolve.py start ~/projects/my-app --check "npm test"
+evolve start ~/projects/my-app --check "npm test"
 
 # Evolve a Rust project
-python evolve.py start ~/projects/my-cli --check "cargo test"
+evolve start ~/projects/my-cli --check "cargo test"
 
 # Evolve without a check command (opus runs commands manually)
-python evolve.py start ~/projects/my-lib
+evolve start ~/projects/my-lib
 
 # Allow installing new packages
-python evolve.py start ~/projects/my-tool --check "pytest" --yolo
+evolve start ~/projects/my-tool --check "pytest" --yolo
 
 # Use a different model
-python evolve.py start ~/projects/my-tool --check "pytest" --model claude-sonnet-4-20250514
+evolve start ~/projects/my-tool --check "pytest" --model claude-sonnet-4-20250514
+
+# Dry run — see what the agent would change without modifying files
+evolve start ~/projects/my-tool --check "pytest" --dry-run
 
 # Resume after interruption (continues from last completed round)
-python evolve.py start ~/projects/my-tool --check "pytest" --resume
+evolve start ~/projects/my-tool --check "pytest" --resume
 
 # Autonomous forever mode — evolves indefinitely on a separate branch
-python evolve.py start ~/projects/my-tool --check "pytest" --forever
+evolve start ~/projects/my-tool --check "pytest" --forever
 
 # JSON output for CI/CD pipelines
-python evolve.py start ~/projects/my-tool --check "pytest" --json
+evolve start ~/projects/my-tool --check "pytest" --json
 
 # Initialize a config file with sensible defaults
-python evolve.py init ~/projects/my-tool
+evolve init ~/projects/my-tool
+
+# Show evolution history across all sessions
+evolve history ~/projects/my-tool
 
 # Clean up old sessions, keeping the 5 most recent
-python evolve.py clean ~/projects/my-tool --keep 5
+evolve clean ~/projects/my-tool --keep 5
 ```
 
 ## Configuration
@@ -107,7 +151,7 @@ Settings are resolved in this order (first wins):
 Scaffold a config file with sensible defaults:
 
 ```bash
-python evolve.py init ~/projects/my-tool
+evolve init ~/projects/my-tool
 # Creates ~/projects/my-tool/evolve.toml with default settings
 ```
 
@@ -153,7 +197,7 @@ For CI/CD integration, use `--json` to emit structured JSON events to stdout
 instead of the interactive TUI:
 
 ```bash
-python evolve.py start ~/projects/my-tool --check "pytest" --json
+evolve start ~/projects/my-tool --check "pytest" --json
 ```
 
 Each line is a JSON object with a `type`, `timestamp`, and event-specific fields:
@@ -186,6 +230,7 @@ so code changes are picked up immediately.
 │   │   ├── conversation_loop_2.md
 │   │   ├── check_round_1.txt          # post-fix check results
 │   │   ├── evolution_report.md        # post-session summary with timeline
+│   │   ├── dry_run_report.md          # (dry-run only) read-only analysis
 │   │   ├── COMMIT_MSG                 # (transient) commit message from opus
 │   │   └── CONVERGED                  # written by opus when done
 │   └── 20260324_170000/               # session 2
@@ -290,8 +335,34 @@ Can also be set via the `EVOLVE_MODEL` environment variable (CLI flag takes prec
 ```bash
 # Or via environment variable
 export EVOLVE_MODEL=claude-sonnet-4-20250514
-python evolve.py start ~/projects/my-tool --check "pytest"
+evolve start ~/projects/my-tool --check "pytest"
 ```
+
+### The --dry-run flag
+
+Runs the agent in **read-only analysis mode** — it examines the project and produces
+a report of what it *would* change, without actually modifying any files.
+
+```bash
+evolve start ~/projects/my-tool --check "pytest" --dry-run
+```
+
+**How it works:**
+
+1. Runs the check command (if provided) to see current state
+2. Launches the agent with write-related tools disabled (no Edit, Write, or Bash)
+3. Agent analyzes the README, code, and check results using only Read, Grep, and Glob
+4. Produces `runs/<session>/dry_run_report.md` with:
+   - Identified gaps between README spec and implementation
+   - Proposed improvements (what would be added to `improvements.md`)
+   - Estimated number of rounds to convergence
+5. No files are modified, no git commits are created
+
+Useful for:
+- Previewing evolution scope before committing to a full run
+- Auditing what the agent considers "missing" from the spec
+- Estimating effort for a new project
+- CI/CD gates that check spec compliance without modifying code
 
 ### The --resume flag
 
@@ -300,7 +371,7 @@ last completed round from existing conversation logs and continues from the next
 
 ```bash
 # Session interrupted at round 5 — resume from round 6
-python evolve.py start ~/projects/my-tool --check "pytest" --resume
+evolve start ~/projects/my-tool --check "pytest" --resume
 ```
 
 If no previous session exists, `--resume` starts a fresh session (same as without the flag).
@@ -311,7 +382,7 @@ Autonomous evolution mode. Runs indefinitely on a **separate git branch** until 
 operator stops it (Ctrl+C or kill).
 
 ```bash
-python evolve.py start ~/projects/my-tool --check "pytest" --forever
+evolve start ~/projects/my-tool --check "pytest" --forever
 ```
 
 **How it works:**
@@ -350,7 +421,7 @@ Combines well with `--yolo` for fully autonomous evolution:
 
 ```bash
 # Full autonomy — installs packages, updates README, loops forever
-python evolve.py start ~/projects/my-tool --check "pytest" --forever --yolo
+evolve start ~/projects/my-tool --check "pytest" --forever --yolo
 ```
 
 ### The --json flag
@@ -360,8 +431,33 @@ Each line is a valid JSON object. Designed for CI/CD pipelines, monitoring dashb
 and programmatic consumption.
 
 ```bash
-python evolve.py start ~/projects/my-tool --check "pytest" --json
+evolve start ~/projects/my-tool --check "pytest" --json
 ```
+
+### `evolve history`
+
+Show the evolution timeline across all sessions for a project:
+
+```bash
+evolve history ~/projects/my-tool
+```
+
+Output:
+
+```
+  Evolution History: ~/projects/my-tool
+  ──────────────────────────────────────
+
+  Session              Rounds   Status      Improvements
+  20260324_160000      8/20     CONVERGED   6 done, 0 remaining
+  20260324_170000      3/10     CONVERGED   3 done, 0 remaining
+  20260325_072223      1/10     CONVERGED   28 done, 0 remaining
+
+  Total: 3 sessions, 12 rounds, 37 improvements
+```
+
+Shows each session's round count, convergence status, and improvement statistics.
+Parses `evolution_report.md` and `CONVERGED` markers from each session directory.
 
 ### improvements.md — the convergence tracker
 
@@ -421,10 +517,10 @@ Remove old session directories to free disk space:
 
 ```bash
 # Keep the 5 most recent sessions, delete the rest
-python evolve.py clean ~/projects/my-tool --keep 5
+evolve clean ~/projects/my-tool --keep 5
 
 # Keep only the latest session
-python evolve.py clean ~/projects/my-tool --keep 1
+evolve clean ~/projects/my-tool --keep 1
 ```
 
 Sessions are sorted by timestamp. The `--keep` flag specifies how many recent
@@ -443,19 +539,45 @@ history regardless of session cleanup.
 
 ```bash
 # Use in CI
-python evolve.py start . --check "pytest" --rounds 20
+evolve start . --check "pytest" --rounds 20
 if [ $? -eq 0 ]; then echo "Converged!"; fi
 ```
 
 ```bash
 # Full CI/CD example with JSON output
-python evolve.py start . --check "pytest" --rounds 20 --json > evolve-output.jsonl
+evolve start . --check "pytest" --rounds 20 --json > evolve-output.jsonl
 EXIT_CODE=$?
 if [ $EXIT_CODE -eq 0 ]; then
   echo "Converged! Creating PR..."
   # Parse evolve-output.jsonl for PR description
 fi
 ```
+
+## Architecture
+
+Evolve is organized into four modules with clear responsibilities:
+
+| Module | Responsibility |
+|--------|---------------|
+| `evolve.py` | CLI entry point, argument parsing, config resolution |
+| `loop.py` | Evolution orchestrator — subprocess management, round loop, party mode |
+| `agent.py` | Claude SDK interface — prompt building, agent execution, retry logic |
+| `tui.py` | Terminal UI — `TUIProtocol` with Rich, Plain, and JSON implementations |
+
+### Config resolution
+
+Settings are resolved via a data-driven loop over field definitions, with each
+field checking CLI → environment variable → config file → default in order.
+This eliminates per-field duplication and makes adding new settings trivial.
+
+### Retry and error handling
+
+Agent execution uses a shared `_run_with_retry` helper that handles:
+- Benign async teardown errors (cancel scope, event loop closed)
+- Rate limit detection with exponential backoff
+- Configurable max retries
+
+Both `analyze_and_fix` (evolution rounds) and `_run_party_mode` use the same helper.
 
 ## Development
 
@@ -469,18 +591,28 @@ pytest tests/
 pytest tests/ --cov=. --cov-report=term-missing
 ```
 
+### Test coverage target
+
+The project targets **80% test coverage** minimum. Current coverage should be
+verified before merging any changes:
+
+```bash
+pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=80
+```
+
 ### Test structure
 
 ```
 tests/
-├── test_loop.py       # _is_needs_package, counters, _get_current_improvement
+├── test_loop.py       # _is_needs_package, counters, _get_current_improvement, _detect_last_round, _count_blocked
 ├── test_agent.py      # build_prompt, error helpers, retry logic
 ├── test_tui.py        # factory function, TUI Protocol parity, JsonTUI
-└── test_evolve.py     # CLI arg parsing, _show_status
+└── test_evolve.py     # CLI arg parsing, _show_status, config resolution, init, clean, history
 ```
 
 Tests cover all pure utility functions without requiring the Claude SDK. Integration
-tests that need the SDK use mocked responses.
+tests that need the SDK use mocked responses. Error-path tests verify graceful
+degradation under failure conditions (corrupted files, timeouts, missing dependencies).
 
 ## Requirements
 
@@ -504,7 +636,6 @@ Evolve works with any Claude model supported by the Agent SDK. Recommended:
 These are under consideration for future evolution cycles:
 
 - **Multi-repo evolution** — evolve multiple related projects in coordination
-- **`--dry-run` mode** — preview what the agent would do without modifying files
-- **Parallel analysis** — run read-only analysis in parallel before sequential implementation
 - **Watch mode** — re-evolve automatically when README changes
+- **Parallel analysis** — run read-only analysis in parallel before sequential implementation
 - **Plugin system** — custom check commands, reporters, and post-convergence hooks
