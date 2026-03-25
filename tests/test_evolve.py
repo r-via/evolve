@@ -13,7 +13,6 @@ class TestCLIParsing:
     def test_start_minimal(self):
         """Minimal start command parses without error."""
         with patch("sys.argv", ["evolve", "start", "/tmp/project"]):
-            from evolve import main
             # We can't run main() without deps, but we can test arg parsing
             import argparse
             ap = argparse.ArgumentParser()
