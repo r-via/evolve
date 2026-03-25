@@ -361,39 +361,22 @@ def analyze_and_fix(
         round_num: Current evolution round number.
         run_dir: Session run directory for conversation logs.
     """
-    ui = get_tui()
-    try:
-        from claude_agent_sdk import query
-    except ImportError:
-        ui.warn("claude-agent-sdk not installed, skipping agent")
-        return
-
     prompt = build_prompt(project_dir, check_output, check_cmd, yolo, run_dir)
 
-    import warnings
-    warnings.filterwarnings("ignore", message=".*cancel scope.*")
-    warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
+    # Track attempt number for retry log filenames via a mutable closure.
+    attempt_counter = [0]
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            log_fname = f"conversation_loop_{round_num}_attempt_{attempt}.md" if attempt > 1 else None
-            asyncio.run(run_claude_agent(prompt, project_dir, round_num=round_num, run_dir=run_dir, log_filename=log_fname))
-            return
-        except Exception as e:
-            # Benign async teardown errors — safe to ignore.
-            if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
-                return
+    async def _run():
+        attempt_counter[0] += 1
+        attempt = attempt_counter[0]
+        log_fname = f"conversation_loop_{round_num}_attempt_{attempt}.md" if attempt > 1 else None
+        await run_claude_agent(prompt, project_dir, round_num=round_num, run_dir=run_dir, log_filename=log_fname)
 
-            # Rate-limit — back off and retry if attempts remain.
-            wait = _should_retry_rate_limit(e, attempt, max_retries)
-            if wait is not None:
-                ui.sdk_rate_limited(wait, attempt, max_retries)
-                time.sleep(wait)
-                continue
-
-            # Non-retryable error — give up.
-            ui.warn(f"Claude Code agent failed ({e})")
-            return
+    _run_agent_with_retries(
+        _run,
+        fail_label="Claude Code agent",
+        max_retries=max_retries,
+    )
 
 
 def build_validate_prompt(
@@ -557,39 +540,49 @@ Estimate how many evolution rounds would be needed to reach convergence.
 {check_section}"""
 
 
-async def _run_dry_run_claude_agent(
+async def _run_readonly_claude_agent(
     prompt: str,
     project_dir: Path,
     run_dir: Path,
+    *,
+    log_filename: str,
+    log_header: str,
+    disallowed_tools: list[str] | None = None,
 ) -> None:
-    """Run the Claude agent in dry-run mode with restricted tools.
+    """Shared helper for running the Claude agent in read-only modes.
 
-    Only Read, Grep, Glob, and Write are allowed (Write is needed to produce
-    the report file).  Edit, Bash, Task, Agent, WebSearch, WebFetch are
-    disallowed so no project files can be modified.
+    Handles SDK streaming, message deduplication, tool-call logging, and TUI
+    updates.  Used by both dry-run and validate modes.
 
     Args:
-        prompt: The dry-run analysis prompt.
+        prompt: The assembled prompt for the agent.
         project_dir: Root directory of the project (used as cwd).
         run_dir: Session directory for the conversation log and report.
+        log_filename: Name of the conversation log file (e.g. ``dry_run_conversation.md``).
+        log_header: Markdown header written at the top of the log file.
+        disallowed_tools: Tools to block.  Defaults to read-only set
+            (Edit, Bash, Task, Agent, WebSearch, WebFetch).
     """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
+
+    if disallowed_tools is None:
+        disallowed_tools = ["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"]
 
     options = ClaudeAgentOptions(
         max_turns=20,
         permission_mode="bypassPermissions",
         model=MODEL,
         cwd=str(project_dir),
-        disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
+        disallowed_tools=disallowed_tools,
         include_partial_messages=True,
     )
 
-    log_path = run_dir / "dry_run_conversation.md"
+    log_path = run_dir / log_filename
     ui = get_tui()
 
     with open(log_path, "w") as log:
-        log.write("# Dry Run Analysis\n\n")
+        log.write(f"# {log_header}\n\n")
 
         seen_tool_ids: set[str] = set()
         seen_text_hashes: set[int] = set()
@@ -633,6 +626,74 @@ async def _run_dry_run_claude_agent(
         log.write(f"\n---\n\n**Done**: {tools_used} tool calls\n")
 
     ui.agent_done(tools_used, str(log_path))
+
+
+async def _run_dry_run_claude_agent(
+    prompt: str,
+    project_dir: Path,
+    run_dir: Path,
+) -> None:
+    """Run the Claude agent in dry-run mode with restricted tools.
+
+    Thin wrapper around :func:`_run_readonly_claude_agent` for backward
+    compatibility.
+
+    Args:
+        prompt: The dry-run analysis prompt.
+        project_dir: Root directory of the project (used as cwd).
+        run_dir: Session directory for the conversation log and report.
+    """
+    await _run_readonly_claude_agent(
+        prompt, project_dir, run_dir,
+        log_filename="dry_run_conversation.md",
+        log_header="Dry Run Analysis",
+    )
+
+
+def _run_agent_with_retries(
+    async_fn,
+    *,
+    fail_label: str = "Agent",
+    max_retries: int = 5,
+) -> None:
+    """Shared retry loop for running an async agent function.
+
+    Handles SDK import check, asyncio warning filters, benign teardown
+    errors, and rate-limit backoff.  Callers supply the actual async
+    callable (already bound to its arguments).
+
+    Args:
+        async_fn: Zero-argument async callable that runs the agent.
+        fail_label: Label used in the failure warning message.
+        max_retries: Maximum SDK call attempts on rate-limit errors.
+    """
+    ui = get_tui()
+    try:
+        from claude_agent_sdk import query  # noqa: F401 — import check only
+    except ImportError:
+        ui.warn("claude-agent-sdk not installed, skipping agent")
+        return
+
+    import warnings
+    warnings.filterwarnings("ignore", message=".*cancel scope.*")
+    warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            asyncio.run(async_fn())
+            return
+        except Exception as e:
+            if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
+                return
+
+            wait = _should_retry_rate_limit(e, attempt, max_retries)
+            if wait is not None:
+                ui.sdk_rate_limited(wait, attempt, max_retries)
+                time.sleep(wait)
+                continue
+
+            ui.warn(f"{fail_label} failed ({e})")
+            return
 
 
 def run_dry_run_agent(
@@ -654,38 +715,16 @@ def run_dry_run_agent(
         run_dir: Session run directory for conversation logs and report.
         max_retries: Maximum SDK call attempts on rate-limit errors.
     """
-    ui = get_tui()
-    try:
-        from claude_agent_sdk import query
-    except ImportError:
-        ui.warn("claude-agent-sdk not installed, skipping agent")
-        return
-
     rdir = run_dir or (project_dir / "runs")
     rdir.mkdir(parents=True, exist_ok=True)
 
     prompt = build_dry_run_prompt(project_dir, check_output, check_cmd, rdir)
 
-    import warnings
-    warnings.filterwarnings("ignore", message=".*cancel scope.*")
-    warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            asyncio.run(_run_dry_run_claude_agent(prompt, project_dir, rdir))
-            return
-        except Exception as e:
-            if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
-                return
-
-            wait = _should_retry_rate_limit(e, attempt, max_retries)
-            if wait is not None:
-                ui.sdk_rate_limited(wait, attempt, max_retries)
-                time.sleep(wait)
-                continue
-
-            ui.warn(f"Dry-run agent failed ({e})")
-            return
+    _run_agent_with_retries(
+        lambda: _run_dry_run_claude_agent(prompt, project_dir, rdir),
+        fail_label="Dry-run agent",
+        max_retries=max_retries,
+    )
 
 
 async def _run_validate_claude_agent(
@@ -695,75 +734,19 @@ async def _run_validate_claude_agent(
 ) -> None:
     """Run the Claude agent in validation mode with restricted tools.
 
-    Only Read, Grep, Glob, and Write are allowed (Write is needed to produce
-    the report file).  Edit, Bash, Task, Agent, WebSearch, WebFetch are
-    disallowed so no project files can be modified.
+    Thin wrapper around :func:`_run_readonly_claude_agent` for backward
+    compatibility.
 
     Args:
         prompt: The validation prompt.
         project_dir: Root directory of the project (used as cwd).
         run_dir: Session directory for the conversation log and report.
     """
-    _patch_sdk_parser()
-    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
-
-    options = ClaudeAgentOptions(
-        max_turns=20,
-        permission_mode="bypassPermissions",
-        model=MODEL,
-        cwd=str(project_dir),
-        disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
-        include_partial_messages=True,
+    await _run_readonly_claude_agent(
+        prompt, project_dir, run_dir,
+        log_filename="validate_conversation.md",
+        log_header="Validation Analysis",
     )
-
-    log_path = run_dir / "validate_conversation.md"
-    ui = get_tui()
-
-    with open(log_path, "w") as log:
-        log.write("# Validation Analysis\n\n")
-
-        seen_tool_ids: set[str] = set()
-        seen_text_hashes: set[int] = set()
-        tools_used = 0
-
-        try:
-            async for message in query(prompt=prompt, options=options):
-                if message is None:
-                    continue
-                if isinstance(message, (AssistantMessage, ResultMessage)):
-                    if not hasattr(message, "content") or not message.content:
-                        continue
-                    for block in message.content:
-                        if hasattr(block, "text") and block.text.strip():
-                            h = hash(block.text)
-                            if h in seen_text_hashes:
-                                continue
-                            seen_text_hashes.add(h)
-                            log.write(f"\n{block.text}\n")
-                            ui.agent_text(block.text)
-                        elif hasattr(block, "name"):
-                            block_id = getattr(block, "id", None)
-                            if block_id and block_id in seen_tool_ids:
-                                continue
-                            if block_id:
-                                seen_tool_ids.add(block_id)
-                            tools_used += 1
-                            tool_name = block.name
-                            tool_input = ""
-                            if hasattr(block, "input") and block.input:
-                                inp = block.input
-                                if isinstance(inp, dict):
-                                    tool_input = inp.get("file_path", inp.get("pattern", str(inp)[:100]))
-                                else:
-                                    tool_input = str(inp)[:100]
-                            log.write(f"\n**{tool_name}**: `{tool_input}`\n")
-                            ui.agent_tool(tool_name, tool_input)
-        except Exception as e:
-            log.write(f"\n> SDK error: {e}\n")
-
-        log.write(f"\n---\n\n**Done**: {tools_used} tool calls\n")
-
-    ui.agent_done(tools_used, str(log_path))
 
 
 def run_validate_agent(
@@ -785,35 +768,13 @@ def run_validate_agent(
         run_dir: Session run directory for conversation logs and report.
         max_retries: Maximum SDK call attempts on rate-limit errors.
     """
-    ui = get_tui()
-    try:
-        from claude_agent_sdk import query
-    except ImportError:
-        ui.warn("claude-agent-sdk not installed, skipping agent")
-        return
-
     rdir = run_dir or (project_dir / "runs")
     rdir.mkdir(parents=True, exist_ok=True)
 
     prompt = build_validate_prompt(project_dir, check_output, check_cmd, rdir)
 
-    import warnings
-    warnings.filterwarnings("ignore", message=".*cancel scope.*")
-    warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            asyncio.run(_run_validate_claude_agent(prompt, project_dir, rdir))
-            return
-        except Exception as e:
-            if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
-                return
-
-            wait = _should_retry_rate_limit(e, attempt, max_retries)
-            if wait is not None:
-                ui.sdk_rate_limited(wait, attempt, max_retries)
-                time.sleep(wait)
-                continue
-
-            ui.warn(f"Validate agent failed ({e})")
-            return
+    _run_agent_with_retries(
+        lambda: _run_validate_claude_agent(prompt, project_dir, rdir),
+        fail_label="Validate agent",
+        max_retries=max_retries,
+    )
