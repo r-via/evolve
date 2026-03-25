@@ -479,7 +479,6 @@ class TestRunRounds:
     def test_error_log_cleanup_on_success(self, tmp_path: Path):
         """Diagnostic file is cleaned up after a successful round."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
-        ui = MagicMock()
 
         error_log = run_dir / "subprocess_error_round_1.txt"
         error_log.write_text("previous error")
@@ -493,7 +492,7 @@ class TestRunRounds:
              patch("loop._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
-                project_dir, run_dir, imp_path, ui,
+                project_dir, run_dir, imp_path, self.ui,
                 start_round=1, max_rounds=1, check_cmd=None,
                 yolo=False, timeout=300, model="claude-opus-4-6",
             )
@@ -503,7 +502,6 @@ class TestRunRounds:
     def test_yolo_flag_passed_to_subprocess(self, tmp_path: Path):
         """--yolo flag is included in subprocess command."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
-        ui = MagicMock()
 
         captured_cmd = None
 
@@ -518,7 +516,7 @@ class TestRunRounds:
              patch("loop._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
-                project_dir, run_dir, imp_path, ui,
+                project_dir, run_dir, imp_path, self.ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
                 yolo=True, timeout=300, model="claude-opus-4-6",
             )
@@ -530,7 +528,6 @@ class TestRunRounds:
         """When no improvements exist yet, shows 'initial analysis'."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
         imp_path.write_text("# Improvements\n")  # empty
-        ui = MagicMock()
 
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             convo = run_dir / f"conversation_loop_{round_num}.md"
@@ -541,12 +538,12 @@ class TestRunRounds:
              patch("loop._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
-                project_dir, run_dir, imp_path, ui,
+                project_dir, run_dir, imp_path, self.ui,
                 start_round=1, max_rounds=1, check_cmd=None,
                 yolo=False, timeout=300, model="claude-opus-4-6",
             )
 
-        ui.round_header.assert_called()
+        self.ui.round_header.assert_called()
 
 
 # ---------------------------------------------------------------------------

@@ -438,13 +438,16 @@ class TestGenerateEvolutionReport:
 # ---------------------------------------------------------------------------
 
 class TestRunMonitoredSubprocess:
+    def setup_method(self):
+        """Fresh UI mock per test — avoids per-test MagicMock() boilerplate."""
+        self.ui = MagicMock()
+        self._python = __import__("sys").executable
+
     def test_successful_subprocess(self, tmp_path: Path):
         """A fast subprocess returns output and exit code 0."""
-        import sys
-        ui = MagicMock()
-        cmd = [sys.executable, "-c", "print('hello')"]
+        cmd = [self._python, "-c", "print('hello')"]
         returncode, output, stalled = _run_monitored_subprocess(
-            cmd, str(tmp_path), ui, round_num=1, watchdog_timeout=10,
+            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=10,
         )
         assert returncode == 0
         assert "hello" in output
@@ -452,11 +455,9 @@ class TestRunMonitoredSubprocess:
 
     def test_failing_subprocess(self, tmp_path: Path):
         """A subprocess that exits with error returns non-zero code."""
-        import sys
-        ui = MagicMock()
-        cmd = [sys.executable, "-c", "import sys; print('boom'); sys.exit(42)"]
+        cmd = [self._python, "-c", "import sys; print('boom'); sys.exit(42)"]
         returncode, output, stalled = _run_monitored_subprocess(
-            cmd, str(tmp_path), ui, round_num=1, watchdog_timeout=10,
+            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=10,
         )
         assert returncode == 42
         assert "boom" in output
@@ -464,16 +465,14 @@ class TestRunMonitoredSubprocess:
 
     def test_stalled_subprocess_killed(self, tmp_path: Path):
         """A subprocess producing no output is killed by the watchdog."""
-        import sys
-        ui = MagicMock()
         # sleep for 60s but watchdog is 2s — should be killed quickly
-        cmd = [sys.executable, "-c", "import time; time.sleep(60)"]
+        cmd = [self._python, "-c", "import time; time.sleep(60)"]
         returncode, output, stalled = _run_monitored_subprocess(
-            cmd, str(tmp_path), ui, round_num=1, watchdog_timeout=2,
+            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=2,
         )
         assert stalled is True
-        ui.warn.assert_called_once()
-        assert "stalled" in ui.warn.call_args[0][0]
+        self.ui.warn.assert_called_once()
+        assert "stalled" in self.ui.warn.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------

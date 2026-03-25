@@ -338,6 +338,10 @@ class TestAnalyzeAndFixRetry:
     # Shared mock SDK — allocated once per class
     _mock_sdk = MagicMock()
 
+    def setup_method(self):
+        """Fresh UI mock per test — avoids per-test MagicMock() boilerplate."""
+        self.mock_ui = MagicMock()
+
     def _setup_project(self, tmp_path: Path):
         """Create minimal project structure for analyze_and_fix."""
         (tmp_path / "README.md").write_text("# P")
@@ -346,23 +350,21 @@ class TestAnalyzeAndFixRetry:
     def test_benign_runtime_error_returns(self, tmp_path: Path):
         """Benign RuntimeError (cancel scope) returns gracefully."""
         self._setup_project(tmp_path)
-        mock_ui = MagicMock()
 
         def mock_asyncio_run(coro):
             coro.close()  # prevent "coroutine was never awaited" warning
             raise RuntimeError("cancel scope blah")
 
-        with patch("agent.get_tui", return_value=mock_ui), \
+        with patch("agent.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
              patch("agent.asyncio.run", side_effect=mock_asyncio_run):
             analyze_and_fix(tmp_path)
 
-        mock_ui.warn.assert_not_called()
+        self.mock_ui.warn.assert_not_called()
 
     def test_rate_limit_retries(self, tmp_path: Path):
         """Rate limit error triggers retry with backoff."""
         self._setup_project(tmp_path)
-        mock_ui = MagicMock()
 
         call_count = 0
 
@@ -373,31 +375,30 @@ class TestAnalyzeAndFixRetry:
             if call_count < 3:
                 raise Exception("rate_limit_exceeded")
 
-        with patch("agent.get_tui", return_value=mock_ui), \
+        with patch("agent.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
              patch("agent.asyncio.run", side_effect=mock_asyncio_run), \
              patch("agent.time.sleep"):
             analyze_and_fix(tmp_path, max_retries=5)
 
         assert call_count == 3
-        assert mock_ui.sdk_rate_limited.call_count == 2
+        assert self.mock_ui.sdk_rate_limited.call_count == 2
 
     def test_non_retryable_error_gives_up(self, tmp_path: Path):
         """Non-retryable error calls warn and returns."""
         self._setup_project(tmp_path)
-        mock_ui = MagicMock()
 
         def mock_asyncio_run(coro):
             coro.close()  # prevent "coroutine was never awaited" warning
             raise Exception("some random error")
 
-        with patch("agent.get_tui", return_value=mock_ui), \
+        with patch("agent.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
              patch("agent.asyncio.run", side_effect=mock_asyncio_run):
             analyze_and_fix(tmp_path, max_retries=3)
 
-        mock_ui.warn.assert_called_once()
-        assert "failed" in mock_ui.warn.call_args[0][0]
+        self.mock_ui.warn.assert_called_once()
+        assert "failed" in self.mock_ui.warn.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------

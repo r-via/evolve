@@ -251,6 +251,10 @@ class TestSetupForeverBranch:
 # ---------------------------------------------------------------------------
 
 class TestForeverRestart:
+    def setup_method(self):
+        """Fresh UI mock per test — avoids per-test MagicMock() boilerplate."""
+        self.ui = MagicMock()
+
     def test_adopts_readme_proposal(self, tmp_path: Path):
         """README_proposal.md replaces README.md when present."""
         run_dir = tmp_path / "runs" / "session1"
@@ -263,13 +267,12 @@ class TestForeverRestart:
         readme = tmp_path / "README.md"
         readme.write_text("# Old README\n")
 
-        ui = MagicMock()
-        _forever_restart(tmp_path, run_dir, improvements, ui)
+        _forever_restart(tmp_path, run_dir, improvements, self.ui)
 
         assert readme.read_text() == "# New README\nProposed content.\n"
         assert improvements.read_text() == "# Improvements\n"
-        ui.info.assert_any_call("  Forever mode: adopting README_proposal.md as new README.md")
-        ui.info.assert_any_call("  Forever mode: resetting improvements.md for next cycle")
+        self.ui.info.assert_any_call("  Forever mode: adopting README_proposal.md as new README.md")
+        self.ui.info.assert_any_call("  Forever mode: resetting improvements.md for next cycle")
 
     def test_no_proposal_warns(self, tmp_path: Path):
         """Warns and continues when no README_proposal.md exists."""
@@ -281,13 +284,12 @@ class TestForeverRestart:
         readme = tmp_path / "README.md"
         readme.write_text("# Original README\n")
 
-        ui = MagicMock()
-        _forever_restart(tmp_path, run_dir, improvements, ui)
+        _forever_restart(tmp_path, run_dir, improvements, self.ui)
 
         # README unchanged
         assert readme.read_text() == "# Original README\n"
         # improvements still reset
         assert improvements.read_text() == "# Improvements\n"
-        ui.warn.assert_called_once_with(
+        self.ui.warn.assert_called_once_with(
             "No README_proposal.md produced — restarting with current README"
         )
