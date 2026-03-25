@@ -681,3 +681,7 @@ These are under consideration for future evolution cycles:
 - **Watch mode** — re-evolve automatically when README changes
 - **Parallel analysis** — run read-only analysis in parallel before sequential implementation
 - **Plugin system** — custom check commands, reporters, and post-convergence hooks
+
+<!-- checked-by-anatoly -->
+[![Checked by Anatoly](https://img.shields.io/badge/checked%20by-Anatoly-blue)](https://github.com/r-via/anatoly)
+<!-- /checked-by-anatoly -->

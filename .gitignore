@@ -11,3 +11,4 @@ build/
 runs/*/
 !runs/memory.md
 !runs/improvements.md
+.anatoly*/
