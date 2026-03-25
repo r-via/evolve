@@ -512,3 +512,210 @@ class TestWriteStateJson:
         # Should have a valid ISO timestamp
         assert "T" in state["started_at"]
         assert state["started_at"].endswith("Z")
+
+    def test_state_json_corrupted_existing_generates_started_at(self, tmp_path: Path):
+        """When existing state.json is corrupted, generates a fresh started_at."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        # Write corrupted JSON
+        (run_dir / "state.json").write_text("{not valid json!!")
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=2,
+            max_rounds=10,
+            phase="error",
+            status="running",
+            improvements_path=improvements,
+            started_at=None,
+        )
+
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        # Should have generated a new timestamp despite corrupted file
+        assert "T" in state["started_at"]
+        assert state["started_at"].endswith("Z")
+        assert state["round"] == 2
+
+    def test_state_json_overwrites_previous(self, tmp_path: Path):
+        """Writing state.json twice overwrites the first with updated values."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n- [ ] [functional] todo\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        import json
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=10,
+            phase="error",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-01-01T00:00:00Z",
+        )
+        state1 = json.loads((run_dir / "state.json").read_text())
+        assert state1["round"] == 1
+
+        # Update improvements and write again
+        improvements.write_text(
+            "# Improvements\n- [x] [functional] done\n- [ ] [functional] next\n"
+        )
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=2,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-01-01T00:00:00Z",
+        )
+        state2 = json.loads((run_dir / "state.json").read_text())
+        assert state2["round"] == 2
+        assert state2["improvements"]["done"] == 1
+        assert state2["improvements"]["remaining"] == 1
+
+    def test_state_json_partial_check_results(self, tmp_path: Path):
+        """Only provided check fields appear in last_check."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        import json
+
+        # Only check_passed, no tests or duration
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=5,
+            phase="error",
+            status="running",
+            improvements_path=improvements,
+            check_passed=False,
+            started_at="2026-03-25T15:00:00Z",
+        )
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["last_check"] == {"passed": False}
+        assert "tests" not in state["last_check"]
+        assert "duration_s" not in state["last_check"]
+
+    def test_state_json_duration_rounding(self, tmp_path: Path):
+        """check_duration_s is rounded to 1 decimal place."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        import json
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=5,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            check_passed=True,
+            check_duration_s=3.6789,
+            started_at="2026-03-25T15:00:00Z",
+        )
+        state = json.loads((run_dir / "state.json").read_text())
+        assert state["last_check"]["duration_s"] == 3.7
+
+    def test_state_json_all_status_values(self, tmp_path: Path):
+        """All documented status values are written correctly."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        import json
+
+        for status in ("running", "converged", "max_rounds", "error", "party_mode"):
+            _write_state_json(
+                run_dir=run_dir,
+                project_dir=project_dir,
+                round_num=1,
+                max_rounds=5,
+                phase="improvement",
+                status=status,
+                improvements_path=improvements,
+                started_at="2026-03-25T15:00:00Z",
+            )
+            state = json.loads((run_dir / "state.json").read_text())
+            assert state["status"] == status
+
+    def test_state_json_updated_at_is_valid_iso(self, tmp_path: Path):
+        """updated_at is a valid ISO-format UTC timestamp."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        import json
+        from datetime import datetime, timezone
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=5,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-03-25T15:00:00Z",
+        )
+        state = json.loads((run_dir / "state.json").read_text())
+        # Should parse without error
+        dt = datetime.strptime(state["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
+        assert dt.year >= 2026
+
+    def test_state_json_existing_without_started_at_key(self, tmp_path: Path):
+        """Existing state.json missing started_at generates a new timestamp."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        import json
+        # Existing state without started_at key
+        (run_dir / "state.json").write_text(json.dumps({"version": 1}))
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=3,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at=None,
+        )
+        state = json.loads((run_dir / "state.json").read_text())
+        # Should have generated a fresh timestamp
+        assert "T" in state["started_at"]
+        assert state["started_at"].endswith("Z")
