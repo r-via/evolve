@@ -105,7 +105,7 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         args.rounds = int(file_config["rounds"])
 
     # timeout: CLI (non-default) > env > file > default
-    cli_timeout_set = "--timeout" in sys.argv
+    cli_timeout_set = any(a == "--timeout" or a.startswith("--timeout=") for a in sys.argv)
     if cli_timeout_set:
         pass  # CLI wins
     elif os.environ.get("EVOLVE_TIMEOUT"):
