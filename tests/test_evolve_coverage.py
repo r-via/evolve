@@ -255,3 +255,134 @@ class TestMainDispatch:
              patch("loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
              patch("agent.asyncio.run", side_effect=lambda coro: coro.close()):
             main()
+
+    def test_history_command(self, tmp_path: Path):
+        """main() dispatches history correctly (line 293)."""
+        runs = tmp_path / "runs"
+        session = runs / "20260101_000000"
+        session.mkdir(parents=True)
+        (session / "CONVERGED").write_text("Done")
+        with patch("sys.argv", ["evolve", "history", str(tmp_path)]), \
+             patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
+            main()
+
+    def test_start_validate_dispatch(self, tmp_path: Path):
+        """main() dispatches --validate to run_validate (lines 261-262)."""
+        (tmp_path / "README.md").write_text("# Test")
+        mock_validate = MagicMock(return_value=0)
+        with patch("sys.argv", ["evolve", "start", str(tmp_path), "--validate"]), \
+             patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
+             patch("loop.run_validate", mock_validate):
+            with pytest.raises(SystemExit) as exc:
+                main()
+            assert exc.value.code == 0
+        mock_validate.assert_called_once()
+
+    def test_start_dry_run_dispatch(self, tmp_path: Path):
+        """main() dispatches --dry-run to run_dry_run (lines 269-270)."""
+        (tmp_path / "README.md").write_text("# Test")
+        mock_dry_run = MagicMock()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path), "--dry-run"]), \
+             patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
+             patch("loop.run_dry_run", mock_dry_run):
+            main()
+        mock_dry_run.assert_called_once()
+
+    def test_start_json_flag_sets_tui(self, tmp_path: Path):
+        """main() sets tui._use_json when --json is passed (lines 258-259)."""
+        (tmp_path / "README.md").write_text("# Test")
+        mock_loop = MagicMock()
+        import tui as _tui_mod
+        original = getattr(_tui_mod, '_use_json', False)
+        try:
+            with patch("sys.argv", ["evolve", "start", str(tmp_path), "--json"]), \
+                 patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
+                 patch("loop.evolve_loop", mock_loop):
+                main()
+            assert _tui_mod._use_json is True
+        finally:
+            _tui_mod._use_json = original
+
+
+# ---------------------------------------------------------------------------
+# _load_config — pyproject.toml exception path (lines 62-63)
+# ---------------------------------------------------------------------------
+
+class TestLoadConfigPyprojectException:
+    def test_malformed_pyproject_toml(self, tmp_path: Path):
+        """Malformed pyproject.toml returns empty dict (lines 62-63)."""
+        (tmp_path / "pyproject.toml").write_text("this is {{not valid toml!!!")
+        result = _load_config(tmp_path)
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# _check_deps — venv-related message paths (lines 177-180, 185-190)
+# ---------------------------------------------------------------------------
+
+class TestCheckDepsVenvPaths:
+    def test_venv_exists_not_in_venv(self, tmp_path: Path, capsys):
+        """_check_deps prints venv activation instructions when venv exists but not active (lines 177-180)."""
+        # Create a fake venv directory where _check_deps expects it
+        evolve_file = Path(__file__).parent.parent / "evolve.py"
+        evolve_dir = evolve_file.parent
+        venv_dir = evolve_dir / ".venv"
+        venv_existed = venv_dir.is_dir()
+
+        if not venv_existed:
+            venv_dir.mkdir(exist_ok=True)
+
+        try:
+            # Make import of claude_agent_sdk fail
+            real_import = __import__
+            def mock_import(name, *args, **kwargs):
+                if name == "claude_agent_sdk":
+                    raise ImportError("no module")
+                return real_import(name, *args, **kwargs)
+
+            # Ensure sys.prefix does NOT contain the venv path
+            with patch("builtins.__import__", side_effect=mock_import), \
+                 patch.object(sys, "prefix", "/usr"):
+                with pytest.raises(SystemExit) as exc:
+                    _check_deps()
+                assert exc.value.code == 2
+
+            captured = capsys.readouterr()
+            assert "virtual environment exists" in captured.out
+            assert "source" in captured.out
+        finally:
+            if not venv_existed:
+                venv_dir.rmdir()
+
+    def test_no_venv_exists(self, tmp_path: Path, capsys):
+        """_check_deps prints setup instructions when no venv exists (lines 185-190)."""
+        evolve_file = Path(__file__).parent.parent / "evolve.py"
+        evolve_dir = evolve_file.parent
+        venv_dir = evolve_dir / ".venv"
+
+        # Temporarily rename venv if it exists
+        renamed = False
+        backup_path = evolve_dir / ".venv_backup_test"
+        if venv_dir.is_dir():
+            venv_dir.rename(backup_path)
+            renamed = True
+
+        try:
+            real_import = __import__
+            def mock_import(name, *args, **kwargs):
+                if name == "claude_agent_sdk":
+                    raise ImportError("no module")
+                return real_import(name, *args, **kwargs)
+
+            with patch("builtins.__import__", side_effect=mock_import), \
+                 patch.object(sys, "prefix", "/usr"):
+                with pytest.raises(SystemExit) as exc:
+                    _check_deps()
+                assert exc.value.code == 2
+
+            captured = capsys.readouterr()
+            assert "Set up a virtual environment" in captured.out
+            assert "python3 -m venv .venv" in captured.out
+        finally:
+            if renamed:
+                backup_path.rename(venv_dir)
