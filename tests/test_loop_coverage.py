@@ -991,3 +991,221 @@ def _make_import_error_for_agent(name, *args, **kwargs):
 
 
 original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+
+
+# ---------------------------------------------------------------------------
+# evolve_loop — auto-detect check command (lines 307-310)
+# ---------------------------------------------------------------------------
+
+class TestEvolveLoopAutoDetect:
+    """Test that evolve_loop auto-detects check command when none provided."""
+
+    def test_auto_detect_sets_check_cmd(self, tmp_path: Path):
+        """When check_cmd is None and auto-detect finds a tool, lines 307-310 execute."""
+        (tmp_path / "README.md").write_text("# Test")
+        (tmp_path / "runs").mkdir()
+
+        with patch("loop._auto_detect_check", return_value="pytest") as mock_detect, \
+             patch("loop._ensure_git"), \
+             patch("loop._run_rounds") as mock_run, \
+             patch("loop.get_tui") as mock_get_tui:
+            evolve_loop(tmp_path, max_rounds=5, check_cmd=None)
+
+        mock_detect.assert_called_once_with(tmp_path)
+        # get_tui called for early UI message
+        mock_get_tui.assert_called()
+        # check_cmd should have been passed to _run_rounds as "pytest"
+        mock_run.assert_called_once()
+        args = mock_run.call_args
+        assert args[0][6] == "pytest"  # check_cmd is the 7th positional arg
+
+
+# ---------------------------------------------------------------------------
+# _run_party_mode — agent persona read error (lines 887-888)
+# ---------------------------------------------------------------------------
+
+class TestPartyModeAgentReadError:
+    """Test _run_party_mode when an agent persona file raises an error on read."""
+
+    def test_agent_file_read_error_skipped(self, tmp_path: Path):
+        """Agent persona file that raises OSError is skipped (lines 887-888)."""
+        agents = tmp_path / "agents"
+        agents.mkdir()
+        # Create one good and one bad agent file
+        (agents / "good.md").write_text("# Good Agent")
+        bad_file = agents / "bad.md"
+        bad_file.write_text("# Bad Agent")
+
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        (tmp_path / "README.md").write_text("# Test")
+        (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
+        (tmp_path / "runs" / "memory.md").write_text("# Memory\n")
+        (run_dir / "CONVERGED").write_text("All done")
+
+        ui = MagicMock()
+
+        original_read_text = Path.read_text
+
+        def patched_read_text(self_path, *args, **kwargs):
+            if self_path.name == "bad.md" and "agents" in str(self_path):
+                raise OSError("Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        real_import = __import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "claude_agent_sdk":
+                raise ImportError("mocked")
+            return real_import(name, *args, **kwargs)
+
+        with patch.object(Path, "read_text", patched_read_text), \
+             patch("builtins.__import__", side_effect=mock_import):
+            _run_party_mode(tmp_path, run_dir, ui)
+
+        # Should still proceed (the good agent was loaded) — but SDK missing so it warns
+        ui.warn.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _run_party_mode — workflow fallback to project dir (line 895)
+# and step file read error (lines 906-907)
+# ---------------------------------------------------------------------------
+
+class TestPartyModeWorkflowFallback:
+    """Test workflow directory fallback and step file read errors."""
+
+    def test_workflow_falls_back_to_project_dir(self, tmp_path: Path):
+        """When evolve's own wf_dir doesn't exist, falls back to project_dir (line 895)."""
+        agents = tmp_path / "agents"
+        agents.mkdir()
+        (agents / "dev.md").write_text("# Dev Agent")
+
+        # Create workflow in the project dir (not in evolve package dir)
+        wf_dir = tmp_path / "workflows" / "party-mode"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "workflow.md").write_text("# Custom Workflow")
+
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        (tmp_path / "README.md").write_text("# Test")
+        (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
+        (tmp_path / "runs" / "memory.md").write_text("# Memory\n")
+        (run_dir / "CONVERGED").write_text("All done")
+
+        ui = MagicMock()
+
+        # Patch the evolve package's workflow dir to not exist so it falls back
+        import loop as loop_mod
+        real_parent = Path(loop_mod.__file__).parent
+
+        real_is_dir = Path.is_dir
+
+        def patched_is_dir(self_path):
+            # Make the evolve package's wf_dir appear to not exist
+            if str(self_path) == str(real_parent / "workflows" / "party-mode"):
+                return False
+            return real_is_dir(self_path)
+
+        real_import = __import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "claude_agent_sdk":
+                raise ImportError("mocked")
+            return real_import(name, *args, **kwargs)
+
+        with patch.object(Path, "is_dir", patched_is_dir), \
+             patch("builtins.__import__", side_effect=mock_import):
+            _run_party_mode(tmp_path, run_dir, ui)
+
+        # Should warn about missing SDK but have loaded the workflow from project dir
+        ui.warn.assert_called()
+
+    def test_step_file_read_error_skipped(self, tmp_path: Path):
+        """Step file that raises OSError is skipped (lines 906-907)."""
+        agents = tmp_path / "agents"
+        agents.mkdir()
+        (agents / "dev.md").write_text("# Dev Agent")
+
+        # Create workflow with steps dir containing a bad file
+        import loop as loop_mod
+        wf_dir = Path(loop_mod.__file__).parent / "workflows" / "party-mode"
+        # We'll use project-level workflow dir to control file contents
+        proj_wf_dir = tmp_path / "workflows" / "party-mode" / "steps"
+        proj_wf_dir.mkdir(parents=True)
+        (proj_wf_dir.parent / "workflow.md").write_text("# Workflow")
+        (proj_wf_dir / "step-01.md").write_text("# Step 1")
+        bad_step = proj_wf_dir / "step-02.md"
+        bad_step.write_text("# Step 2 — will fail")
+
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        (tmp_path / "README.md").write_text("# Test")
+        (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
+        (tmp_path / "runs" / "memory.md").write_text("# Memory\n")
+        (run_dir / "CONVERGED").write_text("All done")
+
+        ui = MagicMock()
+
+        real_parent = Path(loop_mod.__file__).parent
+        real_is_dir = Path.is_dir
+
+        def patched_is_dir(self_path):
+            if str(self_path) == str(real_parent / "workflows" / "party-mode"):
+                return False
+            return real_is_dir(self_path)
+
+        original_read_text = Path.read_text
+
+        def patched_read_text(self_path, *args, **kwargs):
+            if self_path.name == "step-02.md" and "steps" in str(self_path):
+                raise OSError("Permission denied")
+            return original_read_text(self_path, *args, **kwargs)
+
+        real_import = __import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "claude_agent_sdk":
+                raise ImportError("mocked")
+            return real_import(name, *args, **kwargs)
+
+        with patch.object(Path, "is_dir", patched_is_dir), \
+             patch.object(Path, "read_text", patched_read_text), \
+             patch("builtins.__import__", side_effect=mock_import):
+            _run_party_mode(tmp_path, run_dir, ui)
+
+        ui.warn.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _forever_restart — CONVERGED file exists (line 1030)
+# ---------------------------------------------------------------------------
+
+class TestForeverRestartConvergedFile:
+    """Test _forever_restart when CONVERGED file exists in run_dir."""
+
+    def test_converged_file_preserved(self, tmp_path: Path):
+        """CONVERGED file is left in place (line 1030 — pass branch)."""
+        from loop import _forever_restart
+
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir(parents=True)
+        improvements = tmp_path / "runs" / "improvements.md"
+        improvements.write_text("# Improvements\n- [x] done\n")
+
+        # Create both README_proposal.md and CONVERGED
+        (run_dir / "README_proposal.md").write_text("# New README\n")
+        (tmp_path / "README.md").write_text("# Old README\n")
+        converged = run_dir / "CONVERGED"
+        converged.write_text("All done — fully converged")
+
+        ui = MagicMock()
+        _forever_restart(tmp_path, run_dir, improvements, ui)
+
+        # CONVERGED file should still exist (preserved, not deleted)
+        assert converged.is_file()
+        assert converged.read_text() == "All done — fully converged"
+        # improvements reset
+        assert improvements.read_text() == "# Improvements\n"
+        # README adopted
+        assert (tmp_path / "README.md").read_text() == "# New README\n"

@@ -11,4 +11,5 @@
 - [x] [functional] Ensure _run_party_mode prints probe lines for watchdog observability — party mode can be a long-running agent call with no stdout, risking watchdog kills
 - [x] [functional] Add test coverage for _forever_restart path and party mode result handling — lines 622-639 and 983-990 in loop.py are untested, covering the forever-mode restart logic and party mode file output checks
 - [x] [functional] Add test coverage for party mode retry paths — lines 965-985 in loop.py covering benign runtime error handling, rate limit retry with sleep, and ImportError fallback during agent execution are untested
-- [ ] [functional] Add test coverage for remaining uncovered lines in loop.py — lines 307-310 (_run_monitored_subprocess edge cases), 887-888/895/906-907 (party mode workflow file loading errors), and 1030 (_forever_restart edge case)
+- [x] [functional] Add test coverage for remaining uncovered lines in loop.py — lines 307-310 (evolve_loop auto-detect check), 887-888/895/906-907 (party mode workflow file loading errors), and 1030 (_forever_restart edge case)
+- [ ] [functional] Ensure TUI Protocol method parity is enforced at type-check time — README states RichTUI and PlainTUI implement TUIProtocol guaranteeing method parity, but tui.py lines 97-98/457/463/468-474 remain untested edge cases in the Rich/Plain implementations
