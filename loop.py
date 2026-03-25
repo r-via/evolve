@@ -450,6 +450,13 @@ def _run_monitored_subprocess(
     lock = threading.Lock()
 
     def _reader():
+        """Read subprocess stdout line-by-line, updating the watchdog timer.
+
+        Runs in a daemon thread.  Each line is appended to *output_lines*
+        (under *lock*) and echoed to ``sys.stdout`` so the orchestrator's
+        watchdog sees continuous activity.  Updates *last_activity* on every
+        line to prevent the watchdog from killing an active process.
+        """
         nonlocal last_activity
         assert proc.stdout is not None
         for line in proc.stdout:
@@ -1108,6 +1115,17 @@ def _setup_forever_branch(project_dir: Path) -> None:
 
 
 def _ensure_git(project_dir: Path, ui: TUIProtocol | None = None) -> None:
+    """Verify *project_dir* is a git repository and snapshot uncommitted changes.
+
+    Checks that ``git rev-parse --git-dir`` succeeds; if not, prints an error
+    via *ui* and exits with code 2.  If the working tree has uncommitted
+    changes, they are auto-committed with a snapshot message so the evolution
+    loop starts from a clean state.
+
+    Args:
+        project_dir: Path to the target project.
+        ui: Optional TUI instance (defaults to ``get_tui()``).
+    """
     if ui is None:
         ui = get_tui()
     result = subprocess.run(
@@ -1132,6 +1150,18 @@ def _ensure_git(project_dir: Path, ui: TUIProtocol | None = None) -> None:
 
 
 def _git_commit(project_dir: Path, message: str, ui: TUIProtocol | None = None) -> None:
+    """Stage all changes, commit with *message*, and push to the remote.
+
+    Runs ``git add -A`` then checks whether the index differs from HEAD.
+    If there is nothing to commit the function returns early.  Otherwise it
+    commits and pushes.  On the first push of a new branch (no upstream), it
+    automatically sets the upstream with ``git push -u origin <branch>``.
+
+    Args:
+        project_dir: Path to the target project repository.
+        message: Conventional-commit message written by the agent.
+        ui: Optional TUI instance (defaults to ``get_tui()``).
+    """
     if ui is None:
         ui = get_tui()
     print(f"[probe] git: staging changes")

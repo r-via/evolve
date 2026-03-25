@@ -300,6 +300,17 @@ def main():
 
 
 def _parse_round_args():
+    """Parse CLI arguments for the internal ``evolve _round`` sub-command.
+
+    This is invoked by the orchestrator when it spawns a monitored subprocess
+    for a single evolution round.  It expects ``sys.argv[2:]`` to contain the
+    project directory and flags such as ``--round-num``, ``--check``,
+    ``--timeout``, ``--run-dir``, ``--yolo``, and ``--model``.
+
+    Returns:
+        An ``argparse.Namespace`` with all round parameters plus
+        ``command="_round"``.
+    """
     import argparse as _ap
     p = _ap.ArgumentParser(prog="evolve _round")
     p.add_argument("project_dir")
@@ -454,6 +465,16 @@ def _show_history(project_dir: Path) -> None:
 
 
 def _show_status(project_dir: Path):
+    """Display the current evolution status of *project_dir*.
+
+    Reads ``runs/improvements.md`` and ``runs/memory.md`` to summarise
+    checked / unchecked / blocked improvements and accumulated errors.
+    Also identifies the latest session directory and reports its round
+    count, check count, and convergence status.
+
+    Args:
+        project_dir: Path to the target project.
+    """
     from tui import get_tui
     ui = get_tui()
 
