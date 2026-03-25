@@ -111,7 +111,7 @@ class TestShouldRetryRateLimit:
 
     def test_rate_limit_second_attempt(self):
         e = Exception("rate_limit_exceeded")
-        assert _should_retry_rate_limit(e, 3, 5) == 180
+        assert _should_retry_rate_limit(e, 2, 5) == 120
 
     def test_rate_limit_last_attempt(self):
         """On last attempt, should not retry."""
