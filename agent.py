@@ -399,6 +399,30 @@ def analyze_and_fix(
     )
 
 
+def _build_check_section(check_cmd: str | None, check_output: str) -> str:
+    """Build the check command section used by read-only prompt builders.
+
+    Shared by :func:`build_validate_prompt` and :func:`build_dry_run_prompt`
+    to eliminate duplicated conditional logic for rendering check command
+    output.
+
+    Args:
+        check_cmd: Shell command used to verify the project (e.g. 'pytest').
+        check_output: Output from the most recent check command run.
+
+    Returns:
+        A Markdown section string (may be empty if no check command).
+    """
+    if check_cmd and check_output:
+        return (
+            f"\n## Check command: `{check_cmd}`\n"
+            f"\n### Latest check output:\n```\n{check_output}\n```\n"
+        )
+    elif check_cmd:
+        return f"\n## Check command: `{check_cmd}` (not yet run)\n"
+    return ""
+
+
 def build_validate_prompt(
     project_dir: Path,
     check_output: str = "",
@@ -426,14 +450,7 @@ def build_validate_prompt(
 
     rdir = str(run_dir or "runs")
 
-    check_section = ""
-    if check_cmd and check_output:
-        check_section = (
-            f"\n## Check command: `{check_cmd}`\n"
-            f"\n### Latest check output:\n```\n{check_output}\n```\n"
-        )
-    elif check_cmd:
-        check_section = f"\n## Check command: `{check_cmd}` (not yet run)\n"
+    check_section = _build_check_section(check_cmd, check_output)
 
     return f"""\
 You are a spec compliance validation agent. You are running in VALIDATE mode.
@@ -505,14 +522,7 @@ def build_dry_run_prompt(
 
     rdir = str(run_dir or "runs")
 
-    check_section = ""
-    if check_cmd and check_output:
-        check_section = (
-            f"\n## Check command: `{check_cmd}`\n"
-            f"\n### Latest check output:\n```\n{check_output}\n```\n"
-        )
-    elif check_cmd:
-        check_section = f"\n## Check command: `{check_cmd}` (not yet run)\n"
+    check_section = _build_check_section(check_cmd, check_output)
 
     return f"""\
 You are a read-only analysis agent. You are running in DRY RUN mode.
