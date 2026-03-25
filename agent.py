@@ -318,7 +318,8 @@ def analyze_and_fix(
 
     for attempt in range(1, max_retries + 1):
         try:
-            asyncio.run(run_claude_agent(prompt, project_dir, round_num=round_num, run_dir=run_dir))
+            log_fname = f"conversation_loop_{round_num}_attempt_{attempt}.md" if attempt > 1 else None
+            asyncio.run(run_claude_agent(prompt, project_dir, round_num=round_num, run_dir=run_dir, log_filename=log_fname))
             return
         except Exception as e:
             # Benign async teardown errors — safe to ignore.
