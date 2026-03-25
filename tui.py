@@ -102,6 +102,7 @@ class RichTUI:
     def __init__(self):
         from rich.console import Console
         self.console = Console()
+        self._status_grid = None
 
     def round_header(self, round_num: int, max_rounds: int,
                      target: str | None = None, checked: int = 0,
@@ -244,19 +245,23 @@ class RichTUI:
         self._status_grid = grid
 
     def status_improvements(self, checked: int, unchecked: int, blocked: int) -> None:
+        assert self._status_grid is not None, "status_header() must be called before status_improvements()"
         status = f"[green]{checked} done[/green], [yellow]{unchecked} remaining[/yellow]"
         if blocked > 0:
             status += f" ([red]{blocked} blocked (needs-package)[/red])"
         self._status_grid.add_row("Improvements:", status)
 
     def status_no_improvements(self) -> None:
+        assert self._status_grid is not None, "status_header() must be called before status_no_improvements()"
         self._status_grid.add_row("Improvements:", "[dim](none yet)[/dim]")
 
     def status_memory(self, count: int) -> None:
+        assert self._status_grid is not None, "status_header() must be called before status_memory()"
         self._status_grid.add_row("Memory:", f"{count} entries" if count else "[dim](empty)[/dim]")
 
     def status_session(self, name: str, convos: int, checks: int,
                        converged: bool, reason: str = "") -> None:
+        assert self._status_grid is not None, "status_header() must be called before status_session()"
         self._status_grid.add_row("Latest session:", f"{name} ({convos} rounds, {checks} checks)")
         if converged:
             self._status_grid.add_row("Converged:", f"[bold green]YES[/bold green]")
@@ -266,6 +271,7 @@ class RichTUI:
             self._status_grid.add_row("Converged:", "[yellow]NO[/yellow]")
 
     def status_flush(self) -> None:
+        assert self._status_grid is not None, "status_header() must be called before status_flush()"
         from rich.panel import Panel
         self.console.print()
         self.console.print(Panel(self._status_grid, title="[bold blue]evolve status[/bold blue]",
