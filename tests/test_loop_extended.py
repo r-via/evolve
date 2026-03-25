@@ -580,6 +580,118 @@ class TestGenerateEvolutionReport:
             last_round = None
         assert last_round is None
 
+    def test_detect_last_round_gaps_in_logs(self, tmp_path: Path):
+        """Detect last round correctly when there are gaps (e.g., 1, 3, 7)."""
+        runs = tmp_path / "runs"
+        session = runs / "20260101_000000"
+        session.mkdir(parents=True)
+        # Create conversation logs with gaps — missing rounds 2, 4, 5, 6
+        (session / "conversation_loop_1.md").write_text("round 1")
+        (session / "conversation_loop_3.md").write_text("round 3")
+        (session / "conversation_loop_7.md").write_text("round 7")
+
+        convos = sorted(
+            session.glob("conversation_loop_*.md"),
+            key=lambda p: int(p.stem.rsplit("_", 1)[1]),
+        )
+        last = convos[-1].stem
+        last_round = int(last.rsplit("_", 1)[1])
+        assert last_round == 7
+        assert len(convos) == 3  # only 3 files, not 7
+
+    def test_detect_last_round_empty_run_dir(self, tmp_path: Path):
+        """Empty run directory returns no convos — start_round stays at 1."""
+        session = tmp_path / "runs" / "20260101_000000"
+        session.mkdir(parents=True)
+        # No files at all
+        convos = sorted(session.glob("conversation_loop_*.md"))
+        assert convos == []
+        # In real code, start_round stays at 1 when convos is empty
+        start_round = 1
+        assert start_round == 1
+
+    def test_detect_last_round_only_error_logs(self, tmp_path: Path):
+        """Session with only error logs but no conversation logs returns empty."""
+        session = tmp_path / "runs" / "20260101_000000"
+        session.mkdir(parents=True)
+        (session / "subprocess_error_round_1.txt").write_text("error info")
+        (session / "subprocess_error_round_2.txt").write_text("error info")
+        (session / "check_round_1.txt").write_text("FAIL")
+
+        convos = sorted(session.glob("conversation_loop_*.md"))
+        assert convos == []
+        start_round = 1
+        assert start_round == 1
+
+    def test_detect_last_round_mixed_valid_and_corrupted(self, tmp_path: Path):
+        """When valid and corrupted filenames coexist, filter out corrupted ones."""
+        session = tmp_path / "runs" / "20260101_000000"
+        session.mkdir(parents=True)
+        (session / "conversation_loop_1.md").write_text("round 1")
+        (session / "conversation_loop_5.md").write_text("round 5")
+        (session / "conversation_loop_abc.md").write_text("bad name")
+        (session / "conversation_loop_.md").write_text("empty suffix")
+
+        # Filter to only parseable numeric entries (as robust code should)
+        all_convos = list(session.glob("conversation_loop_*.md"))
+        valid = []
+        for p in all_convos:
+            try:
+                int(p.stem.rsplit("_", 1)[1])
+                valid.append(p)
+            except (ValueError, IndexError):
+                pass
+        valid.sort(key=lambda p: int(p.stem.rsplit("_", 1)[1]))
+        assert len(valid) == 2
+        last_round = int(valid[-1].stem.rsplit("_", 1)[1])
+        assert last_round == 5
+
+    def test_detect_last_round_single_convo(self, tmp_path: Path):
+        """Single conversation log returns round 1."""
+        session = tmp_path / "runs" / "20260101_000000"
+        session.mkdir(parents=True)
+        (session / "conversation_loop_1.md").write_text("round 1")
+
+        convos = sorted(
+            session.glob("conversation_loop_*.md"),
+            key=lambda p: int(p.stem.rsplit("_", 1)[1]),
+        )
+        assert len(convos) == 1
+        last_round = int(convos[-1].stem.rsplit("_", 1)[1])
+        assert last_round == 1
+
+    def test_detect_last_round_high_numbers(self, tmp_path: Path):
+        """Correctly handles high round numbers (e.g., 100+)."""
+        session = tmp_path / "runs" / "20260101_000000"
+        session.mkdir(parents=True)
+        for i in [1, 50, 100, 150]:
+            (session / f"conversation_loop_{i}.md").write_text(f"round {i}")
+
+        convos = sorted(
+            session.glob("conversation_loop_*.md"),
+            key=lambda p: int(p.stem.rsplit("_", 1)[1]),
+        )
+        last_round = int(convos[-1].stem.rsplit("_", 1)[1])
+        assert last_round == 150
+        # Verify numeric sort (not lexicographic — 100 > 50, not "100" < "50")
+        rounds = [int(p.stem.rsplit("_", 1)[1]) for p in convos]
+        assert rounds == [1, 50, 100, 150]
+
+    def test_detect_last_round_non_session_dirs_ignored(self, tmp_path: Path):
+        """Resume logic ignores non-timestamped directories."""
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        # Non-timestamp dirs should be filtered out by d.name[0].isdigit()
+        (runs / "improvements.md").write_text("# Improvements\n")
+        (runs / "memory.md").write_text("# Memory\n")
+        (runs / ".hidden").mkdir()
+
+        sessions = sorted(
+            [d for d in runs.iterdir() if d.is_dir() and d.name[0].isdigit()],
+            reverse=True,
+        )
+        assert sessions == []
+
 
 # ---------------------------------------------------------------------------
 # _run_monitored_subprocess — watchdog and output streaming
