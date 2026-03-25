@@ -259,6 +259,8 @@ class TestRunPartyMode:
         with patch("loop.Path") as mock_path:
             # Make project agents_dir.is_dir() return False
             mock_path_inst = MagicMock()
+            mock_path_inst.is_dir.return_value = False
+            mock_path_inst.parent.__truediv__.return_value.is_dir.return_value = False
             mock_path.return_value = mock_path_inst
             # Just call with a real tmp_path that has no agents/
             _run_party_mode(tmp_path, run_dir)  # should not crash
