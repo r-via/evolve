@@ -60,7 +60,7 @@ def build_prompt(
     # Previous check results
     prev_check = ""
     if run_dir:
-        for f in sorted(Path(run_dir).glob("check_round_*.txt"), reverse=True):
+        for f in sorted(Path(run_dir).glob("check_round_*.txt"), key=lambda p: int(re.search(r'_(\d+)\.txt$', p.name).group(1)), reverse=True):
             prev_check = f.read_text()
             break
 
