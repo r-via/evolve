@@ -227,6 +227,7 @@ def main():
     start_p.add_argument("--model", default=None, help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
     start_p.add_argument("--resume", action="store_true", help="Resume the most recent interrupted session")
     start_p.add_argument("--forever", action="store_true", help="Autonomous forever mode — evolve indefinitely on a separate branch until convergence")
+    start_p.add_argument("--dry-run", action="store_true", dest="dry_run", help="Read-only analysis mode — produces a report without modifying files")
     start_p.add_argument("--json", action="store_true", help="Emit structured JSON events to stdout (for CI/CD)")
 
     # --- status ---
@@ -259,17 +260,26 @@ def main():
         if args.json:
             import tui as _tui_mod
             _tui_mod._use_json = True
-        from loop import evolve_loop
-        evolve_loop(
-            project_dir=project_path,
-            max_rounds=args.rounds,
-            check_cmd=args.check,
-            yolo=args.yolo,
-            timeout=args.timeout,
-            model=args.model,
-            resume=args.resume,
-            forever=args.forever,
-        )
+        if args.dry_run:
+            from loop import run_dry_run
+            run_dry_run(
+                project_dir=project_path,
+                check_cmd=args.check,
+                timeout=args.timeout,
+                model=args.model,
+            )
+        else:
+            from loop import evolve_loop
+            evolve_loop(
+                project_dir=project_path,
+                max_rounds=args.rounds,
+                check_cmd=args.check,
+                yolo=args.yolo,
+                timeout=args.timeout,
+                model=args.model,
+                resume=args.resume,
+                forever=args.forever,
+            )
 
     elif args.command == "status":
         _show_status(Path(args.project_dir).resolve())

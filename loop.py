@@ -737,6 +737,86 @@ def run_single_round(
             ui.check_result("verify", check_cmd, timeout=True)
 
 
+def run_dry_run(
+    project_dir: Path,
+    check_cmd: str | None = None,
+    timeout: int = 300,
+    model: str = "claude-opus-4-6",
+) -> None:
+    """Run a read-only analysis of the project without modifying files.
+
+    Runs the check command (if provided) to see the current state, then
+    launches the agent with write-related tools disabled (Edit, Write, Bash
+    are disallowed).  The agent analyzes the project using only Read, Grep,
+    and Glob, and produces a ``dry_run_report.md`` in the session directory.
+
+    No files in the project are modified and no git commits are created.
+
+    Args:
+        project_dir: Root directory of the project being analyzed.
+        check_cmd: Shell command to verify the project (run read-only).
+        timeout: Timeout in seconds for the check command.
+        model: Claude model identifier to use.
+    """
+    ui = get_tui()
+
+    # Auto-detect check command if not provided
+    if check_cmd is None:
+        detected = _auto_detect_check(project_dir)
+        if detected:
+            ui.info(f"  Auto-detected check command: {detected}")
+            check_cmd = detected
+
+    # Create timestamped run directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = project_dir / "runs" / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ui.run_dir_info(str(run_dir))
+    ui.info("  Mode: DRY RUN (read-only analysis, no file changes)")
+
+    # 1. Run check command if provided
+    check_output = ""
+    if check_cmd:
+        ui.check_result("check", check_cmd, passed=None)
+        try:
+            result = subprocess.run(
+                check_cmd, shell=True, cwd=str(project_dir),
+                capture_output=True, text=True, timeout=timeout,
+            )
+            check_output = f"Exit code: {result.returncode}\n"
+            if result.stdout:
+                check_output += f"stdout:\n{result.stdout[-2000:]}\n"
+            if result.stderr:
+                check_output += f"stderr:\n{result.stderr[-2000:]}\n"
+            ok = result.returncode == 0
+            ui.check_result("check", check_cmd, passed=ok)
+        except subprocess.TimeoutExpired:
+            check_output = f"TIMEOUT after {timeout}s"
+            ui.check_result("check", check_cmd, timeout=True)
+    else:
+        ui.no_check()
+
+    # 2. Launch agent in dry-run mode (restricted tools)
+    from agent import run_dry_run_agent
+    import agent as _agent_mod
+    _agent_mod.MODEL = model
+
+    ui.agent_working()
+    run_dry_run_agent(
+        project_dir=project_dir,
+        check_output=check_output,
+        check_cmd=check_cmd,
+        run_dir=run_dir,
+    )
+
+    # 3. Report location
+    report_path = run_dir / "dry_run_report.md"
+    if report_path.is_file():
+        ui.info(f"  Dry-run report: {report_path}")
+    else:
+        ui.warn("No dry_run_report.md produced by the agent")
+
+
 def _run_party_mode(project_dir: Path, run_dir: Path, ui=None) -> None:
     """Launch party mode: multi-agent brainstorming post-convergence.
 

@@ -394,3 +394,208 @@ def analyze_and_fix(
             # Non-retryable error — give up.
             ui.warn(f"Claude Code agent failed ({e})")
             return
+
+
+def build_dry_run_prompt(
+    project_dir: Path,
+    check_output: str = "",
+    check_cmd: str | None = None,
+    run_dir: Path | None = None,
+) -> str:
+    """Build the prompt for dry-run (read-only) analysis mode.
+
+    The agent is instructed to analyse the project without modifying any
+    files and to write a ``dry_run_report.md`` summarising identified gaps,
+    proposed improvements, and estimated rounds to convergence.
+
+    Args:
+        project_dir: Root directory of the project being analysed.
+        check_output: Output from the most recent check command run.
+        check_cmd: Shell command used to verify the project.
+        run_dir: Session run directory where the report will be written.
+
+    Returns:
+        The fully assembled prompt string.
+    """
+    # Load README
+    readme = ""
+    for name in ("README.md", "README.rst", "README.txt", "README"):
+        p = project_dir / name
+        if p.is_file():
+            readme = p.read_text()
+            break
+
+    # Load improvements
+    improvements_path = project_dir / "runs" / "improvements.md"
+    improvements = improvements_path.read_text() if improvements_path.is_file() else "(none)"
+
+    rdir = str(run_dir or "runs")
+
+    check_section = ""
+    if check_cmd and check_output:
+        check_section = (
+            f"\n## Check command: `{check_cmd}`\n"
+            f"\n### Latest check output:\n```\n{check_output}\n```\n"
+        )
+    elif check_cmd:
+        check_section = f"\n## Check command: `{check_cmd}` (not yet run)\n"
+
+    return f"""\
+You are a read-only analysis agent. You are running in DRY RUN mode.
+You MUST NOT modify any project files. Your only writable action is to
+create `{rdir}/dry_run_report.md`.
+
+Analyse the project against its README specification. Use Read, Grep, and
+Glob tools to examine the codebase. Do NOT use Edit, Write, or Bash.
+
+At the end, write `{rdir}/dry_run_report.md` with the following sections:
+
+# Dry Run Report
+
+## Identified Gaps
+List every gap between the README specification and the current implementation.
+
+## Proposed Improvements
+For each gap, describe what improvement would be added to `improvements.md`.
+Use the same format: `- [ ] [functional] description` or `- [ ] [performance] description`.
+
+## Estimated Rounds
+Estimate how many evolution rounds would be needed to reach convergence.
+
+## README (specification)
+{readme if readme else "(no README found)"}
+
+## Current improvements.md
+{improvements}
+{check_section}"""
+
+
+async def _run_dry_run_claude_agent(
+    prompt: str,
+    project_dir: Path,
+    run_dir: Path,
+) -> None:
+    """Run the Claude agent in dry-run mode with restricted tools.
+
+    Only Read, Grep, Glob, and Write are allowed (Write is needed to produce
+    the report file).  Edit, Bash, Task, Agent, WebSearch, WebFetch are
+    disallowed so no project files can be modified.
+
+    Args:
+        prompt: The dry-run analysis prompt.
+        project_dir: Root directory of the project (used as cwd).
+        run_dir: Session directory for the conversation log and report.
+    """
+    _patch_sdk_parser()
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
+
+    options = ClaudeAgentOptions(
+        max_turns=20,
+        permission_mode="bypassPermissions",
+        model=MODEL,
+        cwd=str(project_dir),
+        disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
+        include_partial_messages=True,
+    )
+
+    log_path = run_dir / "dry_run_conversation.md"
+    ui = get_tui()
+
+    with open(log_path, "w") as log:
+        log.write("# Dry Run Analysis\n\n")
+
+        seen_tool_ids: set[str] = set()
+        seen_text_hashes: set[int] = set()
+        tools_used = 0
+
+        try:
+            async for message in query(prompt=prompt, options=options):
+                if message is None:
+                    continue
+                if isinstance(message, (AssistantMessage, ResultMessage)):
+                    if not hasattr(message, "content") or not message.content:
+                        continue
+                    for block in message.content:
+                        if hasattr(block, "text") and block.text.strip():
+                            h = hash(block.text)
+                            if h in seen_text_hashes:
+                                continue
+                            seen_text_hashes.add(h)
+                            log.write(f"\n{block.text}\n")
+                            ui.agent_text(block.text)
+                        elif hasattr(block, "name"):
+                            block_id = getattr(block, "id", None)
+                            if block_id and block_id in seen_tool_ids:
+                                continue
+                            if block_id:
+                                seen_tool_ids.add(block_id)
+                            tools_used += 1
+                            tool_name = block.name
+                            tool_input = ""
+                            if hasattr(block, "input") and block.input:
+                                inp = block.input
+                                if isinstance(inp, dict):
+                                    tool_input = inp.get("file_path", inp.get("pattern", str(inp)[:100]))
+                                else:
+                                    tool_input = str(inp)[:100]
+                            log.write(f"\n**{tool_name}**: `{tool_input}`\n")
+                            ui.agent_tool(tool_name, tool_input)
+        except Exception as e:
+            log.write(f"\n> SDK error: {e}\n")
+
+        log.write(f"\n---\n\n**Done**: {tools_used} tool calls\n")
+
+    ui.agent_done(tools_used, str(log_path))
+
+
+def run_dry_run_agent(
+    project_dir: Path,
+    check_output: str = "",
+    check_cmd: str | None = None,
+    run_dir: Path | None = None,
+    max_retries: int = 5,
+) -> None:
+    """Run the agent in dry-run (read-only) analysis mode.
+
+    Builds a dry-run prompt and invokes the agent with write-related tools
+    disabled.  Includes the same retry logic as ``analyze_and_fix``.
+
+    Args:
+        project_dir: Root directory of the project being analysed.
+        check_output: Output from the most recent check command.
+        check_cmd: Shell command used to verify the project.
+        run_dir: Session run directory for conversation logs and report.
+        max_retries: Maximum SDK call attempts on rate-limit errors.
+    """
+    ui = get_tui()
+    try:
+        from claude_agent_sdk import query
+    except ImportError:
+        ui.warn("claude-agent-sdk not installed, skipping agent")
+        return
+
+    rdir = run_dir or (project_dir / "runs")
+    rdir.mkdir(parents=True, exist_ok=True)
+
+    prompt = build_dry_run_prompt(project_dir, check_output, check_cmd, rdir)
+
+    import warnings
+    warnings.filterwarnings("ignore", message=".*cancel scope.*")
+    warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            asyncio.run(_run_dry_run_claude_agent(prompt, project_dir, rdir))
+            return
+        except Exception as e:
+            if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
+                return
+
+            wait = _should_retry_rate_limit(e, attempt, max_retries)
+            if wait is not None:
+                ui.sdk_rate_limited(wait, attempt, max_retries)
+                time.sleep(wait)
+                continue
+
+            ui.warn(f"Dry-run agent failed ({e})")
+            return

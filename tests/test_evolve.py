@@ -48,6 +48,7 @@ class TestCLIParsing:
         start_p.add_argument("--model", default=None)
         start_p.add_argument("--resume", action="store_true")
         start_p.add_argument("--forever", action="store_true")
+        start_p.add_argument("--dry-run", action="store_true", dest="dry_run")
         start_p.add_argument("--json", action="store_true")
         args = ap.parse_args([
             "start", "/tmp/project",
@@ -58,6 +59,7 @@ class TestCLIParsing:
             "--model", "claude-sonnet-4-20250514",
             "--resume",
             "--forever",
+            "--dry-run",
             "--json",
         ])
         assert args.rounds == 20
@@ -67,6 +69,7 @@ class TestCLIParsing:
         assert args.model == "claude-sonnet-4-20250514"
         assert args.resume is True
         assert args.forever is True
+        assert args.dry_run is True
         assert args.json is True
 
     def test_forever_flag_defaults_false(self):
@@ -78,6 +81,16 @@ class TestCLIParsing:
         start_p.add_argument("--forever", action="store_true")
         args = ap.parse_args(["start", "/tmp/project"])
         assert args.forever is False
+
+    def test_dry_run_flag_defaults_false(self):
+        import argparse
+        ap = argparse.ArgumentParser()
+        sub = ap.add_subparsers(dest="command")
+        start_p = sub.add_parser("start")
+        start_p.add_argument("project_dir")
+        start_p.add_argument("--dry-run", action="store_true", dest="dry_run")
+        args = ap.parse_args(["start", "/tmp/project"])
+        assert args.dry_run is False
 
     def test_json_flag_defaults_false(self):
         import argparse
