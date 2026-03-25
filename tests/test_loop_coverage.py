@@ -312,6 +312,10 @@ class TestEvolveLoop:
 class TestRunRounds:
     """Test _run_rounds orchestration logic (lines 414-569)."""
 
+    def setup_method(self):
+        """Fresh UI mock for each test — avoids per-test MagicMock() boilerplate."""
+        self.ui = MagicMock()
+
     def _setup_project(self, tmp_path):
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
@@ -324,7 +328,7 @@ class TestRunRounds:
     def test_convergence_exits_0(self, tmp_path: Path):
         """When CONVERGED is written, exits with code 0."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
-        ui = MagicMock()
+        ui = self.ui
 
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             convo = run_dir / f"conversation_loop_{round_num}.md"
@@ -347,7 +351,7 @@ class TestRunRounds:
     def test_max_rounds_exits_1(self, tmp_path: Path):
         """When max rounds reached without convergence, exits with code 1."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
-        ui = MagicMock()
+        ui = self.ui
 
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             convo = run_dir / f"conversation_loop_{round_num}.md"
@@ -367,7 +371,7 @@ class TestRunRounds:
     def test_stalled_round_exhausts_retries(self, tmp_path: Path):
         """Stalled subprocess exhausting retries exits with code 2."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
-        ui = MagicMock()
+        ui = self.ui
 
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             return 0, "output", True  # always stalls
@@ -386,7 +390,7 @@ class TestRunRounds:
     def test_crashed_round_retries_then_succeeds(self, tmp_path: Path):
         """Crashed subprocess recovers on retry."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
-        ui = MagicMock()
+        ui = self.ui
 
         call_count = 0
 
@@ -412,7 +416,7 @@ class TestRunRounds:
     def test_no_progress_triggers_retry(self, tmp_path: Path):
         """Subprocess succeeds but makes no progress triggers retry."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
-        ui = MagicMock()
+        ui = self.ui
 
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             return 0, "output", False
@@ -431,7 +435,7 @@ class TestRunRounds:
     def test_forever_mode_skips_failed_round(self, tmp_path: Path):
         """In forever mode, exhausted retries skip to next round."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
-        ui = MagicMock()
+        ui = self.ui
 
         round_attempts = {}
 
@@ -461,7 +465,7 @@ class TestRunRounds:
         """All remaining items blocked exits with code 1."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
         imp_path.write_text("- [ ] [functional] [needs-package] blocked\n")
-        ui = MagicMock()
+        ui = self.ui
 
         with pytest.raises(SystemExit) as exc:
             _run_rounds(
@@ -949,7 +953,7 @@ class TestPartyModeRetryPaths:
 
     def test_import_error_skips_party_mode(self, tmp_path: Path):
         """ImportError from missing claude-agent-sdk should warn and return."""
-        run_dir = self._setup_party(tmp_path)
+        run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
 
         with patch("builtins.__import__", side_effect=_make_import_error_for_agent):
