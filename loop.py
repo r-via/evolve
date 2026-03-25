@@ -14,6 +14,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from hooks import fire_hook, load_hooks
 from tui import TUIProtocol, get_tui
 
 
