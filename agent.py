@@ -67,7 +67,7 @@ def build_prompt(
     # Previous round subprocess crash logs (orchestrator-level errors)
     prev_crash = ""
     if run_dir:
-        for f in sorted(Path(run_dir).glob("subprocess_error_round_*.txt"), reverse=True):
+        for f in sorted(Path(run_dir).glob("subprocess_error_round_*.txt"), key=lambda p: int(re.search(r'_(\d+)\.txt$', p.name).group(1)), reverse=True):
             prev_crash = f.read_text()
             break
 
