@@ -874,3 +874,120 @@ class TestPartyModeResultHandling:
             str(run_dir / "README_proposal.md"),
             None,
         )
+
+
+# ---------------------------------------------------------------------------
+# Party mode retry paths (lines 965-985 of _run_party_mode)
+# ---------------------------------------------------------------------------
+
+class TestPartyModeRetryPaths:
+    """Test the retry/error-handling logic inside _run_party_mode agent execution."""
+
+    def _setup_party(self, tmp_path):
+        """Set up a project with agents and required context for party mode."""
+        agents = tmp_path / "agents"
+        agents.mkdir()
+        (agents / "dev.md").write_text("# Dev Agent")
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        (tmp_path / "README.md").write_text("# Test Project")
+        (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
+        (tmp_path / "runs" / "memory.md").write_text("# Memory\n")
+        (run_dir / "CONVERGED").write_text("All done")
+        return run_dir
+
+    def test_benign_runtime_error_breaks_loop(self, tmp_path: Path):
+        """Benign RuntimeError (cancel scope) should be treated as success."""
+        run_dir = self._setup_party(tmp_path)
+        ui = MagicMock()
+        import asyncio as _asyncio
+        import agent as agent_mod
+
+        call_count = 0
+
+        def mock_asyncio_run(coro):
+            nonlocal call_count
+            call_count += 1
+            coro.close()
+            raise RuntimeError("cancel scope blah blah")
+
+        with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
+             patch.object(_asyncio, 'run', side_effect=mock_asyncio_run):
+            _run_party_mode(tmp_path, run_dir, ui)
+
+        # Should only be called once — benign error breaks the retry loop
+        assert call_count == 1
+        # Should NOT warn — benign errors are not failures
+        ui.warn.assert_not_called()
+        # party_results should still be called (post-loop code runs)
+        ui.party_results.assert_called_once()
+
+    def test_rate_limit_retries_with_sleep(self, tmp_path: Path):
+        """Rate limit error should trigger retry with sleep."""
+        run_dir = self._setup_party(tmp_path)
+        ui = MagicMock()
+        import asyncio as _asyncio
+        import agent as agent_mod
+
+        call_count = 0
+
+        def mock_asyncio_run(coro):
+            nonlocal call_count
+            call_count += 1
+            coro.close()
+            if call_count == 1:
+                raise Exception("rate_limit exceeded")
+            # Second call succeeds
+
+        with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
+             patch.object(_asyncio, 'run', side_effect=mock_asyncio_run), \
+             patch("time.sleep") as mock_sleep:
+            _run_party_mode(tmp_path, run_dir, ui)
+
+        # Should have been called twice (first fails with rate limit, second succeeds)
+        assert call_count == 2
+        # Sleep should have been called with 60 (60 * attempt=1)
+        mock_sleep.assert_called_once_with(60)
+        # sdk_rate_limited UI callback should have been called
+        ui.sdk_rate_limited.assert_called_once_with(60, 1, 5)
+        ui.warn.assert_not_called()
+
+    def test_non_retryable_exception_warns_and_returns(self, tmp_path: Path):
+        """Non-retryable, non-benign exception should warn and return early."""
+        run_dir = self._setup_party(tmp_path)
+        ui = MagicMock()
+        import asyncio as _asyncio
+        import agent as agent_mod
+
+        def mock_asyncio_run(coro):
+            coro.close()
+            raise ValueError("something unexpected broke")
+
+        with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
+             patch.object(_asyncio, 'run', side_effect=mock_asyncio_run):
+            _run_party_mode(tmp_path, run_dir, ui)
+
+        ui.warn.assert_called_once_with("Party mode failed (something unexpected broke)")
+        # party_results should NOT be called — function returns early
+        ui.party_results.assert_not_called()
+
+    def test_import_error_skips_party_mode(self, tmp_path: Path):
+        """ImportError from missing claude-agent-sdk should warn and return."""
+        run_dir = self._setup_party(tmp_path)
+        ui = MagicMock()
+
+        with patch("builtins.__import__", side_effect=_make_import_error_for_agent):
+            _run_party_mode(tmp_path, run_dir, ui)
+
+        ui.warn.assert_called_once_with("claude-agent-sdk not installed — skipping party mode")
+        ui.party_results.assert_not_called()
+
+
+def _make_import_error_for_agent(name, *args, **kwargs):
+    """Simulate ImportError only for the 'agent' module import inside _run_party_mode."""
+    if name == "agent":
+        raise ImportError("No module named 'agent'")
+    return original_import(name, *args, **kwargs)
+
+
+original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
