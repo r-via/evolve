@@ -338,163 +338,162 @@ def _run_rounds(
     forever: bool = False,
 ) -> None:
     """Run evolution rounds from start_round to max_rounds."""
-    for round_num in range(start_round, max_rounds + 1):
-        current = _get_current_improvement(improvements_path, yolo=yolo)
-        checked = _count_checked(improvements_path)
-        unchecked = _count_unchecked(improvements_path)
+    while True:
+        for round_num in range(start_round, max_rounds + 1):
+            current = _get_current_improvement(improvements_path, yolo=yolo)
+            checked = _count_checked(improvements_path)
+            unchecked = _count_unchecked(improvements_path)
 
-        if current:
-            ui.round_header(round_num, max_rounds, target=current,
-                            checked=checked, total=checked + unchecked)
-        elif unchecked > 0:
-            # All remaining unchecked items are blocked (needs-package without --yolo)
-            blocked = _count_blocked(improvements_path)
-            if blocked == unchecked:
-                ui.round_header(round_num, max_rounds)
-                ui.blocked_message(blocked)
-                sys.exit(1)
-            ui.round_header(round_num, max_rounds, target="(initial analysis)")
-        else:
-            ui.round_header(round_num, max_rounds, target="(initial analysis)")
-
-        # Launch round as subprocess — picks up code changes from previous round
-        evolve_script = Path(__file__).parent / "evolve.py"
-        cmd = [
-            sys.executable, str(evolve_script),
-            "_round",
-            str(project_dir),
-            "--round-num", str(round_num),
-            "--timeout", str(timeout),
-            "--run-dir", str(run_dir),
-            "--model", model,
-        ]
-        if check_cmd:
-            cmd += ["--check", check_cmd]
-        if yolo:
-            cmd += ["--yolo"]
-
-        # --- Debug retry loop: run the round, diagnose failures, retry ---
-        round_succeeded = False
-        for attempt in range(1, MAX_DEBUG_RETRIES + 2):  # 1..MAX_DEBUG_RETRIES+1
-            # Snapshot conversation log size before subprocess so we can detect new output
-            convo = run_dir / f"conversation_loop_{round_num}.md"
-            convo_size_before = convo.stat().st_size if convo.is_file() else 0
-
-            returncode, output, stalled = _run_monitored_subprocess(
-                cmd, str(project_dir), ui, round_num,
-            )
-
-            # --- Diagnose subprocess outcome ---
-            if stalled:
-                ui.round_failed(round_num, returncode)
-                _save_subprocess_diagnostic(
-                    run_dir, round_num, cmd, output,
-                    reason=f"stalled ({WATCHDOG_TIMEOUT}s without output, killed)",
-                    attempt=attempt,
-                )
-            elif returncode != 0:
-                ui.round_failed(round_num, returncode)
-                _save_subprocess_diagnostic(
-                    run_dir, round_num, cmd, output,
-                    reason=f"crashed (exit code {returncode})",
-                    attempt=attempt,
-                )
+            if current:
+                ui.round_header(round_num, max_rounds, target=current,
+                                checked=checked, total=checked + unchecked)
+            elif unchecked > 0:
+                # All remaining unchecked items are blocked (needs-package without --yolo)
+                blocked = _count_blocked(improvements_path)
+                if blocked == unchecked:
+                    ui.round_header(round_num, max_rounds)
+                    ui.blocked_message(blocked)
+                    sys.exit(1)
+                ui.round_header(round_num, max_rounds, target="(initial analysis)")
             else:
-                # Subprocess exited OK — check for actual progress
-                prev_checked = checked
-                prev_unchecked = unchecked
-                unchecked = _count_unchecked(improvements_path)
-                checked = _count_checked(improvements_path)
-                ui.progress_summary(checked, unchecked)
+                ui.round_header(round_num, max_rounds, target="(initial analysis)")
 
-                made_progress = (
-                    checked != prev_checked
-                    or unchecked != prev_unchecked
-                    or (convo.is_file() and convo.stat().st_size > convo_size_before)
+            # Launch round as subprocess — picks up code changes from previous round
+            evolve_script = Path(__file__).parent / "evolve.py"
+            cmd = [
+                sys.executable, str(evolve_script),
+                "_round",
+                str(project_dir),
+                "--round-num", str(round_num),
+                "--timeout", str(timeout),
+                "--run-dir", str(run_dir),
+                "--model", model,
+            ]
+            if check_cmd:
+                cmd += ["--check", check_cmd]
+            if yolo:
+                cmd += ["--yolo"]
+
+            # --- Debug retry loop: run the round, diagnose failures, retry ---
+            round_succeeded = False
+            for attempt in range(1, MAX_DEBUG_RETRIES + 2):  # 1..MAX_DEBUG_RETRIES+1
+                # Snapshot conversation log size before subprocess so we can detect new output
+                convo = run_dir / f"conversation_loop_{round_num}.md"
+                convo_size_before = convo.stat().st_size if convo.is_file() else 0
+
+                returncode, output, stalled = _run_monitored_subprocess(
+                    cmd, str(project_dir), ui, round_num,
                 )
-                if made_progress:
-                    round_succeeded = True
+
+                # --- Diagnose subprocess outcome ---
+                if stalled:
+                    ui.round_failed(round_num, returncode)
+                    _save_subprocess_diagnostic(
+                        run_dir, round_num, cmd, output,
+                        reason=f"stalled ({WATCHDOG_TIMEOUT}s without output, killed)",
+                        attempt=attempt,
+                    )
+                elif returncode != 0:
+                    ui.round_failed(round_num, returncode)
+                    _save_subprocess_diagnostic(
+                        run_dir, round_num, cmd, output,
+                        reason=f"crashed (exit code {returncode})",
+                        attempt=attempt,
+                    )
+                else:
+                    # Subprocess exited OK — check for actual progress
+                    prev_checked = checked
+                    prev_unchecked = unchecked
+                    unchecked = _count_unchecked(improvements_path)
+                    checked = _count_checked(improvements_path)
+                    ui.progress_summary(checked, unchecked)
+
+                    made_progress = (
+                        checked != prev_checked
+                        or unchecked != prev_unchecked
+                        or (convo.is_file() and convo.stat().st_size > convo_size_before)
+                    )
+                    if made_progress:
+                        round_succeeded = True
+                        break
+
+                    # No progress — save diagnostic for retry
+                    _save_subprocess_diagnostic(
+                        run_dir, round_num, cmd, output,
+                        reason="no progress (agent ran but changed nothing)",
+                        attempt=attempt,
+                    )
+
+                # If retries remain, inform and loop
+                if attempt <= MAX_DEBUG_RETRIES:
+                    ui.warn(
+                        f"Debug retry {attempt}/{MAX_DEBUG_RETRIES} for round {round_num} "
+                        "— re-running with diagnostic context"
+                    )
+                else:
+                    # All retries exhausted
+                    ui.no_progress()
+                    if not forever:
+                        sys.exit(2)
+                    # In forever mode, don't exit — move on to next round
+                    ui.warn(
+                        f"Round {round_num} failed after {MAX_DEBUG_RETRIES + 1} attempts "
+                        "— skipping to next round"
+                    )
                     break
 
-                # No progress — save diagnostic for retry
-                _save_subprocess_diagnostic(
-                    run_dir, round_num, cmd, output,
-                    reason="no progress (agent ran but changed nothing)",
-                    attempt=attempt,
-                )
+            if not round_succeeded:
+                continue  # skip convergence check, move to next round
 
-            # If retries remain, inform and loop
-            if attempt <= MAX_DEBUG_RETRIES:
-                ui.warn(
-                    f"Debug retry {attempt}/{MAX_DEBUG_RETRIES} for round {round_num} "
-                    "— re-running with diagnostic context"
-                )
-            else:
-                # All retries exhausted
-                ui.no_progress()
-                if not forever:
-                    sys.exit(2)
-                # In forever mode, don't exit — move on to next round
-                ui.warn(
-                    f"Round {round_num} failed after {MAX_DEBUG_RETRIES + 1} attempts "
-                    "— skipping to next round"
-                )
-                break
+            # Clean up diagnostic file on success (no longer relevant)
+            error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
+            if error_log.is_file():
+                error_log.unlink()
 
-        if not round_succeeded:
-            continue  # skip convergence check, move to next round
+            # Check convergence
+            converged_path = run_dir / "CONVERGED"
+            if converged_path.is_file():
+                reason = converged_path.read_text().strip()
+                ui.converged(round_num, reason)
 
-        # Clean up diagnostic file on success (no longer relevant)
-        error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
-        if error_log.is_file():
-            error_log.unlink()
+                # Generate evolution report
+                _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True)
 
-        # Check convergence
-        converged_path = run_dir / "CONVERGED"
-        if converged_path.is_file():
-            reason = converged_path.read_text().strip()
-            ui.converged(round_num, reason)
+                # Launch party mode
+                _run_party_mode(project_dir, run_dir, ui)
+
+                if forever:
+                    # Auto-merge README_proposal.md into README.md and restart
+                    _forever_restart(project_dir, run_dir, improvements_path, ui)
+
+                    # Create a new session directory for the next cycle
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    run_dir = project_dir / "runs" / timestamp
+                    run_dir.mkdir(parents=True, exist_ok=True)
+                    ui.run_dir_info(str(run_dir))
+
+                    # Git commit the README update + reset
+                    _git_commit(
+                        project_dir,
+                        "chore(evolve): forever mode — adopt README_proposal, reset improvements",
+                        ui,
+                    )
+
+                    # Restart from round 1 via the outer while loop
+                    start_round = 1
+                    break  # break out of for loop, continue while loop
+
+                sys.exit(0)
+        else:
+            # for loop completed without break — max rounds reached
+            unchecked = _count_unchecked(improvements_path)
+            checked = _count_checked(improvements_path)
 
             # Generate evolution report
-            _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True)
+            _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False)
 
-            # Launch party mode
-            _run_party_mode(project_dir, run_dir, ui)
-
-            if forever:
-                # Auto-merge README_proposal.md into README.md and restart
-                _forever_restart(project_dir, run_dir, improvements_path, ui)
-
-                # Create a new session directory for the next cycle
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                new_run_dir = project_dir / "runs" / timestamp
-                new_run_dir.mkdir(parents=True, exist_ok=True)
-                ui.run_dir_info(str(new_run_dir))
-
-                # Git commit the README update + reset
-                _git_commit(
-                    project_dir,
-                    "chore(evolve): forever mode — adopt README_proposal, reset improvements",
-                    ui,
-                )
-
-                # Recurse into a new round cycle starting from round 1
-                return _run_rounds(
-                    project_dir, new_run_dir, improvements_path, ui,
-                    1, max_rounds, check_cmd, yolo, timeout, model,
-                    forever=True,
-                )
-
-            sys.exit(0)
-
-    unchecked = _count_unchecked(improvements_path)
-    checked = _count_checked(improvements_path)
-
-    # Generate evolution report
-    _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False)
-
-    ui.max_rounds(max_rounds, checked, unchecked)
-    sys.exit(1)
+            ui.max_rounds(max_rounds, checked, unchecked)
+            sys.exit(1)
 
 
 def run_single_round(
