@@ -93,7 +93,7 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         args.check = defaults["check"]
 
     # rounds: CLI (non-default) > env > file > default
-    cli_rounds_set = "--rounds" in sys.argv
+    cli_rounds_set = any(a == "--rounds" or a.startswith("--rounds=") for a in sys.argv)
     if cli_rounds_set:
         pass  # CLI wins
     elif os.environ.get("EVOLVE_ROUNDS"):
