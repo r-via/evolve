@@ -321,15 +321,15 @@ class TestCleanSessions:
 
     def test_removes_oldest_sessions(self, tmp_path: Path):
         runs = tmp_path / "runs"
-        for i in range(5):
+        for i in range(1, 6):
             (runs / f"2026010{i}_000000").mkdir(parents=True)
         from evolve import _clean_sessions
         _clean_sessions(tmp_path, keep=2)
         remaining = sorted(d.name for d in runs.iterdir() if d.is_dir())
         assert len(remaining) == 2
         # Should keep the two most recent (sorted descending)
+        assert "20260105_000000" in remaining
         assert "20260104_000000" in remaining
-        assert "20260103_000000" in remaining
 
     def test_ignores_non_timestamped_dirs(self, tmp_path: Path):
         runs = tmp_path / "runs"
