@@ -868,6 +868,7 @@ def _run_party_mode(project_dir: Path, run_dir: Path, ui=None) -> None:
     if ui is None:
         ui = get_tui()
     ui.party_mode()
+    print("[probe] party mode: starting — loading agent personas and workflow")
 
     agents_dir = project_dir / "agents"
     if not agents_dir.is_dir():
@@ -885,6 +886,7 @@ def _run_party_mode(project_dir: Path, run_dir: Path, ui=None) -> None:
             agents.append({"file": f.name, "content": f.read_text()})
         except (OSError, UnicodeDecodeError):
             continue
+    print(f"[probe] party mode: loaded {len(agents)} agent persona(s)")
 
     # Load workflow
     workflow = ""
@@ -904,12 +906,14 @@ def _run_party_mode(project_dir: Path, run_dir: Path, ui=None) -> None:
                 except (OSError, UnicodeDecodeError):
                     continue
         workflow = "\n\n---\n\n".join(parts)
+    print(f"[probe] party mode: workflow loaded ({len(workflow)} chars)")
 
     # Load context
     readme = (project_dir / "README.md").read_text() if (project_dir / "README.md").is_file() else "(none)"
     improvements = (project_dir / "runs" / "improvements.md").read_text() if (project_dir / "runs" / "improvements.md").is_file() else "(none)"
     memory = (project_dir / "runs" / "memory.md").read_text() if (project_dir / "runs" / "memory.md").is_file() else "(none)"
     converged = (run_dir / "CONVERGED").read_text().strip() if (run_dir / "CONVERGED").is_file() else ""
+    print("[probe] party mode: context loaded (README, improvements, memory)")
 
     roster = "\n".join(f"- {a['file']}" for a in agents)
     personas = "\n\n".join(f"### {a['file']}\n\n{a['content']}" for a in agents)
@@ -954,16 +958,22 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
         warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
 
         max_retries = 5
+        print("[probe] party mode: launching Claude agent for brainstorming session")
         for attempt in range(1, max_retries + 1):
             try:
+                if attempt > 1:
+                    print(f"[probe] party mode: retry attempt {attempt}/{max_retries}")
                 asyncio.run(run_claude_agent(prompt, project_dir, round_num=0, run_dir=run_dir, log_filename="party_conversation.md"))
+                print("[probe] party mode: agent session completed successfully")
                 break
             except Exception as e:
                 if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
+                    print("[probe] party mode: agent session completed (benign runtime cleanup)")
                     break
 
                 wait = _should_retry_rate_limit(e, attempt, max_retries)
                 if wait is not None:
+                    print(f"[probe] party mode: rate limited, waiting {wait}s before retry")
                     ui.sdk_rate_limited(wait, attempt, max_retries)
                     time.sleep(wait)
                     continue
@@ -976,6 +986,7 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
 
     proposal = run_dir / "README_proposal.md"
     report = run_dir / "party_report.md"
+    print(f"[probe] party mode: finished — report={'yes' if report.is_file() else 'no'}, proposal={'yes' if proposal.is_file() else 'no'}")
     ui.party_results(
         str(proposal) if proposal.is_file() else None,
         str(report) if report.is_file() else None,
