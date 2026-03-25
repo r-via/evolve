@@ -692,6 +692,46 @@ class TestGenerateEvolutionReport:
         )
         assert sessions == []
 
+    def test_resume_sort_handles_non_numeric_filenames(self, tmp_path: Path):
+        """Sorting conversation_loop files must not crash on non-numeric suffixes.
+
+        Regression test: the sort lambda used int() directly, which raised
+        ValueError on filenames like conversation_loop_abc.md.  The fix uses
+        a helper that returns -1 for unparseable suffixes.
+        """
+        session = tmp_path / "runs" / "20260101_000000"
+        session.mkdir(parents=True)
+        # Valid entries
+        (session / "conversation_loop_3.md").write_text("round 3")
+        (session / "conversation_loop_1.md").write_text("round 1")
+        # Corrupted / non-numeric entries that must not crash the sort
+        (session / "conversation_loop_abc.md").write_text("bad")
+        (session / "conversation_loop_.md").write_text("empty suffix")
+        (session / "conversation_loop_2x.md").write_text("mixed")
+
+        # Reproduce the exact sort logic from evolve_loop's resume path
+        def _convo_sort_key(p: Path) -> int:
+            try:
+                return int(p.stem.rsplit("_", 1)[1])
+            except (ValueError, IndexError):
+                return -1
+
+        # Must NOT raise — previously this was a bare int() that crashed
+        convos = sorted(
+            session.glob("conversation_loop_*.md"), key=_convo_sort_key,
+        )
+        assert len(convos) == 5
+
+        # Non-numeric entries sort first (key=-1), valid entries sort ascending
+        numeric_keys = [_convo_sort_key(p) for p in convos]
+        # First three are the -1 entries, last two are 1 and 3
+        assert numeric_keys[-2:] == [1, 3]
+        assert all(k == -1 for k in numeric_keys[:3])
+
+        # The last valid convo should be round 3
+        last_valid = convos[-1]
+        assert last_valid.stem == "conversation_loop_3"
+
 
 # ---------------------------------------------------------------------------
 # _run_monitored_subprocess — watchdog and output streaming

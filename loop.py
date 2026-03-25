@@ -483,7 +483,13 @@ def evolve_loop(
             if sessions:
                 run_dir = sessions[0]
                 # Detect last completed round from conversation logs
-                convos = sorted(run_dir.glob("conversation_loop_*.md"), key=lambda p: int(p.stem.rsplit("_", 1)[1]))
+                def _convo_sort_key(p: Path) -> int:
+                    try:
+                        return int(p.stem.rsplit("_", 1)[1])
+                    except (ValueError, IndexError):
+                        return -1
+
+                convos = sorted(run_dir.glob("conversation_loop_*.md"), key=_convo_sort_key)
                 if convos:
                     last = convos[-1].stem  # conversation_loop_N
                     try:
