@@ -390,3 +390,100 @@ class TestHooksIntegration:
                 assert result is True
 
         assert mock_run.call_count == 4
+
+
+# ---------------------------------------------------------------------------
+# fire_hook — hook environment variable access (real subprocess)
+# ---------------------------------------------------------------------------
+
+class TestFireHookEnvVarAccess:
+    """Integration tests that run real subprocesses to verify hook commands
+    can actually read EVOLVE_SESSION, EVOLVE_ROUND, and EVOLVE_STATUS."""
+
+    def test_hook_reads_evolve_session(self, tmp_path):
+        """Hook command can read EVOLVE_SESSION from environment."""
+        out_file = tmp_path / "session.txt"
+        hooks = {"on_round_end": f"echo $EVOLVE_SESSION > {out_file}"}
+        result = fire_hook(hooks, "on_round_end", session="20260325_155704", round_num=1, status="ok")
+        assert result is True
+        assert out_file.read_text().strip() == "20260325_155704"
+
+    def test_hook_reads_evolve_round(self, tmp_path):
+        """Hook command can read EVOLVE_ROUND from environment."""
+        out_file = tmp_path / "round.txt"
+        hooks = {"on_round_end": f"echo $EVOLVE_ROUND > {out_file}"}
+        result = fire_hook(hooks, "on_round_end", session="s", round_num=7, status="ok")
+        assert result is True
+        assert out_file.read_text().strip() == "7"
+
+    def test_hook_reads_evolve_status(self, tmp_path):
+        """Hook command can read EVOLVE_STATUS from environment."""
+        out_file = tmp_path / "status.txt"
+        hooks = {"on_converged": f"echo $EVOLVE_STATUS > {out_file}"}
+        result = fire_hook(hooks, "on_converged", session="s", round_num=1, status="converged")
+        assert result is True
+        assert out_file.read_text().strip() == "converged"
+
+    def test_hook_reads_all_three_env_vars(self, tmp_path):
+        """Hook command can read all three env vars in a single invocation."""
+        out_file = tmp_path / "all_vars.txt"
+        hooks = {
+            "on_round_end": (
+                f"echo $EVOLVE_SESSION:$EVOLVE_ROUND:$EVOLVE_STATUS > {out_file}"
+            ),
+        }
+        result = fire_hook(
+            hooks, "on_round_end",
+            session="sess_42", round_num=12, status="running",
+        )
+        assert result is True
+        assert out_file.read_text().strip() == "sess_42:12:running"
+
+    def test_hook_env_vars_with_special_characters_in_session(self, tmp_path):
+        """Session names with underscores/digits are passed correctly."""
+        out_file = tmp_path / "session_special.txt"
+        hooks = {"on_round_start": f"echo $EVOLVE_SESSION > {out_file}"}
+        result = fire_hook(
+            hooks, "on_round_start",
+            session="20260325_155704_retry_2", round_num=1, status="ok",
+        )
+        assert result is True
+        assert out_file.read_text().strip() == "20260325_155704_retry_2"
+
+    def test_hook_env_vars_default_values_real_subprocess(self, tmp_path):
+        """Default env var values (empty session, round 0, empty status) are accessible."""
+        out_file = tmp_path / "defaults.txt"
+        hooks = {
+            "on_round_end": (
+                f"echo \"SESSION=$EVOLVE_SESSION,ROUND=$EVOLVE_ROUND,STATUS=$EVOLVE_STATUS\" > {out_file}"
+            ),
+        }
+        result = fire_hook(hooks, "on_round_end")
+        assert result is True
+        assert out_file.read_text().strip() == "SESSION=,ROUND=0,STATUS="
+
+    def test_hook_env_vars_do_not_leak_between_events(self, tmp_path):
+        """Each hook invocation gets its own env; values don't leak."""
+        out1 = tmp_path / "out1.txt"
+        out2 = tmp_path / "out2.txt"
+        hooks = {
+            "on_round_start": f"echo $EVOLVE_ROUND > {out1}",
+            "on_round_end": f"echo $EVOLVE_ROUND > {out2}",
+        }
+        fire_hook(hooks, "on_round_start", session="s", round_num=5, status="ok")
+        fire_hook(hooks, "on_round_end", session="s", round_num=10, status="ok")
+        assert out1.read_text().strip() == "5"
+        assert out2.read_text().strip() == "10"
+
+    def test_hook_env_vars_on_error_event(self, tmp_path):
+        """Error hooks receive correct env vars."""
+        out_file = tmp_path / "error_env.txt"
+        hooks = {
+            "on_error": f"echo $EVOLVE_SESSION:$EVOLVE_ROUND:$EVOLVE_STATUS > {out_file}",
+        }
+        result = fire_hook(
+            hooks, "on_error",
+            session="err_session", round_num=3, status="crash",
+        )
+        assert result is True
+        assert out_file.read_text().strip() == "err_session:3:crash"
