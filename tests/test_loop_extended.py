@@ -168,6 +168,153 @@ class TestEnsureGit:
         assert any("add" in s for s in cmd_strs)
         assert any("commit" in s for s in cmd_strs)
 
+    def test_error_message_includes_project_path(self, tmp_path: Path):
+        """Error message should reference the project directory."""
+        mock_ui = MagicMock()
+        mock_result = MagicMock(returncode=1)
+        with patch("loop.subprocess.run", return_value=mock_result):
+            with pytest.raises(SystemExit):
+                _ensure_git(tmp_path, ui=mock_ui)
+        mock_ui.error.assert_called_once()
+        assert str(tmp_path) in mock_ui.error.call_args[0][0]
+
+    def test_uncommitted_commit_message(self, tmp_path: Path):
+        """Auto-commit uses the expected snapshot message."""
+        calls = []
+
+        def side_effect(cmd, **kwargs):
+            calls.append((list(cmd), kwargs))
+            if "rev-parse" in cmd:
+                return MagicMock(returncode=0)
+            if "status" in cmd:
+                return MagicMock(returncode=0, stdout="M dirty.py\n")
+            return MagicMock(returncode=0)
+
+        with patch("loop.subprocess.run", side_effect=side_effect):
+            _ensure_git(tmp_path)
+
+        commit_calls = [(c, kw) for c, kw in calls if "commit" in c]
+        assert len(commit_calls) == 1
+        commit_cmd = commit_calls[0][0]
+        assert "-m" in commit_cmd
+        msg_idx = commit_cmd.index("-m") + 1
+        assert "evolve" in commit_cmd[msg_idx].lower()
+        assert "snapshot" in commit_cmd[msg_idx].lower()
+
+    def test_mixed_staged_and_unstaged_changes(self, tmp_path: Path):
+        """git status with mixed staged/unstaged (M + ??) triggers single commit."""
+        calls = []
+
+        def side_effect(cmd, **kwargs):
+            calls.append(list(cmd))
+            if "rev-parse" in cmd:
+                return MagicMock(returncode=0)
+            if "status" in cmd:
+                return MagicMock(
+                    returncode=0,
+                    stdout="M  staged.py\n?? untracked.py\n A added.py\n",
+                )
+            return MagicMock(returncode=0)
+
+        with patch("loop.subprocess.run", side_effect=side_effect):
+            _ensure_git(tmp_path)
+
+        cmd_strs = [" ".join(c) for c in calls]
+        # git add -A should capture both staged and untracked
+        assert any("add" in s and "-A" in s for s in cmd_strs)
+        assert any("commit" in s for s in cmd_strs)
+
+    def test_ui_uncommitted_called_on_dirty_tree(self, tmp_path: Path):
+        """ui.uncommitted() is called when working tree is dirty."""
+        mock_ui = MagicMock()
+
+        def side_effect(cmd, **kwargs):
+            if "rev-parse" in cmd:
+                return MagicMock(returncode=0)
+            if "status" in cmd:
+                return MagicMock(returncode=0, stdout="M file.py\n")
+            return MagicMock(returncode=0)
+
+        with patch("loop.subprocess.run", side_effect=side_effect):
+            _ensure_git(tmp_path, ui=mock_ui)
+
+        mock_ui.uncommitted.assert_called_once()
+
+    def test_ui_uncommitted_not_called_on_clean_tree(self, tmp_path: Path):
+        """ui.uncommitted() is NOT called when working tree is clean."""
+        mock_ui = MagicMock()
+
+        def side_effect(cmd, **kwargs):
+            if "rev-parse" in cmd:
+                return MagicMock(returncode=0)
+            if "status" in cmd:
+                return MagicMock(returncode=0, stdout="")
+            return MagicMock(returncode=0)
+
+        with patch("loop.subprocess.run", side_effect=side_effect):
+            _ensure_git(tmp_path, ui=mock_ui)
+
+        mock_ui.uncommitted.assert_not_called()
+
+    def test_custom_ui_passed_through(self, tmp_path: Path):
+        """When a custom ui is passed, it should be used instead of get_tui()."""
+        mock_ui = MagicMock()
+        mock_result = MagicMock(returncode=1)
+        with patch("loop.subprocess.run", return_value=mock_result), \
+             patch("loop.get_tui") as mock_get_tui:
+            with pytest.raises(SystemExit):
+                _ensure_git(tmp_path, ui=mock_ui)
+        # get_tui should NOT be called when ui is provided
+        mock_get_tui.assert_not_called()
+        # The custom ui should have received the error
+        mock_ui.error.assert_called_once()
+
+    def test_default_ui_used_when_none(self, tmp_path: Path):
+        """When ui=None, get_tui() is called to get the default UI."""
+        mock_ui = MagicMock()
+        mock_result = MagicMock(returncode=1)
+        with patch("loop.subprocess.run", return_value=mock_result), \
+             patch("loop.get_tui", return_value=mock_ui):
+            with pytest.raises(SystemExit):
+                _ensure_git(tmp_path)
+        mock_ui.error.assert_called_once()
+
+    def test_only_whitespace_status_is_clean(self, tmp_path: Path):
+        """Status output with only whitespace should be treated as clean."""
+        calls = []
+
+        def side_effect(cmd, **kwargs):
+            calls.append(list(cmd))
+            if "rev-parse" in cmd:
+                return MagicMock(returncode=0)
+            if "status" in cmd:
+                return MagicMock(returncode=0, stdout="   \n  \n")
+            return MagicMock(returncode=0)
+
+        with patch("loop.subprocess.run", side_effect=side_effect):
+            _ensure_git(tmp_path)
+
+        cmd_strs = [" ".join(c) for c in calls]
+        assert not any("commit" in s for s in cmd_strs)
+
+    def test_cwd_passed_to_all_git_commands(self, tmp_path: Path):
+        """All subprocess calls should use project_dir as cwd."""
+        calls = []
+
+        def side_effect(cmd, **kwargs):
+            calls.append((list(cmd), kwargs))
+            if "rev-parse" in cmd:
+                return MagicMock(returncode=0)
+            if "status" in cmd:
+                return MagicMock(returncode=0, stdout="M file.py\n")
+            return MagicMock(returncode=0)
+
+        with patch("loop.subprocess.run", side_effect=side_effect):
+            _ensure_git(tmp_path)
+
+        for cmd, kwargs in calls:
+            assert kwargs.get("cwd") == tmp_path, f"cwd not set for {cmd}"
+
 
 # ---------------------------------------------------------------------------
 # _git_commit
