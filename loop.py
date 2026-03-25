@@ -217,7 +217,7 @@ def evolve_loop(
             if sessions:
                 run_dir = sessions[0]
                 # Detect last completed round from conversation logs
-                convos = sorted(run_dir.glob("conversation_loop_*.md"))
+                convos = sorted(run_dir.glob("conversation_loop_*.md"), key=lambda p: int(p.stem.rsplit("_", 1)[1]))
                 if convos:
                     last = convos[-1].stem  # conversation_loop_N
                     try:
