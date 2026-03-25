@@ -9,111 +9,115 @@ import tui as _tui_mod
 class TestPlainTUIExtended:
     """Cover all PlainTUI methods not yet tested."""
 
+    @classmethod
+    def setup_class(cls):
+        cls.ui = PlainTUI()
+
     def test_no_check(self, capsys):
-        PlainTUI().no_check()
+        self.ui.no_check()
         out = capsys.readouterr().out
         assert "no check" in out.lower() or "manual" in out.lower()
 
     def test_agent_working(self, capsys):
-        PlainTUI().agent_working()
+        self.ui.agent_working()
         # just should not crash
 
     def test_agent_tool(self, capsys):
-        PlainTUI().agent_tool("Bash", "ls -la")
+        self.ui.agent_tool("Bash", "ls -la")
         out = capsys.readouterr().out
         assert "Bash" in out
 
     def test_agent_done(self, capsys):
-        PlainTUI().agent_done(5, "/tmp/log.md")
+        self.ui.agent_done(5, "/tmp/log.md")
         out = capsys.readouterr().out
         assert "5" in out
 
     def test_agent_text(self, capsys):
-        PlainTUI().agent_text("hello world")
+        self.ui.agent_text("hello world")
         # should not crash
 
     def test_git_status_pushed(self, capsys):
-        PlainTUI().git_status("feat: test", pushed=True)
+        self.ui.git_status("feat: test", pushed=True)
         out = capsys.readouterr().out
         assert "feat: test" in out
 
     def test_git_status_push_failed(self, capsys):
-        PlainTUI().git_status("feat: test", pushed=False, error="rejected")
+        self.ui.git_status("feat: test", pushed=False, error="rejected")
         out = capsys.readouterr().out
         assert "feat: test" in out
 
     def test_git_status_no_changes(self, capsys):
-        PlainTUI().git_status("chore: nothing", pushed=None)
+        self.ui.git_status("chore: nothing", pushed=None)
         out = capsys.readouterr().out
         assert "no changes" in out.lower()
 
     def test_max_rounds(self, capsys):
-        PlainTUI().max_rounds(10, 7, 3)
+        self.ui.max_rounds(10, 7, 3)
         out = capsys.readouterr().out
         assert "10" in out
 
     def test_round_failed(self, capsys):
-        PlainTUI().round_failed(3, 1)
+        self.ui.round_failed(3, 1)
         out = capsys.readouterr().out
         assert "3" in out
 
     def test_no_progress(self, capsys):
-        PlainTUI().no_progress()
+        self.ui.no_progress()
         # should not crash
 
     def test_run_dir_info(self, capsys):
-        PlainTUI().run_dir_info("/tmp/runs/session")
+        self.ui.run_dir_info("/tmp/runs/session")
         out = capsys.readouterr().out
         assert "/tmp/runs/session" in out
 
     def test_party_mode(self, capsys):
-        PlainTUI().party_mode()
+        self.ui.party_mode()
         # should not crash
 
     def test_warn(self, capsys):
-        PlainTUI().warn("something bad")
+        self.ui.warn("something bad")
         out = capsys.readouterr().out
         assert "something bad" in out
 
     def test_error(self, capsys):
-        PlainTUI().error("fatal error")
+        self.ui.error("fatal error")
         out = capsys.readouterr().out
         assert "fatal error" in out
 
     def test_info(self, capsys):
-        PlainTUI().info("info message")
+        self.ui.info("info message")
         out = capsys.readouterr().out
         assert "info message" in out
 
     def test_party_results_with_files(self, capsys):
-        PlainTUI().party_results("/tmp/proposal.md", "/tmp/report.md")
+        self.ui.party_results("/tmp/proposal.md", "/tmp/report.md")
         out = capsys.readouterr().out
         assert "proposal" in out.lower() or "/tmp" in out
 
     def test_party_results_no_files(self, capsys):
-        PlainTUI().party_results(None, None)
+        self.ui.party_results(None, None)
         # should not crash
 
     def test_uncommitted(self, capsys):
-        PlainTUI().uncommitted()
+        self.ui.uncommitted()
         # should not crash
 
     def test_sdk_rate_limited(self, capsys):
-        PlainTUI().sdk_rate_limited(60, 1, 5)
+        self.ui.sdk_rate_limited(60, 1, 5)
         out = capsys.readouterr().out
         assert "60" in out or "rate" in out.lower()
 
     def test_status_no_improvements(self, capsys):
-        PlainTUI().status_no_improvements()
+        self.ui.status_no_improvements()
         # should not crash
 
     def test_round_header_no_target(self, capsys):
-        PlainTUI().round_header(1, 10)
+        self.ui.round_header(1, 10)
         out = capsys.readouterr().out
         assert "ROUND 1/10" in out
 
     def test_check_result_running(self, capsys):
-        PlainTUI().check_result("check", "pytest", passed=None)
+        self.ui.check_result("check", "pytest", passed=None)
         out = capsys.readouterr().out
         assert "pytest" in out
 
@@ -121,27 +125,28 @@ class TestPlainTUIExtended:
 class TestRichTUIExtended:
     """Cover RichTUI methods if rich is available."""
 
+    @classmethod
+    def setup_class(cls):
+        cls._rich = _has_rich()
+        cls.ui = RichTUI() if cls._rich else None
+
     def test_rich_available(self):
         """Just verify we can check for rich."""
-        # _has_rich returns a bool
-        result = _has_rich()
-        assert isinstance(result, bool)
+        assert isinstance(self._rich, bool)
 
     def test_rich_tui_instantiation(self):
-        if _has_rich():
-            ui = RichTUI()
-            assert ui is not None
+        if self._rich:
+            assert self.ui is not None
 
     def test_rich_round_header(self, capsys):
-        if _has_rich():
-            ui = RichTUI()
-            ui.round_header(1, 10, target="test", checked=3, total=5)
+        if self._rich:
+            self.ui.round_header(1, 10, target="test", checked=3, total=5)
 
     def test_rich_all_methods_callable(self):
         """Verify all RichTUI methods can be called without crashing."""
-        if not _has_rich():
+        if not self._rich:
             return
-        ui = RichTUI()
+        ui = self.ui
         ui.round_header(1, 10, target="test", checked=3, total=5)
         ui.blocked_message(2)
         ui.check_result("check", "pytest", passed=True)
@@ -179,42 +184,42 @@ class TestRichTUIExtended:
         ui.status_flush()
 
     def test_rich_history_empty(self, capsys):
-        if not _has_rich():
+        if not self._rich:
             return
-        ui = RichTUI()
-        ui.history_empty("/tmp/proj")
+        self.ui.history_empty("/tmp/proj")
 
     def test_rich_history_table(self, capsys):
-        if not _has_rich():
+        if not self._rich:
             return
-        ui = RichTUI()
         rows = [
             {"name": "20260101_000000", "rounds": "3/10", "status": "CONVERGED",
              "checked": 3, "unchecked": 0},
             {"name": "20260102_000000", "rounds": "5/10", "status": "IN_PROGRESS",
              "checked": 2, "unchecked": 3},
         ]
-        ui.history_table("/tmp/proj", rows, 2, 8, 5)
+        self.ui.history_table("/tmp/proj", rows, 2, 8, 5)
 
 
 class TestPlainTUIHistoryAndStatus:
     """Cover PlainTUI history and status_session edge cases."""
 
+    @classmethod
+    def setup_class(cls):
+        cls.ui = PlainTUI()
+
     def test_status_session_converged_with_reason(self, capsys):
-        ui = PlainTUI()
-        ui.status_session("20260101_000000", 5, 3, converged=True, reason="All done")
+        self.ui.status_session("20260101_000000", 5, 3, converged=True, reason="All done")
         out = capsys.readouterr().out
         assert "YES" in out
         assert "All done" in out
 
     def test_status_session_converged_no_reason(self, capsys):
-        ui = PlainTUI()
-        ui.status_session("20260101_000000", 5, 3, converged=True, reason="")
+        self.ui.status_session("20260101_000000", 5, 3, converged=True, reason="")
         out = capsys.readouterr().out
         assert "YES" in out
 
     def test_history_empty(self, capsys):
-        PlainTUI().history_empty("/tmp/proj")
+        self.ui.history_empty("/tmp/proj")
         out = capsys.readouterr().out
         assert "/tmp/proj" in out
         assert "No evolution history" in out
@@ -226,7 +231,7 @@ class TestPlainTUIHistoryAndStatus:
             {"name": "20260102_000000", "rounds": "5/10", "status": "IN_PROGRESS",
              "checked": 2, "unchecked": 3},
         ]
-        PlainTUI().history_table("/tmp/proj", rows, 2, 8, 5)
+        self.ui.history_table("/tmp/proj", rows, 2, 8, 5)
         out = capsys.readouterr().out
         assert "Evolution History" in out
         assert "20260101_000000" in out
@@ -237,7 +242,7 @@ class TestPlainTUIHistoryAndStatus:
         assert "5 improvements" in out
 
     def test_status_memory_zero(self, capsys):
-        PlainTUI().status_memory(0)
+        self.ui.status_memory(0)
         out = capsys.readouterr().out
         assert "empty" in out.lower()
 
@@ -268,6 +273,10 @@ class TestHasRichImportError:
 class TestJsonTUIExtended:
     """Cover remaining JsonTUI methods not tested in test_tui.py."""
 
+    @classmethod
+    def setup_class(cls):
+        cls.ui = JsonTUI()
+
     def _parse_line(self, capsys) -> dict:
         import json
         out = capsys.readouterr().out.strip()
@@ -276,35 +285,35 @@ class TestJsonTUIExtended:
         return json.loads(lines[-1])
 
     def test_agent_text(self, capsys):
-        JsonTUI().agent_text("hello world")
+        self.ui.agent_text("hello world")
         obj = self._parse_line(capsys)
         assert obj["type"] == "agent_text"
         assert obj["text"] == "hello world"
 
     def test_no_progress(self, capsys):
-        JsonTUI().no_progress()
+        self.ui.no_progress()
         obj = self._parse_line(capsys)
         assert obj["type"] == "no_progress"
 
     def test_run_dir_info(self, capsys):
-        JsonTUI().run_dir_info("/tmp/run")
+        self.ui.run_dir_info("/tmp/run")
         obj = self._parse_line(capsys)
         assert obj["type"] == "run_dir_info"
         assert obj["run_dir"] == "/tmp/run"
 
     def test_info(self, capsys):
-        JsonTUI().info("info msg")
+        self.ui.info("info msg")
         obj = self._parse_line(capsys)
         assert obj["type"] == "info"
         assert obj["message"] == "info msg"
 
     def test_status_no_improvements(self, capsys):
-        JsonTUI().status_no_improvements()
+        self.ui.status_no_improvements()
         obj = self._parse_line(capsys)
         assert obj["type"] == "status_no_improvements"
 
     def test_history_empty(self, capsys):
-        JsonTUI().history_empty("/tmp/proj")
+        self.ui.history_empty("/tmp/proj")
         obj = self._parse_line(capsys)
         assert obj["type"] == "history_empty"
         assert obj["project_dir"] == "/tmp/proj"
@@ -312,7 +321,7 @@ class TestJsonTUIExtended:
     def test_history_table(self, capsys):
         rows = [{"name": "s1", "rounds": "3/10", "status": "CONVERGED",
                  "checked": 3, "unchecked": 0}]
-        JsonTUI().history_table("/tmp/proj", rows, 1, 3, 3)
+        self.ui.history_table("/tmp/proj", rows, 1, 3, 3)
         obj = self._parse_line(capsys)
         assert obj["type"] == "history"
         assert obj["num_sessions"] == 1
