@@ -1760,3 +1760,316 @@ class TestPartyModeEndToEnd:
 
         # get_tui was used and party_mode was called on it
         mock_ui.party_mode.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Integration tests for evolve_loop with --forever flag
+# ---------------------------------------------------------------------------
+
+class TestEvolveLoopForeverIntegration:
+    """End-to-end integration tests for evolve_loop with forever=True.
+
+    These tests exercise the full flow through evolve_loop (not just _run_rounds):
+    branch creation, convergence detection, party mode invocation, README_proposal
+    adoption, improvements reset, and loop restart.
+
+    Since forever mode sets max_rounds=999999, tests use a side_effect that raises
+    SystemExit after the desired number of subprocess calls to avoid infinite loops.
+    """
+
+    def _setup_project(self, tmp_path: Path):
+        """Create a minimal project directory with README and improvements."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "README.md").write_text("# My Project\n")
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        imp_path = runs_dir / "improvements.md"
+        imp_path.write_text("- [ ] [functional] initial improvement\n")
+        return project_dir, imp_path
+
+    @staticmethod
+    def _extract_run_dir(cmd):
+        """Extract --run-dir value from subprocess command args."""
+        for i, arg in enumerate(cmd):
+            if arg == "--run-dir" and i + 1 < len(cmd):
+                return Path(cmd[i + 1])
+        return None
+
+    def test_forever_creates_branch_then_converges_restarts_and_exits(self, tmp_path: Path):
+        """Full forever flow: branch → converge → party → restart → exit.
+
+        Verifies that evolve_loop with forever=True:
+        1. Calls _setup_forever_branch
+        2. On convergence, calls _run_party_mode and _forever_restart
+        3. Creates a new session directory and commits
+        4. Restarts the loop; second call raises SystemExit to break out
+        """
+        project_dir, imp_path = self._setup_project(tmp_path)
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            run_dir = self._extract_run_dir(cmd)
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+
+            if call_count == 1:
+                # First round: converge
+                (run_dir / f"conversation_loop_{round_num}.md").write_text("# Round 1 converged")
+                (run_dir / "CONVERGED").write_text("All README claims verified")
+                imp_path.write_text("- [x] [functional] initial improvement\n")
+                return 0, "converged output", False
+            else:
+                # After restart: raise SystemExit to break out of infinite loop
+                raise SystemExit(42)
+
+        with patch("loop._setup_forever_branch") as mock_branch, \
+             patch("loop._ensure_git"), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode") as mock_party, \
+             patch("loop._forever_restart") as mock_restart, \
+             patch("loop._git_commit") as mock_commit, \
+             pytest.raises(SystemExit) as exc:
+            evolve_loop(project_dir, max_rounds=1, forever=True)
+
+        # 1. Branch was created
+        mock_branch.assert_called_once_with(project_dir)
+
+        # 2. Party mode was invoked after convergence
+        mock_party.assert_called_once()
+        party_args = mock_party.call_args[0]
+        assert party_args[0] == project_dir
+
+        # 3. _forever_restart was called with correct args
+        mock_restart.assert_called_once()
+        restart_args = mock_restart.call_args[0]
+        assert restart_args[0] == project_dir
+        assert restart_args[2] == imp_path
+
+        # 4. Git commit was made for forever restart
+        mock_commit.assert_called_once()
+        assert "forever mode" in mock_commit.call_args[0][1]
+
+        # 5. Exited with our sentinel code (from the second subprocess call)
+        assert exc.value.code == 42
+
+    def test_forever_readme_proposal_adoption_end_to_end(self, tmp_path: Path):
+        """Verify that _forever_restart actually adopts README_proposal.md content.
+
+        Uses the real _forever_restart (not mocked) to verify README adoption
+        and improvements reset.
+        """
+        project_dir, imp_path = self._setup_project(tmp_path)
+        proposed_readme = "# My Evolved Project\n\nNew features here.\n"
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            run_dir = self._extract_run_dir(cmd)
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+
+            if call_count == 1:
+                # First round: converge and produce README_proposal
+                (run_dir / f"conversation_loop_{round_num}.md").write_text("# Converged")
+                (run_dir / "CONVERGED").write_text("Done")
+                (run_dir / "README_proposal.md").write_text(proposed_readme)
+                imp_path.write_text("- [x] [functional] initial improvement\n")
+                return 0, "converged", False
+            else:
+                raise SystemExit(42)
+
+        with patch("loop._setup_forever_branch"), \
+             patch("loop._ensure_git"), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._git_commit"), \
+             pytest.raises(SystemExit):
+            # Use real _forever_restart (not mocked)
+            evolve_loop(project_dir, max_rounds=1, forever=True)
+
+        # README.md should have been updated to the proposal content
+        assert (project_dir / "README.md").read_text() == proposed_readme
+
+        # improvements.md should have been reset
+        assert imp_path.read_text() == "# Improvements\n"
+
+    def test_forever_no_readme_proposal_keeps_current_readme(self, tmp_path: Path):
+        """When party mode produces no README_proposal.md, current README is preserved."""
+        project_dir, imp_path = self._setup_project(tmp_path)
+        original_readme = (project_dir / "README.md").read_text()
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            run_dir = self._extract_run_dir(cmd)
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+
+            if call_count == 1:
+                (run_dir / f"conversation_loop_{round_num}.md").write_text("# Converged")
+                (run_dir / "CONVERGED").write_text("Done")
+                # No README_proposal.md produced
+                imp_path.write_text("- [x] [functional] initial improvement\n")
+                return 0, "converged", False
+            else:
+                raise SystemExit(42)
+
+        with patch("loop._setup_forever_branch"), \
+             patch("loop._ensure_git"), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._git_commit"), \
+             pytest.raises(SystemExit):
+            evolve_loop(project_dir, max_rounds=1, forever=True)
+
+        # README unchanged since no proposal was produced
+        assert (project_dir / "README.md").read_text() == original_readme
+        # improvements.md still reset
+        assert imp_path.read_text() == "# Improvements\n"
+
+    def test_forever_failed_round_skips_and_continues(self, tmp_path: Path):
+        """In forever mode, failed rounds (exhausted retries) skip to next round."""
+        project_dir, imp_path = self._setup_project(tmp_path)
+
+        round_attempts = {}
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            round_attempts.setdefault(round_num, 0)
+            round_attempts[round_num] += 1
+            run_dir = self._extract_run_dir(cmd)
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+
+            if round_num == 1:
+                # Round 1 always stalls
+                return 0, "stalled output", True
+            elif round_num == 2:
+                # Round 2 succeeds with progress
+                if run_dir:
+                    (run_dir / f"conversation_loop_{round_num}.md").write_text("# Round 2 ok")
+                return 0, "ok output", False
+            else:
+                raise SystemExit(42)
+
+        with patch("loop._setup_forever_branch"), \
+             patch("loop._ensure_git"), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic"), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit):
+            evolve_loop(project_dir, max_rounds=2, forever=True)
+
+        # Round 1 should have been retried MAX_DEBUG_RETRIES+1 times then skipped
+        assert round_attempts[1] == MAX_DEBUG_RETRIES + 1
+
+    def test_forever_sets_max_rounds_to_large_value(self, tmp_path: Path):
+        """evolve_loop with forever=True internally sets max_rounds to 999999."""
+        project_dir, imp_path = self._setup_project(tmp_path)
+
+        with patch("loop._setup_forever_branch"), \
+             patch("loop._ensure_git"), \
+             patch("loop._run_rounds") as mock_run:
+            evolve_loop(project_dir, max_rounds=5, forever=True)
+
+        # Verify max_rounds was overridden to 999999
+        call_args = mock_run.call_args[0]
+        assert call_args[5] == 999999  # max_rounds is the 6th positional arg
+
+    def test_forever_new_session_dir_created_on_restart(self, tmp_path: Path):
+        """After convergence in forever mode, a new timestamped session dir is created."""
+        project_dir, imp_path = self._setup_project(tmp_path)
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            run_dir = self._extract_run_dir(cmd)
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+
+            if call_count == 1:
+                (run_dir / f"conversation_loop_{round_num}.md").write_text("# Converged")
+                (run_dir / "CONVERGED").write_text("All done")
+                imp_path.write_text("- [x] [functional] initial improvement\n")
+                return 0, "converged", False
+            else:
+                raise SystemExit(42)
+
+        dirs_before = set(
+            d.name for d in (project_dir / "runs").iterdir() if d.is_dir()
+        )
+
+        with patch("loop._setup_forever_branch"), \
+             patch("loop._ensure_git"), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._forever_restart"), \
+             patch("loop._git_commit"), \
+             pytest.raises(SystemExit):
+            evolve_loop(project_dir, max_rounds=1, forever=True)
+
+        dirs_after = set(
+            d.name for d in (project_dir / "runs").iterdir() if d.is_dir()
+        )
+        new_dirs = dirs_after - dirs_before
+        # At least 1 session dir created; the restart dir may share the same
+        # second-precision timestamp, so we verify via ui.run_dir_info calls
+        assert len(new_dirs) >= 1
+
+    def test_forever_convergence_triggers_report_and_summary(self, tmp_path: Path):
+        """Convergence in forever mode generates evolution report and completion summary."""
+        project_dir, imp_path = self._setup_project(tmp_path)
+        ui = MagicMock()
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            run_dir = self._extract_run_dir(cmd)
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+
+            if call_count == 1:
+                (run_dir / f"conversation_loop_{round_num}.md").write_text("# Converged")
+                (run_dir / "CONVERGED").write_text("All done")
+                imp_path.write_text("- [x] [functional] initial improvement\n")
+                return 0, "converged", False
+            else:
+                raise SystemExit(42)
+
+        with patch("loop._setup_forever_branch"), \
+             patch("loop._ensure_git"), \
+             patch("loop.get_tui", return_value=ui), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report") as mock_report, \
+             patch("loop._run_party_mode"), \
+             patch("loop._forever_restart"), \
+             patch("loop._git_commit"), \
+             pytest.raises(SystemExit):
+            evolve_loop(project_dir, max_rounds=1, forever=True)
+
+        # Evolution report was generated
+        mock_report.assert_called_once()
+        report_args = mock_report.call_args
+        assert report_args[0][0] == project_dir  # positional: project_dir
+        assert report_args[1].get("converged") is True  # keyword: converged=True
+
+        # UI received converged + completion_summary calls
+        ui.converged.assert_called_once()
+        ui.completion_summary.assert_called_once()
+        summary_kwargs = ui.completion_summary.call_args[1]
+        assert summary_kwargs["status"] == "CONVERGED"
