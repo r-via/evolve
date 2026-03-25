@@ -82,6 +82,12 @@ class TUIProtocol(Protocol):
 
     def status_flush(self) -> None: ...
 
+    def history_empty(self, project_dir: str) -> None: ...
+
+    def history_table(self, project_dir: str, rows: list,
+                      num_sessions: int, total_rounds: int,
+                      total_improvements: int) -> None: ...
+
 
 def _has_rich() -> bool:
     """Check if rich is available."""
@@ -282,6 +288,40 @@ class RichTUI:
         self.console.print(Panel(self._status_grid, title="[bold blue]evolve status[/bold blue]",
                                  border_style="blue"))
 
+    def history_empty(self, project_dir: str) -> None:
+        self.console.print(f"\n  No evolution history found for {project_dir}")
+
+    def history_table(self, project_dir: str, rows: list,
+                      num_sessions: int, total_rounds: int,
+                      total_improvements: int) -> None:
+        from rich.table import Table
+        from rich.panel import Panel
+
+        self.console.print(f"\n  [bold]Evolution History:[/bold] {project_dir}")
+        self.console.print(f"  {'─' * 38}\n")
+
+        table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+        table.add_column("Session", style="cyan")
+        table.add_column("Rounds", justify="right")
+        table.add_column("Status")
+        table.add_column("Improvements")
+
+        for row in rows:
+            status_style = "green" if row["status"] == "CONVERGED" else "yellow"
+            improvements = f"{row['checked']} done, {row['unchecked']} remaining"
+            table.add_row(
+                row["name"],
+                row["rounds"],
+                f"[{status_style}]{row['status']}[/{status_style}]",
+                improvements,
+            )
+
+        self.console.print(table)
+        self.console.print(
+            f"\n  Total: {num_sessions} sessions, {total_rounds} rounds, "
+            f"{total_improvements} improvements"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Plain text fallback
@@ -419,6 +459,21 @@ class PlainTUI:
     def status_flush(self) -> None:
         print()
 
+    def history_empty(self, project_dir: str) -> None:
+        print(f"\n  No evolution history found for {project_dir}")
+
+    def history_table(self, project_dir: str, rows: list,
+                      num_sessions: int, total_rounds: int,
+                      total_improvements: int) -> None:
+        print(f"\n  Evolution History: {project_dir}")
+        print(f"  {'─' * 38}\n")
+        print(f"  {'Session':<21}{'Rounds':<9}{'Status':<12}{'Improvements'}")
+        for row in rows:
+            improvements = f"{row['checked']} done, {row['unchecked']} remaining"
+            print(f"  {row['name']:<21}{row['rounds']:<9}{row['status']:<12}{improvements}")
+        print(f"\n  Total: {num_sessions} sessions, {total_rounds} rounds, "
+              f"{total_improvements} improvements")
+
 
 # ---------------------------------------------------------------------------
 # JSON TUI — structured JSON events for CI/CD
@@ -547,6 +602,16 @@ class JsonTUI:
 
     def status_flush(self) -> None:
         self._emit("status_flush")
+
+    def history_empty(self, project_dir: str) -> None:
+        self._emit("history_empty", project_dir=project_dir)
+
+    def history_table(self, project_dir: str, rows: list,
+                      num_sessions: int, total_rounds: int,
+                      total_improvements: int) -> None:
+        self._emit("history", project_dir=project_dir, sessions=rows,
+                    num_sessions=num_sessions, total_rounds=total_rounds,
+                    total_improvements=total_improvements)
 
 
 # ---------------------------------------------------------------------------

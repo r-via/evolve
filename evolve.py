@@ -233,6 +233,10 @@ def main():
     status_p = sub.add_parser("status", help="Show evolution status for a project")
     status_p.add_argument("project_dir", help="Path to the project")
 
+    # --- history ---
+    history_p = sub.add_parser("history", help="Show evolution timeline across all sessions")
+    history_p.add_argument("project_dir", help="Path to the project")
+
     # --- clean ---
     clean_p = sub.add_parser("clean", help="Clean up old session directories")
     clean_p.add_argument("project_dir", help="Path to the project")
@@ -269,6 +273,9 @@ def main():
 
     elif args.command == "status":
         _show_status(Path(args.project_dir).resolve())
+
+    elif args.command == "history":
+        _show_history(Path(args.project_dir).resolve())
 
     elif args.command == "clean":
         _clean_sessions(Path(args.project_dir).resolve(), args.keep)
@@ -357,6 +364,87 @@ def _clean_sessions(project_dir: Path, keep: int = 5) -> None:
         print(f"Removed {s.name}")
 
     print(f"Cleaned {len(to_remove)} session(s), kept {keep}.")
+
+
+def _show_history(project_dir: Path) -> None:
+    """Show evolution timeline across all sessions.
+
+    Parses evolution_report.md and CONVERGED markers from each session
+    directory to build a table of sessions with round counts, status,
+    and improvement statistics.
+
+    Args:
+        project_dir: Root directory of the project.
+    """
+    import re as _re
+
+    from tui import get_tui
+    ui = get_tui()
+
+    runs_dir = project_dir / "runs"
+    if not runs_dir.is_dir():
+        ui.history_empty(str(project_dir))
+        return
+
+    sessions = sorted(
+        [d for d in runs_dir.iterdir() if d.is_dir() and d.name[0].isdigit()],
+    )
+
+    if not sessions:
+        ui.history_empty(str(project_dir))
+        return
+
+    rows: list[dict] = []
+    total_rounds = 0
+    total_improvements = 0
+
+    for session_dir in sessions:
+        name = session_dir.name
+        converged = (session_dir / "CONVERGED").is_file()
+        status = "CONVERGED" if converged else "IN PROGRESS"
+
+        # Parse evolution_report.md for round info
+        report_path = session_dir / "evolution_report.md"
+        rounds_str = "?"
+        checked = 0
+        unchecked = 0
+
+        if report_path.is_file():
+            report_text = report_path.read_text(errors="replace")
+            # Extract "Rounds: N/M"
+            m = _re.search(r"\*\*Rounds:\*\*\s*(\d+)/(\d+)", report_text)
+            if m:
+                rounds_str = f"{m.group(1)}/{m.group(2)}"
+                total_rounds += int(m.group(1))
+            # Extract "N improvements completed"
+            m = _re.search(r"(\d+)\s+improvements completed", report_text)
+            if m:
+                checked = int(m.group(1))
+                total_improvements += checked
+            # Extract "N improvements remaining"
+            m = _re.search(r"(\d+)\s+improvements remaining", report_text)
+            if m:
+                unchecked = int(m.group(1))
+            # Extract status from report
+            m = _re.search(r"\*\*Status:\*\*\s*(\w+)", report_text)
+            if m:
+                status = m.group(1)
+        else:
+            # Fall back: count conversation logs for round info
+            convos = list(session_dir.glob("conversation_loop_*.md"))
+            if convos:
+                rounds_str = f"{len(convos)}/?"
+                total_rounds += len(convos)
+
+        rows.append({
+            "name": name,
+            "rounds": rounds_str,
+            "status": status,
+            "checked": checked,
+            "unchecked": unchecked,
+        })
+
+    ui.history_table(str(project_dir), rows, len(sessions), total_rounds, total_improvements)
 
 
 def _show_status(project_dir: Path):
