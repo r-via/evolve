@@ -239,6 +239,9 @@ def main():
     # --- init ---
     init_p = sub.add_parser("init", help="Initialize an evolve.toml config file")
     init_p.add_argument("project_dir", help="Path to the project to initialize")
+    init_p.add_argument("--spec", default=None,
+                        help="Spec filename relative to project dir (default: README.md, or EVOLVE_SPEC env var). "
+                             "Used to self-document the scaffolded runs/memory.md pointer prose.")
 
     # --- start ---
     start_p = sub.add_parser("start", help="Start an evolution loop")
@@ -279,7 +282,13 @@ def main():
         args = ap.parse_args()
 
     if args.command == "init":
-        _init_config(Path(args.project_dir).resolve())
+        project_path = Path(args.project_dir).resolve()
+        # Resolve --spec via _resolve_config so EVOLVE_SPEC env and (on
+        # subsequent init re-runs) an existing evolve.toml are honored.
+        # When spec is None / unspecified, the memory.md scaffold uses
+        # the spec-filename-agnostic fallback prose.
+        args = _resolve_config(args, project_path)
+        _init_config(project_path, spec=getattr(args, "spec", None))
 
     elif args.command == "start":
         project_path = Path(args.project_dir).resolve()
@@ -428,7 +437,27 @@ than 20 rounds under a `## Archive` section rather than deleting them.
 """
 
 
-def _init_config(project_dir: Path) -> None:
+def _render_default_memory_md(spec: str | None = None) -> str:
+    """Return the runs/memory.md scaffold, optionally specialized to a spec.
+
+    When ``spec`` is None (or ``"README.md"`` — the default spec), the
+    returned string is ``_DEFAULT_MEMORY_MD`` verbatim, which uses the
+    spec-filename-agnostic pointer prose ``"your project's spec file"``.
+    When ``spec`` is an explicit filename (e.g. ``"SPEC.md"``,
+    ``"CLAIMS.md"``, ``"docs/specification.md"``), the prose is
+    substituted so the scaffolded file is self-documenting:
+    ``"SPEC.md § `memory.md`"`` instead of the generic placeholder.
+
+    The constant ``_DEFAULT_MEMORY_MD`` itself is untouched so the
+    constant-drift test in ``tests/test_constant_drift.py`` still passes
+    (it asserts the template doesn't hardcode any specific spec name).
+    """
+    if spec is None or spec == "README.md":
+        return _DEFAULT_MEMORY_MD
+    return _DEFAULT_MEMORY_MD.replace("your project's spec file", spec)
+
+
+def _init_config(project_dir: Path, spec: str | None = None) -> None:
     """Scaffold an evolve.toml with default settings.
 
     Also pre-seeds ``runs/memory.md`` with the four typed section headers
@@ -439,6 +468,11 @@ def _init_config(project_dir: Path) -> None:
 
     Args:
         project_dir: Root directory where evolve.toml will be created.
+        spec: Optional spec filename (e.g. ``"SPEC.md"``). When provided,
+            the memory.md scaffold's pointer prose references the actual
+            filename so projects using a dedicated spec file get a
+            self-documenting scaffold. When ``None`` (or ``"README.md"``),
+            the spec-agnostic default wording is kept.
     """
     config_path = project_dir / "evolve.toml"
     config_created = False
@@ -456,7 +490,7 @@ def _init_config(project_dir: Path) -> None:
             print(f"runs/memory.md already exists at {memory_path} — left untouched")
     else:
         memory_path.parent.mkdir(parents=True, exist_ok=True)
-        memory_path.write_text(_DEFAULT_MEMORY_MD)
+        memory_path.write_text(_render_default_memory_md(spec))
         print(f"Created {memory_path}")
 
 

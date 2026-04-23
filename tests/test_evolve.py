@@ -243,6 +243,62 @@ class TestInitConfig:
         _init_config(tmp_path)
         assert existing.read_text() == "# Pre-existing memory\n\n### Important entry\n"
 
+    def test_memory_md_uses_agnostic_wording_when_spec_none(self, tmp_path: Path):
+        """Without --spec (or with spec=None / 'README.md'), the
+        scaffolded memory.md keeps the spec-filename-agnostic pointer
+        prose from ``_DEFAULT_MEMORY_MD``."""
+        from evolve import _init_config
+        _init_config(tmp_path)  # spec defaults to None
+        memory = (tmp_path / "runs" / "memory.md").read_text()
+        assert "your project's spec file" in memory
+        # Must not leak a specific spec filename when none was passed.
+        assert "SPEC.md §" not in memory
+
+    def test_memory_md_uses_agnostic_wording_when_spec_readme(self, tmp_path: Path):
+        """Explicit spec='README.md' (the default) also keeps the
+        agnostic wording — README.md IS the default spec, so
+        substituting it would add no self-documentation value and
+        would contradict the constant-drift test's intent."""
+        from evolve import _init_config
+        _init_config(tmp_path, spec="README.md")
+        memory = (tmp_path / "runs" / "memory.md").read_text()
+        assert "your project's spec file" in memory
+
+    def test_memory_md_substitutes_spec_filename(self, tmp_path: Path):
+        """With --spec SPEC.md, the scaffolded memory.md references
+        the actual spec filename so the pointer prose is
+        self-documenting for projects with a dedicated spec."""
+        from evolve import _init_config
+        _init_config(tmp_path, spec="SPEC.md")
+        memory = (tmp_path / "runs" / "memory.md").read_text()
+        # The generic placeholder is replaced with the concrete name.
+        assert "your project's spec file" not in memory
+        assert "SPEC.md §" in memory
+        # Four typed sections must still be present.
+        for section in ("## Errors", "## Decisions", "## Patterns", "## Insights"):
+            assert f"\n{section}\n" in memory
+
+    def test_memory_md_substitutes_custom_spec_path(self, tmp_path: Path):
+        """Nested spec paths (e.g. docs/specification.md) are
+        substituted verbatim — the helper doesn't split the path."""
+        from evolve import _init_config
+        _init_config(tmp_path, spec="docs/specification.md")
+        memory = (tmp_path / "runs" / "memory.md").read_text()
+        assert "docs/specification.md §" in memory
+        assert "your project's spec file" not in memory
+
+    def test_render_default_memory_md_helper(self):
+        """The helper is the single substitution seam — called by
+        _init_config and independently testable for the three
+        branches (None / README.md / explicit spec)."""
+        from evolve import _render_default_memory_md, _DEFAULT_MEMORY_MD
+        assert _render_default_memory_md(None) == _DEFAULT_MEMORY_MD
+        assert _render_default_memory_md("README.md") == _DEFAULT_MEMORY_MD
+        rendered = _render_default_memory_md("SPEC.md")
+        assert rendered != _DEFAULT_MEMORY_MD
+        assert "SPEC.md §" in rendered
+        assert "your project's spec file" not in rendered
+
     def test_default_memory_md_constant_shape(self):
         """_DEFAULT_MEMORY_MD is the template source of truth — future edits
         to the four-section scaffold must update this one string."""
