@@ -186,140 +186,52 @@ When both gates pass, Opus writes `CONVERGED` with justification.
 
 ---
 
-## README sync discipline
+## README as a user-level summary (when `--spec` is set)
 
-When a project splits documentation into `README.md` (user-facing) and a
-separate spec file (via `--spec SPEC.md`), the spec is what evolve converges
-to — but the README is at risk of becoming stale fiction if nothing enforces
-coherence. Three mechanisms keep the two files in sync. They are documented
-here because they are **invariants of the evolution loop**, not optional
-niceties.
+When `--spec` points at a file other than `README.md`, the two documents
+serve **orthogonal purposes** and evolve separately:
 
-*(This section applies only when `--spec` points at a file other than
-`README.md`. When `README.md` IS the spec, there is nothing to sync.)*
+- **SPEC.md** — the contract evolve converges to. Exhaustive, dense,
+  may include internal implementation details. Changes often as the
+  system grows.
+- **README.md** — a user-level **summary** that helps a reader discover
+  what the software does and how to use it. Deliberately incomplete
+  relative to SPEC. Changes slowly, in response to user-visible
+  behavior changes, not to internal refactors.
 
-### Mechanism A — Pre-convergence README audit
+**The evolution loop never writes to `README.md`.** Party mode only
+produces `<spec>_proposal.md` (never a README proposal). README is
+authored and maintained by the human operator.
 
-Before the convergence gate runs, the agent invokes a lightweight audit:
+When the operator wants to refresh README to reflect the current spec
+(e.g. after a batch of user-visible feature adds), they invoke the
+dedicated one-shot subcommand `evolve sync-readme` (see CLI flags §
+"evolve sync-readme"). This is never automatic and never runs as part
+of a round — it is an explicit, human-initiated action.
 
-1. Extract user-visible claims from the spec: every CLI flag, every
-   subcommand, every documented environment variable, every section under
-   `## Requirements`, and every exhibited shell example (lines beginning
-   with `$` or inside ```bash fences).
-2. For each claim, grep `README.md`: is the claim at least **mentioned**
-   (even briefly, even as a link to the spec)? Exact prose does not matter
-   — only that a reader of README.md can discover the feature exists.
-3. For each gap found, **append a new item to `improvements.md`** of the
-   form: `[ ] [functional] README sync: mention <claim> in <README section>
-   (documented in <spec file> § <section> but absent from README.md)`.
-4. The items are treated like any other `[ ]` entry: the convergence gate
-   (§ "Convergence") blocks `CONVERGED` until they are addressed. There is
-   **no exemption** — README sync gaps are real gaps between the spec and
-   what a user sees, and they must be closed before party mode brainstorms
-   the next evolution. Party mode on an un-synced README would propose
-   improvements against documentation that already lies about the current
-   state of the project.
+### Stale-README pre-flight check (lightweight observability)
 
-**Idempotency is mandatory.** The audit may re-run many times before the
-queue drains. Before appending each item, the agent MUST scan existing
-pending items in `improvements.md` for the same `README sync: mention X`
-phrase (same `<claim>`); if found, do **not** add a duplicate. This is
-what makes Mechanism A a convergence-compatible blocker rather than a
-source of infinite churn: round N queues 10 gaps, round N+1 fixes one
-and re-audits finding 9 (no duplicates queued), …, round N+10 finds 0
-gaps, convergence proceeds.
-
-The audit is intentionally a `grep`-level heuristic, not a claim-by-claim
-revalidation. Being cheap is what lets it run every round without budget
-concerns. The idempotency contract (phrase-level dedup) is the only state
-the audit keeps between runs.
-
-**Escape hatch for intrinsically-unsyncable claims.** Rarely, a spec claim
-is legitimately not worth mentioning in the user-facing README (internal
-byte constants, implementation details leaked into the spec as contracts,
-etc.). Such an item can be checked off with a `[wontfix-sync: <reason>]`
-suffix — it counts as resolved for the convergence gate, and the reason
-survives for future audits to skip the same phrase. This is the only
-sanctioned way a sync item leaves the queue without a real README edit.
-
-### Mechanism B — Party mode produces a README proposal too
-
-When `--spec SPEC.md` is used, Phase 5 party mode produces a **third**
-artifact alongside `party_report.md` and `<spec>_proposal.md`:
-
-- `README_proposal.md` — the user-facing README rewritten to reflect the
-  claims of the new spec proposal, preserving the README's own voice
-  (tutorial, examples, brevity) rather than copying the spec verbatim.
-
-In `--forever` mode, both proposals are adopted **atomically in a single
-commit**:
+At the start of every `evolve start` (before any round), the orchestrator
+compares `mtime(spec_file)` and `mtime(README.md)`. If the spec is
+significantly newer — default threshold **30 days** — the TUI prints a
+single-line advisory:
 
 ```
-feat(spec): adopt SPEC_proposal
-  - SPEC.md updated from SPEC_proposal.md
-  - README.md updated from README_proposal.md
-  - improvements.md reset
+ℹ️  README has not been updated in 42 days — consider `evolve sync-readme`
 ```
 
-In manual (non-forever) mode, the operator reviews all three files and
-accepts or rejects them as a unit. The commit message template above is
-what the operator is expected to use.
+This is pure observability. It does not block anything, does not modify
+any file, and does not appear during rounds (only once at startup). It
+is the only automated reference the evolution loop makes to the README.
+Threshold configurable via `evolve.toml`:
 
-This guarantees that autonomous evolutions (where evolve itself decides
-what's next) never leave the README behind.
-
-### Mechanism C — README drift warning (observability)
-
-Every round, the orchestrator compares `mtime(spec_file)` and
-`mtime(README.md)`. When:
-
-- `mtime(spec_file) > mtime(README.md)`, **and**
-- More than **3 rounds** have passed since the spec was last touched
-  without a corresponding README update (tracked in `state.json` via a
-  `readme_stale_since_round` field)
-
-…the TUI emits a yellow warning panel:
-
-```
-⚠️  README drift: SPEC.md touched 5 rounds ago, README.md unchanged
-   Run `evolve doctor` for details, or see "README sync discipline" in SPEC.md
+```toml
+[tool.evolve]
+readme_stale_threshold_days = 30   # or 0 to disable the advisory entirely
 ```
 
-And `state.json` exposes the drift status:
-
-```json
-{
-  "readme_sync": {
-    "stale": true,
-    "spec_mtime": "2026-04-23T13:40:00Z",
-    "readme_mtime": "2026-04-23T12:10:00Z",
-    "rounds_since_stale": 5
-  }
-}
-```
-
-This is **observability, not enforcement** — the warning does not block
-anything. Its job is to surface the drift so the operator (or CI) can
-notice before it becomes too large to fix in one round.
-
-### Interaction with convergence
-
-The three mechanisms compose cleanly with the two convergence gates:
-
-- Mechanism A ensures convergence is **gated on** the sync queue: every
-  gap it finds becomes a regular `[ ]` item that blocks `CONVERGED` until
-  fixed. Idempotency (phrase-level dedup) prevents re-queueing the same
-  gap every round, so the queue drains monotonically — no infinite
-  churn.
-- Mechanism B ensures autonomous evolutions produce both docs together —
-  the drift never enters the system in the first place.
-- Mechanism C ensures the drift, if any, is visible in real time.
-
-None of the three runs a full NLP-level comparison of the two documents.
-Evolve deliberately stays in the realm of cheap signals (grep hits, mtime
-diffs, atomic commit coupling) because the expensive version — a full
-semantic sync — would introduce failure modes worse than the drift it
-would catch.
+(When `--spec` is unset, README IS the spec — this section does not
+apply, and no advisory is ever emitted.)
 
 ---
 
@@ -549,6 +461,66 @@ detection). The name was chosen over the older `--yolo` precisely because
 deprecated aliases for one release cycle. They behave identically to
 `--allow-installs` but emit a `DeprecationWarning` to stderr pointing at the
 new name. They will be removed in a future version.
+
+### `evolve sync-readme`
+
+One-shot subcommand that refreshes `README.md` to reflect the current spec.
+Never runs as part of the evolution loop — always invoked explicitly by the
+operator:
+
+```bash
+# Produce a proposal for review (default; does not modify README.md)
+evolve sync-readme [<project-dir>] [--spec SPEC.md]
+
+# Apply the refresh directly, committing the updated README
+evolve sync-readme [<project-dir>] --apply [--spec SPEC.md]
+```
+
+**How it works:**
+
+1. Loads the spec file (resolved from `--spec`, `evolve.toml`, `EVOLVE_SPEC`,
+   or default `README.md` — same resolution order as every other flag).
+2. Loads the current `README.md`.
+3. Launches the agent in a dedicated one-shot session with a sync-focused
+   prompt: *"Update the README to reflect the current spec. Preserve the
+   README's tutorial voice — brevity, examples, links to the spec for
+   internals. Do not copy the spec verbatim. Do not invent features that
+   aren't in the spec."*
+4. Writes the output to `README_proposal.md` at the project root (default
+   mode) or directly to `README.md` with a git commit (`--apply` mode).
+5. Exits.
+
+**Exit codes:**
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 0 | Proposal written (or applied) successfully |
+| 1 | README already in sync — no changes proposed |
+| 2 | Error — spec file missing, agent failure, etc. |
+
+**When to use it:**
+
+- After adopting a batch of SPEC changes that introduced user-visible
+  features and the README is now misleading
+- After a `--forever` run accumulated many cycles and the README has
+  drifted from the current behavior
+- When the startup advisory (`ℹ️  README has not been updated in N days`)
+  prompts you
+
+**What it does NOT do:**
+
+- Run during rounds
+- Block convergence
+- Add items to `improvements.md`
+- Touch any file other than `README.md` (and `README_proposal.md` in
+  default mode)
+
+The subcommand is the **only** sanctioned way evolve ever writes to
+`README.md` when `--spec` points at a separate file. This separation —
+evolution loop touches spec + code, `sync-readme` touches README — is
+intentional: it keeps the two concerns orthogonal and avoids the
+failure mode where automated sync creates silent drift between user
+docs and actual behavior.
 
 ### Project-specific prompts
 
@@ -1123,15 +1095,17 @@ After convergence, all agents from `agents/` brainstorm the next evolution.
 **Outputs:**
 - `party_report.md` — full discussion explaining each agent's reasoning
 - `<spec>_proposal.md` — complete updated spec for the next cycle (filename
-  derived from `--spec`: `SPEC.md` → `SPEC_proposal.md`)
-- `README_proposal.md` — (only when `--spec` points at a file other than
-  `README.md`) the user-facing README rewritten to reflect the claims of the
-  new spec proposal, preserving the README's tutorial voice rather than
-  copying the spec verbatim. See "README sync discipline § Mechanism B".
+  derived from `--spec`: `SPEC.md` → `SPEC_proposal.md`, or `README.md` →
+  `README_proposal.md` when no `--spec` is set since README is then the spec)
 
-The operator reviews all output files and decides whether to accept the
-proposal. In `--forever` mode the proposals are adopted **atomically in a
-single commit** — the spec file and README move together.
+Party mode does **not** produce any additional README output when `--spec`
+points at a separate file. README is user-authored and untouched by the
+evolution loop (see § "README as a user-level summary"). If the operator
+wants to refresh README to reflect the newly-adopted spec, they run
+`evolve sync-readme` explicitly after the proposal is adopted.
+
+The operator reviews the output files and decides whether to accept the
+proposal. In `--forever` mode the spec proposal is adopted automatically.
 
 ---
 
