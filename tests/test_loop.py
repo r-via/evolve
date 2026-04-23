@@ -16,6 +16,7 @@ from loop import (
     _setup_forever_branch,
     _forever_restart,
     _write_state_json,
+    _check_spec_freshness,
 )
 
 
@@ -1211,3 +1212,202 @@ class TestForeverRestartEdgeCases:
         _forever_restart(tmp_path, run_dir, improvements, self.ui)
 
         assert readme.read_text() == unicode_content
+
+
+# ---------------------------------------------------------------------------
+# _check_spec_freshness
+# ---------------------------------------------------------------------------
+
+class TestCheckSpecFreshness:
+    """Tests for _check_spec_freshness — mtime comparison and stale marking."""
+
+    def test_fresh_when_improvements_newer(self, tmp_path):
+        """When improvements.md is newer than README, returns True (fresh)."""
+        spec = tmp_path / "README.md"
+        spec.write_text("# Spec\n")
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text("- [ ] [functional] Do something\n")
+        # Ensure improvements is newer
+        import os, time
+        time.sleep(0.05)
+        os.utime(imp, None)
+
+        result = _check_spec_freshness(tmp_path, imp)
+        assert result is True
+
+    def test_stale_when_spec_newer(self, tmp_path):
+        """When spec is newer than improvements.md, returns False (stale)."""
+        spec = tmp_path / "README.md"
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text("- [ ] [functional] Old item\n")
+        # Write spec AFTER improvements to make it newer
+        import os, time
+        time.sleep(0.05)
+        spec.write_text("# Updated Spec\n")
+
+        result = _check_spec_freshness(tmp_path, imp)
+        assert result is False
+
+    def test_stale_marks_unchecked_items(self, tmp_path):
+        """Unchecked items get [stale: spec changed] tag when spec is newer."""
+        spec = tmp_path / "README.md"
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text(
+            "- [ ] [functional] Item one\n"
+            "- [ ] [performance] Item two\n"
+        )
+        import os, time
+        time.sleep(0.05)
+        spec.write_text("# New spec\n")
+
+        _check_spec_freshness(tmp_path, imp)
+
+        text = imp.read_text()
+        assert "[stale: spec changed]" in text
+        lines = text.splitlines()
+        assert lines[0] == "- [ ] [stale: spec changed] [functional] Item one"
+        assert lines[1] == "- [ ] [stale: spec changed] [performance] Item two"
+
+    def test_checked_items_preserved(self, tmp_path):
+        """Already checked [x] items are NOT marked stale."""
+        spec = tmp_path / "README.md"
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text(
+            "- [x] [functional] Done item\n"
+            "- [ ] [functional] Pending item\n"
+        )
+        import os, time
+        time.sleep(0.05)
+        spec.write_text("# New spec\n")
+
+        _check_spec_freshness(tmp_path, imp)
+
+        text = imp.read_text()
+        lines = text.splitlines()
+        # Checked item untouched
+        assert lines[0] == "- [x] [functional] Done item"
+        # Unchecked item marked stale
+        assert lines[1] == "- [ ] [stale: spec changed] [functional] Pending item"
+
+    def test_idempotent_stale_marking(self, tmp_path):
+        """Running twice doesn't double-tag already stale items."""
+        spec = tmp_path / "README.md"
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text(
+            "- [ ] [stale: spec changed] [functional] Already stale\n"
+        )
+        import os, time
+        time.sleep(0.05)
+        spec.write_text("# New spec\n")
+
+        _check_spec_freshness(tmp_path, imp)
+
+        text = imp.read_text()
+        # Should still have exactly one [stale: spec changed] tag
+        assert text.count("[stale: spec changed]") == 1
+
+    def test_missing_spec_file_returns_true(self, tmp_path):
+        """When spec file doesn't exist, returns True (no gate)."""
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text("- [ ] [functional] Something\n")
+
+        result = _check_spec_freshness(tmp_path, imp)
+        assert result is True
+
+    def test_missing_improvements_returns_true(self, tmp_path):
+        """When improvements.md doesn't exist, returns True (agent creates fresh)."""
+        spec = tmp_path / "README.md"
+        spec.write_text("# Spec\n")
+        imp = tmp_path / "runs" / "improvements.md"
+
+        result = _check_spec_freshness(tmp_path, imp)
+        assert result is True
+
+    def test_custom_spec_file(self, tmp_path):
+        """When spec= is provided, uses that file instead of README.md."""
+        custom_spec = tmp_path / "SPEC.md"
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text("- [ ] [functional] Old item\n")
+        import os, time
+        time.sleep(0.05)
+        custom_spec.write_text("# Custom Spec\n")
+
+        result = _check_spec_freshness(tmp_path, imp, spec="SPEC.md")
+        assert result is False
+
+    def test_custom_spec_missing_returns_true(self, tmp_path):
+        """When custom spec doesn't exist, returns True (no gate)."""
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text("- [ ] [functional] Something\n")
+        # SPEC.md doesn't exist, even if README.md does
+        (tmp_path / "README.md").write_text("# readme\n")
+
+        result = _check_spec_freshness(tmp_path, imp, spec="SPEC.md")
+        assert result is True
+
+    def test_convergence_gate_rejects_when_stale(self, tmp_path):
+        """Return value False blocks convergence when spec is newer."""
+        spec = tmp_path / "README.md"
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        # All items checked, but spec is newer
+        imp.write_text("- [x] [functional] Done\n")
+        import os, time
+        time.sleep(0.05)
+        spec.write_text("# Updated spec\n")
+
+        # Even with all items checked, freshness fails
+        result = _check_spec_freshness(tmp_path, imp)
+        # improvements mtime < spec mtime → stale → False
+        assert result is False
+
+    def test_equal_mtime_returns_true(self, tmp_path):
+        """When mtimes are equal, returns True (fresh)."""
+        spec = tmp_path / "README.md"
+        spec.write_text("# Spec\n")
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text("- [ ] [functional] Item\n")
+        # Set both to same mtime
+        import os
+        mtime = spec.stat().st_mtime
+        os.utime(imp, (mtime, mtime))
+        os.utime(spec, (mtime, mtime))
+
+        result = _check_spec_freshness(tmp_path, imp)
+        assert result is True
+
+    def test_mixed_items_only_unchecked_marked(self, tmp_path):
+        """With a mix of checked, unchecked, and blocked items, only unchecked get stale tag."""
+        spec = tmp_path / "README.md"
+        imp = tmp_path / "runs" / "improvements.md"
+        imp.parent.mkdir(parents=True, exist_ok=True)
+        imp.write_text(
+            "# Improvements\n"
+            "\n"
+            "- [x] [functional] Already done\n"
+            "- [ ] [functional] Pending one\n"
+            "- [ ] [functional] [needs-package] Pending two\n"
+            "- [x] [performance] Also done\n"
+        )
+        import os, time
+        time.sleep(0.05)
+        spec.write_text("# New spec\n")
+
+        _check_spec_freshness(tmp_path, imp)
+
+        lines = imp.read_text().splitlines()
+        assert lines[0] == "# Improvements"
+        assert lines[1] == ""
+        assert lines[2] == "- [x] [functional] Already done"
+        assert "[stale: spec changed]" in lines[3]
+        assert "[stale: spec changed]" in lines[4]
+        assert lines[5] == "- [x] [performance] Also done"
