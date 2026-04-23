@@ -183,6 +183,13 @@ Other env var examples — point at an alternate spec file via `EVOLVE_SPEC`:
 EVOLVE_SPEC=SPEC.md evolve start ~/projects/my-tool --check "pytest"
 ```
 
+Allow the agent to install new packages via `EVOLVE_ALLOW_INSTALLS` (same
+effect as the `--allow-installs` flag; unlocks `[needs-package]` items):
+
+```bash
+EVOLVE_ALLOW_INSTALLS=1 evolve start ~/projects/my-tool --check "pytest"
+```
+
 Scaffold a config file quickly:
 
 ```bash
