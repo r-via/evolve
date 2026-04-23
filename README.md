@@ -708,11 +708,11 @@ All work happens on the `evolve/*` branch — `main` is never touched. The opera
 - Merge when satisfied (`git merge evolve/<timestamp>`)
 - Or discard the branch entirely (`git branch -D evolve/<timestamp>`)
 
-Combines well with `--yolo` for fully autonomous evolution:
+Combines well with `--allow-installs` for fully autonomous evolution:
 
 ```bash
 # Full autonomy — installs packages, updates README, loops forever
-evolve start ~/projects/my-tool --check "pytest" --forever --yolo
+evolve start ~/projects/my-tool --check "pytest" --forever --allow-installs
 ```
 
 ### The --json flag
@@ -755,7 +755,7 @@ Parses `evolution_report.md` and `CONVERGED` markers from each session directory
 One improvement added per round:
 - A checkbox (`[ ]` pending, `[x]` done)
 - A type tag: `[functional]` or `[performance]`
-- Optional `[needs-package]` flag — skipped unless `--yolo`
+- Optional `[needs-package]` flag — skipped unless `--allow-installs`
 
 ### memory.md — cumulative error log
 
@@ -809,9 +809,23 @@ Every commit follows conventional commits:
 
 Types: `fix`, `feat`, `refactor`, `perf`, `docs`, `test`, `chore`
 
-### --yolo mode
+### --allow-installs mode
 
-By default, improvements requiring new packages are blocked. Use `--yolo` to allow.
+By default, improvements tagged `[needs-package]` — those that would require
+installing a new dependency — are skipped. Pass `--allow-installs` (or set
+`allow_installs = true` in `evolve.toml`, or export `EVOLVE_ALLOW_INSTALLS=1`)
+to let the agent install packages and work on those items.
+
+The scope of the flag is deliberately narrow: it only unlocks `[needs-package]`
+items. It does **not** disable any other safeguard (watchdog, check command,
+debug retries, per-turn cap, zero-progress detection). The name was chosen
+over the older `--yolo` precisely because `--yolo` oversold the risk and
+undersold what the flag actually does.
+
+**Deprecated alias.** `--yolo` (CLI) and `yolo = true` (config) are kept as
+deprecated aliases for one release cycle. They behave identically to
+`--allow-installs` but emit a `DeprecationWarning` to stderr pointing at the
+new name. They will be removed in a future version.
 
 ### Project-specific prompts
 
