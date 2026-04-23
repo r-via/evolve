@@ -21,7 +21,7 @@ class TestCLIParsing:
             start_p.add_argument("project_dir")
             start_p.add_argument("--rounds", type=int, default=10)
             start_p.add_argument("--check", default=None)
-            start_p.add_argument("--yolo", action="store_true")
+            start_p.add_argument("--allow-installs", action="store_true", dest="allow_installs")
             start_p.add_argument("--timeout", type=int, default=300)
             start_p.add_argument("--model", default=None)
             start_p.add_argument("--resume", action="store_true")
@@ -30,7 +30,7 @@ class TestCLIParsing:
             assert args.project_dir == "/tmp/project"
             assert args.rounds == 10
             assert args.check is None
-            assert args.yolo is False
+            assert args.allow_installs is False
             assert args.timeout == 300
             assert args.model is None
             assert args.resume is False

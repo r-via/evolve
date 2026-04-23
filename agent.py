@@ -54,10 +54,11 @@ def build_prompt(
     project_dir: Path,
     check_output: str = "",
     check_cmd: str | None = None,
-    yolo: bool = False,
+    allow_installs: bool = False,
     run_dir: Path | None = None,
     spec: str | None = None,
     round_num: int = 1,
+    yolo: bool | None = None,
 ) -> str:
     """Build the system prompt for the opus agent from project context.
 
@@ -68,14 +69,17 @@ def build_prompt(
         project_dir: Root directory of the project being evolved.
         check_output: Output from the most recent check command run.
         check_cmd: Shell command used to verify the project (e.g. 'pytest').
-        yolo: If True, allow improvements tagged [needs-package].
+        allow_installs: If True, allow improvements tagged [needs-package].
         run_dir: Session run directory containing round artifacts.
         spec: Path to the spec file relative to project_dir (default: README.md).
         round_num: Current evolution round number (used for stuck-loop detection).
+        yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
 
     Returns:
         The fully interpolated prompt string.
     """
+    if yolo is not None:
+        allow_installs = yolo
     # Load system prompt
     prompt_path = Path(__file__).parent / "prompts" / "system.md"
     # Project can override with its own prompts/evolve-system.md
@@ -89,14 +93,14 @@ def build_prompt(
     readme = ctx["readme"]
     improvements = ctx["improvements"]
 
-    # Current target — skip [needs-package] items unless --yolo
+    # Current target — skip [needs-package] items unless --allow-installs
     current = None
     if improvements:
         for line in improvements.splitlines():
             m = re.match(r"^- \[ \] (.+)$", line.strip())
             if m:
                 text = m.group(1)
-                if not yolo and _is_needs_package(text):
+                if not allow_installs and _is_needs_package(text):
                     continue
                 current = text
                 break
@@ -119,12 +123,12 @@ def build_prompt(
             prev_crash = f.read_text()
             break
 
-    yolo_note = ""
-    if not yolo:
-        yolo_note = """
+    allow_installs_note = ""
+    if not allow_installs:
+        allow_installs_note = """
 CONSTRAINT: Do NOT add new binaries or pip/npm packages. If an improvement requires
 a new dependency, add it to runs/improvements.md with the tag [needs-package] and
-leave it unchecked. The operator must re-run with --yolo to allow it."""
+leave it unchecked. The operator must re-run with --allow-installs to allow it."""
 
     rdir = str(run_dir or "runs")
 
@@ -134,7 +138,9 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
     from loop import WATCHDOG_TIMEOUT
     system_prompt = system_prompt.replace("{project_dir}", str(project_dir))
     system_prompt = system_prompt.replace("{run_dir}", rdir)
-    system_prompt = system_prompt.replace("{yolo_note}", yolo_note)
+    # Support both old and new placeholder names for backward compatibility
+    system_prompt = system_prompt.replace("{yolo_note}", allow_installs_note)
+    system_prompt = system_prompt.replace("{allow_installs_note}", allow_installs_note)
     system_prompt = system_prompt.replace("{watchdog_timeout}", str(WATCHDOG_TIMEOUT))
     system_prompt = system_prompt.replace("{round_num}", str(round_num))
     system_prompt = system_prompt.replace("{prev_round_1}", str(round_num - 1))
@@ -388,11 +394,12 @@ def analyze_and_fix(
     project_dir: Path,
     check_output: str = "",
     check_cmd: str | None = None,
-    yolo: bool = False,
+    allow_installs: bool = False,
     max_retries: int = 5,
     round_num: int = 1,
     run_dir: Path | None = None,
     spec: str | None = None,
+    yolo: bool | None = None,
 ) -> None:
     """Run Claude opus agent to analyze and fix code.
 
@@ -403,13 +410,16 @@ def analyze_and_fix(
         project_dir: Root directory of the project being evolved.
         check_output: Output from the most recent check command.
         check_cmd: Shell command used to verify the project.
-        yolo: If True, allow improvements tagged [needs-package].
+        allow_installs: If True, allow improvements tagged [needs-package].
         max_retries: Maximum SDK call attempts on rate-limit errors.
         round_num: Current evolution round number.
         run_dir: Session run directory for conversation logs.
         spec: Path to the spec file relative to project_dir (default: README.md).
+        yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
     """
-    prompt = build_prompt(project_dir, check_output, check_cmd, yolo, run_dir, spec=spec, round_num=round_num)
+    if yolo is not None:
+        allow_installs = yolo
+    prompt = build_prompt(project_dir, check_output, check_cmd, allow_installs, run_dir, spec=spec, round_num=round_num)
 
     # Track attempt number for retry log filenames via a mutable closure.
     attempt_counter = [0]

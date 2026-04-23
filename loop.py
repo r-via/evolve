@@ -176,7 +176,7 @@ def _is_needs_package(text: str) -> bool:
 
 
 def _count_blocked(path: Path) -> int:
-    """Count unchecked items that require [needs-package] (blocked without --yolo).
+    """Count unchecked items that require [needs-package] (blocked without --allow-installs).
 
     Args:
         path: Path to the improvements.md file.
@@ -299,29 +299,32 @@ def _write_state_json(
     state_path.write_text(json.dumps(state, indent=2) + "\n")
 
 
-def _get_current_improvement(path: Path, yolo: bool = False) -> str | None:
+def _get_current_improvement(path: Path, allow_installs: bool = False, yolo: bool | None = None) -> str | None:
     """Return the text of the next pending improvement to implement.
 
     Finds the first unchecked ``- [ ]`` item in improvements.md. Items tagged
-    with ``[needs-package]`` are skipped unless *yolo* mode is enabled, since
-    installing new packages requires explicit opt-in.
+    with ``[needs-package]`` are skipped unless *allow_installs* mode is
+    enabled, since installing new packages requires explicit opt-in.
 
     Args:
         path: Path to the improvements.md file.
-        yolo: If True, allow improvements that require new package installs.
+        allow_installs: If True, allow improvements that require new package installs.
+        yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
 
     Returns:
         The improvement description text (everything after ``- [ ] ``), or
         None if no actionable improvement is found or the file does not exist.
     """
+    if yolo is not None:
+        allow_installs = yolo
     if not path.is_file():
         return None
     for line in path.read_text().splitlines():
         m = re.match(r"^- \[ \] (.+)$", line.strip())
         if m:
             text = m.group(1)
-            # Skip [needs-package] items unless --yolo is set
-            if not yolo and _is_needs_package(text):
+            # Skip [needs-package] items unless --allow-installs is set
+            if not allow_installs and _is_needs_package(text):
                 continue
             return text
     return None
@@ -507,12 +510,13 @@ def evolve_loop(
     project_dir: Path,
     max_rounds: int = 10,
     check_cmd: str | None = None,
-    yolo: bool = False,
+    allow_installs: bool = False,
     timeout: int = 300,
     model: str = "claude-opus-4-6",
     resume: bool = False,
     forever: bool = False,
     spec: str | None = None,
+    yolo: bool | None = None,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess.
 
@@ -524,13 +528,16 @@ def evolve_loop(
         project_dir: Root directory of the project being evolved.
         max_rounds: Maximum number of evolution rounds.
         check_cmd: Shell command to verify the project after each round.
-        yolo: If True, allow improvements requiring new packages.
+        allow_installs: If True, allow improvements requiring new packages.
         timeout: Timeout in seconds for the check command.
         model: Claude model identifier to use.
         resume: If True, resume the most recent interrupted session.
         forever: If True, run indefinitely on a dedicated branch.
         spec: Path to the spec file relative to project_dir (default: README.md).
+        yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
     """
+    if yolo is not None:
+        allow_installs = yolo
     improvements_path = project_dir / "runs" / "improvements.md"
 
     print(f"[probe] evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
@@ -592,7 +599,7 @@ def evolve_loop(
                 # Jump to loop body
                 return _run_rounds(
                     project_dir, run_dir, improvements_path, ui,
-                    start_round, max_rounds, check_cmd, yolo, timeout, model,
+                    start_round, max_rounds, check_cmd, allow_installs, timeout, model,
                     forever=forever, hooks=hooks, spec=spec,
                 )
 
@@ -608,7 +615,7 @@ def evolve_loop(
 
     _run_rounds(
         project_dir, run_dir, improvements_path, ui,
-        1, max_rounds, check_cmd, yolo, timeout, model,
+        1, max_rounds, check_cmd, allow_installs, timeout, model,
         forever=forever, hooks=hooks, spec=spec,
     )
 
@@ -731,7 +738,7 @@ def _run_rounds(
     start_round: int,
     max_rounds: int,
     check_cmd: str | None,
-    yolo: bool,
+    allow_installs: bool,
     timeout: int,
     model: str,
     forever: bool = False,
@@ -752,7 +759,7 @@ def _run_rounds(
         start_round: First round number to execute.
         max_rounds: Maximum round number (inclusive).
         check_cmd: Shell command to verify the project.
-        yolo: If True, allow improvements requiring new packages.
+        allow_installs: If True, allow improvements requiring new packages.
         timeout: Timeout for the check command in seconds.
         model: Claude model identifier.
         forever: If True, restart after convergence instead of exiting.
@@ -773,7 +780,7 @@ def _run_rounds(
             if not spec_fresh:
                 print(f"[probe] spec freshness gate: spec is newer than improvements.md — backlog marked stale")
 
-            current = _get_current_improvement(improvements_path, yolo=yolo)
+            current = _get_current_improvement(improvements_path, allow_installs=allow_installs)
             checked = _count_checked(improvements_path)
             unchecked = _count_unchecked(improvements_path)
             print(f"[probe] round {round_num}/{max_rounds} — checked={checked}, unchecked={unchecked}, target={current or '(none)'}")
@@ -782,7 +789,7 @@ def _run_rounds(
                 ui.round_header(round_num, max_rounds, target=current,
                                 checked=checked, total=checked + unchecked)
             elif unchecked > 0:
-                # All remaining unchecked items are blocked (needs-package without --yolo)
+                # All remaining unchecked items are blocked (needs-package without --allow-installs)
                 blocked = _count_blocked(improvements_path)
                 if blocked == unchecked:
                     ui.round_header(round_num, max_rounds)
@@ -809,8 +816,8 @@ def _run_rounds(
             ]
             if check_cmd:
                 cmd += ["--check", check_cmd]
-            if yolo:
-                cmd += ["--yolo"]
+            if allow_installs:
+                cmd += ["--allow-installs"]
             if spec:
                 cmd += ["--spec", spec]
 
@@ -1079,11 +1086,12 @@ def run_single_round(
     project_dir: Path,
     round_num: int,
     check_cmd: str | None = None,
-    yolo: bool = False,
+    allow_installs: bool = False,
     timeout: int = 300,
     run_dir: Path | None = None,
     model: str = "claude-opus-4-6",
     spec: str | None = None,
+    yolo: bool | None = None,
 ) -> None:
     """Execute a single evolution round (called as subprocess).
 
@@ -1095,12 +1103,15 @@ def run_single_round(
         project_dir: Root directory of the project.
         round_num: Current evolution round number.
         check_cmd: Shell command to verify the project.
-        yolo: If True, allow improvements requiring new packages.
+        allow_installs: If True, allow improvements requiring new packages.
         timeout: Timeout for the check command in seconds.
         run_dir: Session directory for round artifacts.
         model: Claude model identifier to use.
         spec: Path to the spec file relative to project_dir (default: README.md).
+        yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
     """
+    if yolo is not None:
+        allow_installs = yolo
     from agent import analyze_and_fix
     import agent as _agent_mod
     _agent_mod.MODEL = model
@@ -1139,14 +1150,14 @@ def run_single_round(
         print("[probe] no check command configured")
 
     # 2. Let opus agent analyze and fix
-    current = _get_current_improvement(improvements_path, yolo=yolo)
+    current = _get_current_improvement(improvements_path, allow_installs=allow_installs)
     print(f"[probe] invoking agent — target: {current or '(initial analysis)'}")
     ui.agent_working()
     analyze_and_fix(
         project_dir=project_dir,
         check_output=check_output,
         check_cmd=check_cmd,
-        yolo=yolo,
+        allow_installs=allow_installs,
         round_num=round_num,
         run_dir=rdir,
         spec=spec,
@@ -1159,7 +1170,7 @@ def run_single_round(
         msg = commit_msg_path.read_text().strip()
         commit_msg_path.unlink()
     else:
-        new_current = _get_current_improvement(improvements_path, yolo=yolo)
+        new_current = _get_current_improvement(improvements_path, allow_installs=allow_installs)
         if current and new_current != current:
             msg = f"feat(evolve): ✓ {current}"
         else:

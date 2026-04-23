@@ -6,7 +6,7 @@ the code until it fully converges to the specification.
 
 Usage:
   python evolve.py init <project-dir>
-  python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo] [--json]
+  python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--allow-installs] [--json]
   python evolve.py start <project-dir> --resume
   python evolve.py status <project-dir>
   python evolve.py clean <project-dir> [--keep 5]
@@ -15,6 +15,7 @@ Usage:
 import argparse
 import subprocess
 import sys
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -96,9 +97,12 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         ("rounds", "EVOLVE_ROUNDS", 10, "int"),
         ("timeout", "EVOLVE_TIMEOUT", 300, "int"),
         ("model", "EVOLVE_MODEL", "claude-opus-4-6", "str"),
-        ("yolo", "EVOLVE_YOLO", False, "bool"),
+        ("allow_installs", "EVOLVE_ALLOW_INSTALLS", False, "bool"),
         ("spec", "EVOLVE_SPEC", None, "str"),
     ]
+
+    # Deprecated fallback: check old yolo config/env if new name not found
+    # (handled after the main loop)
 
     for name, env_var, default, ftype in fields:
         current = getattr(args, name, None)
@@ -149,6 +153,27 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         # Step 4: Apply default (only if not already set)
         if getattr(args, name, None) is None:
             setattr(args, name, default)
+
+    # Deprecated fallback: if allow_installs is still False, check old
+    # yolo config/env names and emit DeprecationWarning if found.
+    if not getattr(args, "allow_installs", False):
+        _yolo_env = os.environ.get("EVOLVE_YOLO", "")
+        if _yolo_env.lower() in ("1", "true", "yes"):
+            warnings.warn(
+                "EVOLVE_YOLO is deprecated, use EVOLVE_ALLOW_INSTALLS instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            args.allow_installs = True
+        elif "yolo" in file_config and file_config["yolo"]:
+            warnings.warn(
+                "'yolo' config key is deprecated, use 'allow_installs' instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            args.allow_installs = True
+        elif "allow_installs" in file_config and file_config["allow_installs"]:
+            args.allow_installs = True
 
     return args
 
@@ -219,7 +244,10 @@ def main():
     start_p.add_argument("project_dir", help="Path to the project to evolve")
     start_p.add_argument("--rounds", type=int, default=10, help="Max evolution rounds")
     start_p.add_argument("--check", default=None, help="Verification command (e.g. 'pytest', 'npm test', 'cargo test')")
-    start_p.add_argument("--yolo", action="store_true", help="Allow adding new packages/binaries")
+    start_p.add_argument("--allow-installs", action="store_true", dest="allow_installs",
+                         help="Allow adding new packages/binaries for [needs-package] items")
+    start_p.add_argument("--yolo", action="store_true", dest="_yolo_deprecated",
+                         help=argparse.SUPPRESS)  # deprecated alias
     start_p.add_argument("--timeout", type=int, default=300, help="Timeout per check command in seconds (default: 300)")
     start_p.add_argument("--model", default=None, help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
     start_p.add_argument("--resume", action="store_true", help="Resume the most recent interrupted session")
@@ -253,6 +281,14 @@ def main():
 
     elif args.command == "start":
         project_path = Path(args.project_dir).resolve()
+        # Handle deprecated --yolo alias
+        if getattr(args, "_yolo_deprecated", False):
+            warnings.warn(
+                "--yolo is deprecated, use --allow-installs instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            args.allow_installs = True
         # Merge CLI flags with config file + env vars
         args = _resolve_config(args, project_path)
         # Enable JSON TUI mode if --json flag is set
@@ -291,7 +327,7 @@ def main():
                 project_dir=project_path,
                 max_rounds=args.rounds,
                 check_cmd=args.check,
-                yolo=args.yolo,
+                allow_installs=args.allow_installs,
                 timeout=args.timeout,
                 model=args.model,
                 resume=args.resume,
@@ -314,7 +350,7 @@ def main():
             project_dir=Path(args.project_dir).resolve(),
             round_num=args.round_num,
             check_cmd=args.check,
-            yolo=args.yolo,
+            allow_installs=args.allow_installs,
             timeout=args.timeout,
             run_dir=Path(args.run_dir) if args.run_dir else None,
             model=args.model,
@@ -328,7 +364,7 @@ def _parse_round_args():
     This is invoked by the orchestrator when it spawns a monitored subprocess
     for a single evolution round.  It expects ``sys.argv[2:]`` to contain the
     project directory and flags such as ``--round-num``, ``--check``,
-    ``--timeout``, ``--run-dir``, ``--yolo``, and ``--model``.
+    ``--timeout``, ``--run-dir``, ``--allow-installs``, and ``--model``.
 
     Returns:
         An ``argparse.Namespace`` with all round parameters plus
@@ -341,7 +377,8 @@ def _parse_round_args():
     p.add_argument("--check", default=None)
     p.add_argument("--timeout", type=int, default=300)
     p.add_argument("--run-dir", default=None)
-    p.add_argument("--yolo", action="store_true")
+    p.add_argument("--allow-installs", action="store_true", dest="allow_installs")
+    p.add_argument("--yolo", action="store_true", dest="allow_installs")  # deprecated alias
     p.add_argument("--model", default="claude-opus-4-6")
     p.add_argument("--spec", default=None)
     args = p.parse_args(sys.argv[2:])
@@ -357,7 +394,7 @@ check = ""
 rounds = 10
 timeout = 300
 model = "claude-opus-4-6"
-yolo = false
+allow_installs = false
 spec = "README.md"
 """
 

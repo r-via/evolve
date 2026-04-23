@@ -156,7 +156,7 @@ class RichTUI:
         """Show a message when all remaining improvements are blocked."""
         from rich.panel import Panel
         msg = (f"[yellow]ALL {blocked} remaining improvement(s) require new packages.[/yellow]\n"
-               f"Re-run with [bold]--yolo[/bold] to allow package installation.")
+               f"Re-run with [bold]--allow-installs[/bold] to allow package installation.")
         self.console.print(Panel(msg, title="[yellow]Blocked[/yellow]", border_style="yellow"))
 
     def check_result(self, label: str, cmd: str, passed: bool | None = None,
@@ -384,7 +384,7 @@ class PlainTUI:
 
     def blocked_message(self, blocked: int) -> None:
         print(f"  ALL {blocked} remaining improvement(s) require new packages.")
-        print(f"  Re-run with --yolo to allow package installation, or add new improvements.")
+        print(f"  Re-run with --allow-installs to allow package installation, or add new improvements.")
 
     def check_result(self, label: str, cmd: str, passed: bool | None = None,
                      timeout: bool = False) -> None:
@@ -564,7 +564,7 @@ class JsonTUI:
     def blocked_message(self, blocked: int) -> None:
         self._emit("blocked", blocked=blocked,
                     message=f"All {blocked} remaining improvement(s) require new packages. "
-                            "Re-run with --yolo to allow.")
+                            "Re-run with --allow-installs to allow.")
 
     def check_result(self, label: str, cmd: str, passed: bool | None = None,
                      timeout: bool = False) -> None:

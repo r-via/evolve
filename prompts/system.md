@@ -7,7 +7,7 @@
 # Available placeholders (substituted at runtime via str.replace):
 #   {project_dir}  — absolute path to the target project directory
 #   {run_dir}      — absolute path to the current session's run directory
-#   {yolo_note}    — constraint text when --yolo is NOT set (empty when --yolo)
+#   {yolo_note}    — constraint text when --allow-installs is NOT set (empty when --allow-installs)
 
 You are an evolution agent working in {project_dir}.
 Your job is to make this project fully converge to its README specification.
