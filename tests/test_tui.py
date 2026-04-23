@@ -117,6 +117,21 @@ class TestPlainTUIMethods:
         out = capsys.readouterr().out
         assert "budget" in out.lower() or "Budget" in out
 
+    def test_structural_change_required(self, capsys):
+        marker = {
+            "reason": "extracted git.py",
+            "verify": "python -m evolve --help",
+            "resume": "evolve start . --resume",
+            "round": "3",
+            "timestamp": "2026-04-23T21:00:00Z",
+        }
+        self.ui.structural_change_required(marker)
+        out = capsys.readouterr().out
+        assert "Structural Change" in out
+        assert "extracted git.py" in out
+        assert "python -m evolve --help" in out
+        assert "evolve start . --resume" in out
+
 
 class TestGetTUIJson:
     """Test that get_tui returns JsonTUI when _use_json is True."""
@@ -297,3 +312,19 @@ class TestJsonTUIMethods:
         assert obj["type"] == "budget_reached"
         assert obj["budget_usd"] == 10.0
         assert obj["spent_usd"] == 10.24
+
+    def test_structural_change_required(self, capsys):
+        marker = {
+            "reason": "extracted git.py",
+            "verify": "python -m evolve --help",
+            "resume": "evolve start . --resume",
+            "round": "3",
+            "timestamp": "2026-04-23T21:00:00Z",
+        }
+        self.ui.structural_change_required(marker)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "structural_change_required"
+        assert obj["reason"] == "extracted git.py"
+        assert obj["verify"] == "python -m evolve --help"
+        assert obj["resume"] == "evolve start . --resume"
+        assert obj["round"] == "3"

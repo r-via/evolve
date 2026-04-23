@@ -19,6 +19,7 @@ from loop import (
     _count_checked,
     _count_unchecked,
     _get_current_improvement,
+    _parse_restart_required,
     MAX_DEBUG_RETRIES,
     _MEMORY_COMPACTION_MARKER,
     _MEMORY_WIPE_THRESHOLD,
@@ -3180,3 +3181,237 @@ class TestBacklogStateJsonSchema:
         assert backlog["pending"] == 1
         assert backlog["done"] == 1
         assert backlog["added_this_round"] == 1  # B is new
+
+
+# ---------------------------------------------------------------------------
+# _parse_restart_required
+# ---------------------------------------------------------------------------
+
+class TestParseRestartRequired:
+    """Test _parse_restart_required marker file parsing."""
+
+    def test_returns_none_when_no_marker(self, tmp_path: Path):
+        assert _parse_restart_required(tmp_path) is None
+
+    def test_parses_valid_marker(self, tmp_path: Path):
+        (tmp_path / "RESTART_REQUIRED").write_text(
+            "# RESTART_REQUIRED\n"
+            "reason: extracted git.py from loop.py\n"
+            "verify: python -m evolve --help\n"
+            "resume: python -m evolve start . --resume\n"
+            "round: 5\n"
+            "timestamp: 2026-04-23T21:00:00Z\n"
+        )
+        marker = _parse_restart_required(tmp_path)
+        assert marker is not None
+        assert marker["reason"] == "extracted git.py from loop.py"
+        assert marker["verify"] == "python -m evolve --help"
+        assert marker["resume"] == "python -m evolve start . --resume"
+        assert marker["round"] == "5"
+        assert marker["timestamp"] == "2026-04-23T21:00:00Z"
+
+    def test_returns_none_when_reason_missing(self, tmp_path: Path):
+        (tmp_path / "RESTART_REQUIRED").write_text(
+            "# RESTART_REQUIRED\n"
+            "verify: python -m evolve --help\n"
+        )
+        assert _parse_restart_required(tmp_path) is None
+
+    def test_ignores_comments_and_blanks(self, tmp_path: Path):
+        (tmp_path / "RESTART_REQUIRED").write_text(
+            "# RESTART_REQUIRED\n"
+            "# This is a comment\n"
+            "\n"
+            "reason: test reason\n"
+        )
+        marker = _parse_restart_required(tmp_path)
+        assert marker is not None
+        assert marker["reason"] == "test reason"
+
+    def test_handles_colons_in_value(self, tmp_path: Path):
+        (tmp_path / "RESTART_REQUIRED").write_text(
+            "reason: value with: colons: in it\n"
+        )
+        marker = _parse_restart_required(tmp_path)
+        assert marker is not None
+        assert marker["reason"] == "value with: colons: in it"
+
+
+# ---------------------------------------------------------------------------
+# _run_rounds — RESTART_REQUIRED handling (exit code 3)
+# ---------------------------------------------------------------------------
+
+class TestRunRoundsRestartRequired:
+    """Test _run_rounds exits 3 when RESTART_REQUIRED is written."""
+
+    def setup_method(self):
+        self.ui = MagicMock()
+
+    def _setup_project(self, tmp_path):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        run_dir = project_dir / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        imp_path = project_dir / "runs" / "improvements.md"
+        imp_path.write_text("- [ ] [functional] do something\n")
+        return project_dir, run_dir, imp_path
+
+    def test_restart_required_exits_3(self, tmp_path: Path):
+        """When RESTART_REQUIRED is written by the agent, exit code is 3."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            (run_dir / "COMMIT_MSG").write_text("STRUCTURAL: feat(git): extract git.py")
+            (run_dir / "RESTART_REQUIRED").write_text(
+                "# RESTART_REQUIRED\n"
+                "reason: extracted git.py from loop.py\n"
+                "verify: python -m evolve --help\n"
+                "resume: python -m evolve start . --resume\n"
+                "round: 1\n"
+                "timestamp: 2026-04-23T21:00:00Z\n"
+            )
+            # Mark progress so zero-progress doesn't fire
+            imp_path.write_text("- [x] [functional] do something\n")
+            return 0, "output", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=10, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 3
+
+    def test_restart_required_renders_panel(self, tmp_path: Path):
+        """structural_change_required is called on the UI."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            (run_dir / "COMMIT_MSG").write_text("STRUCTURAL: test")
+            (run_dir / "RESTART_REQUIRED").write_text(
+                "reason: test reason\n"
+                "verify: pytest\n"
+                "resume: evolve start . --resume\n"
+                "round: 1\n"
+                "timestamp: 2026-04-23T21:00:00Z\n"
+            )
+            imp_path.write_text("- [x] [functional] do something\n")
+            return 0, "output", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit):
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=10, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+        ui.structural_change_required.assert_called_once()
+        marker_arg = ui.structural_change_required.call_args[0][0]
+        assert marker_arg["reason"] == "test reason"
+
+    def test_restart_required_fires_hook(self, tmp_path: Path):
+        """on_structural_change hook is fired with marker env vars."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            (run_dir / "COMMIT_MSG").write_text("STRUCTURAL: test")
+            (run_dir / "RESTART_REQUIRED").write_text(
+                "reason: moved hooks.py\n"
+                "verify: python -m evolve --help\n"
+                "resume: evolve start . --resume\n"
+                "round: 2\n"
+                "timestamp: 2026-04-23T22:00:00Z\n"
+            )
+            imp_path.write_text("- [x] [functional] do something\n")
+            return 0, "output", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop.fire_hook") as mock_fire_hook, \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=10, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 3
+        # Find the on_structural_change call among all fire_hook calls
+        structural_calls = [
+            c for c in mock_fire_hook.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "on_structural_change"
+        ]
+        assert len(structural_calls) == 1
+        call_kwargs = structural_calls[0].kwargs
+        assert call_kwargs["status"] == "structural_change"
+        extra = call_kwargs["extra_env"]
+        assert extra["EVOLVE_STRUCTURAL_REASON"] == "moved hooks.py"
+        assert extra["EVOLVE_STRUCTURAL_VERIFY"] == "python -m evolve --help"
+        assert extra["EVOLVE_STRUCTURAL_ROUND"] == "2"
+
+    def test_forever_mode_does_not_bypass(self, tmp_path: Path):
+        """--forever does NOT bypass structural change — still exits 3."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            (run_dir / "COMMIT_MSG").write_text("STRUCTURAL: test")
+            (run_dir / "RESTART_REQUIRED").write_text(
+                "reason: structural change\n"
+                "verify: pytest\n"
+                "resume: evolve start . --resume\n"
+                "round: 1\n"
+                "timestamp: 2026-04-23T21:00:00Z\n"
+            )
+            imp_path.write_text("- [x] [functional] do something\n")
+            return 0, "output", False
+
+        # The forever flag is handled by evolve_loop, not _run_rounds.
+        # _run_rounds always calls sys.exit(3) on RESTART_REQUIRED.
+        # This verifies _run_rounds does NOT skip the exit.
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=10, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 3
+
+    def test_no_restart_required_continues_normally(self, tmp_path: Path):
+        """Without RESTART_REQUIRED, convergence works normally (exit 0)."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            (run_dir / "CONVERGED").write_text("All done")
+            imp_path.write_text("- [x] [functional] do something\n")
+            return 0, "output", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=10, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 0
+        ui.structural_change_required.assert_not_called()

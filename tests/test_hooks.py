@@ -499,3 +499,54 @@ class TestFireHookEnvVarAccess:
         )
         assert result is True
         assert out_file.read_text().strip() == "err_session:3:crash"
+
+
+# ---------------------------------------------------------------------------
+# fire_hook — extra_env parameter
+# ---------------------------------------------------------------------------
+
+class TestFireHookExtraEnv:
+    """Test extra_env parameter passes additional env vars to hook."""
+
+    def test_extra_env_passed_to_subprocess(self):
+        hooks = {"on_structural_change": "echo test"}
+        with patch("evolve.hooks.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            fire_hook(
+                hooks, "on_structural_change",
+                session="s", round_num=1, status="structural_change",
+                extra_env={"EVOLVE_STRUCTURAL_REASON": "moved hooks.py"},
+            )
+        env = mock_run.call_args[1]["env"]
+        assert env["EVOLVE_STRUCTURAL_REASON"] == "moved hooks.py"
+        assert env["EVOLVE_SESSION"] == "s"
+
+    def test_extra_env_none_is_noop(self):
+        hooks = {"on_round_end": "echo test"}
+        with patch("evolve.hooks.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            fire_hook(hooks, "on_round_end", extra_env=None)
+        env = mock_run.call_args[1]["env"]
+        assert "EVOLVE_STRUCTURAL_REASON" not in env
+
+    def test_extra_env_with_structural_marker_fields(self, tmp_path):
+        """Real subprocess reads EVOLVE_STRUCTURAL_* env vars."""
+        out_file = tmp_path / "structural.txt"
+        hooks = {
+            "on_structural_change": (
+                f"echo $EVOLVE_STRUCTURAL_REASON:$EVOLVE_STRUCTURAL_ROUND > {out_file}"
+            ),
+        }
+        result = fire_hook(
+            hooks, "on_structural_change",
+            session="s", round_num=5, status="structural_change",
+            extra_env={
+                "EVOLVE_STRUCTURAL_REASON": "extracted git.py",
+                "EVOLVE_STRUCTURAL_VERIFY": "pytest",
+                "EVOLVE_STRUCTURAL_RESUME": "evolve start . --resume",
+                "EVOLVE_STRUCTURAL_ROUND": "5",
+                "EVOLVE_STRUCTURAL_TIMESTAMP": "2026-04-23T21:00:00Z",
+            },
+        )
+        assert result is True
+        assert out_file.read_text().strip() == "extracted git.py:5"
