@@ -873,7 +873,7 @@ class TestForeverRestartInRunRounds:
             )
 
         # _forever_restart should have been called
-        mock_restart.assert_called_once_with(project_dir, run_dir, imp_path, ui)
+        mock_restart.assert_called_once_with(project_dir, run_dir, imp_path, ui, spec=None)
         # _git_commit called for the forever restart
         mock_commit.assert_called_once()
         assert "forever mode" in mock_commit.call_args[0][1]

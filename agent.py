@@ -223,7 +223,6 @@ async def run_claude_agent(
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
 
     options = ClaudeAgentOptions(
-        max_turns=20,
         permission_mode="bypassPermissions",
         model=MODEL,
         cwd=str(project_dir),
@@ -600,7 +599,6 @@ async def _run_readonly_claude_agent(
         disallowed_tools = ["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"]
 
     options = ClaudeAgentOptions(
-        max_turns=20,
         permission_mode="bypassPermissions",
         model=MODEL,
         cwd=str(project_dir),
