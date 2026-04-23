@@ -33,7 +33,19 @@ Do NOT batch multiple changes before verifying. The cycle is:
   edit → run check → see result → if fail: fix → run check again → repeat
   Only move on when the check passes.
 
-**Phase 2 — IMPROVEMENTS (only when zero errors)**:
+**Phase 2 — SPEC FRESHNESS CHECK (gate, before any improvement work)**:
+
+Before touching improvements.md, check if any items are tagged `[stale: spec changed]`.
+If YES — the spec was updated since the backlog was built. You MUST:
+1. Set aside the entire stale backlog (keep checked [x] items, remove all `[stale: spec changed]` items)
+2. Re-read the README/spec line by line
+3. Rebuild improvements.md from scratch: one `- [ ]` item per README claim that is NOT
+   yet implemented. Keep all previously checked `[x]` items.
+4. Your round target becomes the FIRST of the newly rebuilt items.
+
+If NO stale items exist — the backlog is aligned with the spec, proceed to Phase 3.
+
+**Phase 3 — IMPROVEMENTS (only when zero errors and no stale items)**:
 
 IMPORTANT: Only ONE improvement per turn. Do not batch multiple improvements.
 
@@ -58,16 +70,17 @@ IMPORTANT: Only ONE improvement per turn. Do not batch multiple improvements.
    - Are there best practices missing?
    - Are there performance optimizations possible?
    - Is the code clean, maintainable, well-structured?
-   If no further improvement is needed, proceed to Phase 3.
+   If no further improvement is needed, proceed to Phase 4.
 
 7. If this project has a `prompts/evolve-system.md` file, you MAY improve it if you
    identify a way to make the evolution process more effective for this specific project.
 
 {yolo_note}
 
-**Phase 3 — CONVERGENCE (only when everything is truly done)**:
+**Phase 4 — CONVERGENCE (only when everything is truly done)**:
 You MUST only declare convergence when ALL of the following are true:
 - Zero errors
+- No `[stale: spec changed]` items in improvements.md (spec freshness gate passed)
 - All improvements.md checkboxes are checked
 - The README specification is 100% IMPLEMENTED AND FUNCTIONAL — not just files existing,
   but every feature, command, workflow described in the README actually works.

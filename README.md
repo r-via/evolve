@@ -461,6 +461,10 @@ triggers the debug retry loop) when **any** of the following holds:
 - The subprocess exits non-zero (crash)
 - The watchdog fires (120s silence)
 - The check command regressed (was passing, now failing)
+- The agent hit the Claude Agent SDK `max_turns` cap without finishing the
+  improvement — the cap is an intentional granularity forcing function
+  (see below), so hitting it is a signal the target was too large, not that
+  the cap needs raising
 - The agent committed **without** writing a `COMMIT_MSG` file — the orchestrator
   falls back to `chore(evolve): round N`, which is the tell-tale sign the agent
   ran out of turn budget before finishing its work
@@ -468,7 +472,7 @@ triggers the debug retry loop) when **any** of the following holds:
   `improvements.md` — the round ended with `improvements.md` byte-identical to
   its pre-round state
 
-The last two conditions matter because they catch the failure mode where the
+The last three conditions matter because they catch the failure mode where the
 agent spends its entire turn budget on reconnaissance (Reads, Greps) and is
 killed before writing any Edit/Write. The subprocess exits 0, the check still
 passes (nothing changed), but no real work happened — previously this would
@@ -476,14 +480,17 @@ silently burn rounds until `max_rounds`. The debug retry now kicks in, and the
 agent receives a "CRITICAL — Previous round made NO PROGRESS" header
 instructing it to start with Edit/Write immediately and defer exploration.
 
-**No per-turn cap.** The Claude Agent SDK's `max_turns` parameter is **not set**
-when invoking the agent, so a round can run as many tool calls as it needs to
-finish the improvement. The watchdog (stall detection on 120s of silence) and
-the round-level timeout are the only bounds on agent runtime — an explicit
-`max_turns` was removed after it caused rounds to be killed mid-work on large
-targets, producing the silent no-progress loops described above. If a target is
-so big that a round runs for hours, that is a signal to split the improvement,
-not to re-introduce a turn cap.
+**Per-turn cap as a granularity forcing function.** The Claude Agent SDK's
+`max_turns` parameter is set to a deliberately modest value (currently `40`,
+see [agent.py:216](agent.py#L216) and [agent.py:587](agent.py#L587)). This is
+not primarily a safety bound — the 120s watchdog plays that role — but a
+forcing function that makes evolve's core concept ("one granular improvement
+per round") observable. An item that does not fit in 40 turns is a signal the
+item is too large and should be split; hitting the cap is therefore *expected*
+behavior for oversized targets, and it feeds directly into the zero-progress
+detection above, which triggers the debug retry with an instruction to split
+before retrying. Raising the cap to mask the signal would mask the granularity
+violation instead of fixing it.
 
 **Agent-side self-monitoring.** On top of the orchestrator's zero-progress
 detection, the agent itself inspects the last two rounds' conversation logs

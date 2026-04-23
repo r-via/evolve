@@ -74,6 +74,57 @@ def _auto_detect_check(project_dir: Path) -> str | None:
     return None
 
 
+def _check_spec_freshness(
+    project_dir: Path,
+    improvements_path: Path,
+    spec: str | None = None,
+) -> bool:
+    """Check if the spec file is newer than improvements.md (spec freshness gate).
+
+    Compares ``mtime(spec_file)`` vs ``mtime(improvements.md)``.  If the spec
+    is newer, the backlog is stale — all unchecked items are marked with
+    ``[stale: spec changed]`` so the agent knows to rebuild ``improvements.md``
+    from the updated spec.
+
+    Args:
+        project_dir: Root directory of the project.
+        improvements_path: Path to the improvements.md file.
+        spec: Path to the spec file relative to project_dir (default: README.md).
+
+    Returns:
+        True if improvements.md is fresh (its mtime >= spec mtime), False if
+        the spec is newer and the backlog was marked stale.
+    """
+    spec_file = spec or "README.md"
+    spec_path = project_dir / spec_file
+
+    if not spec_path.is_file():
+        return True  # No spec file — nothing to gate on
+
+    if not improvements_path.is_file():
+        return True  # No backlog yet — agent will create it fresh
+
+    spec_mtime = spec_path.stat().st_mtime
+    imp_mtime = improvements_path.stat().st_mtime
+
+    if imp_mtime >= spec_mtime:
+        return True  # Backlog is aligned with spec
+
+    # Spec is newer — mark all unchecked items as stale
+    text = improvements_path.read_text()
+    lines = text.splitlines()
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"^- \[ \]", stripped) and "[stale: spec changed]" not in stripped:
+            # Insert [stale: spec changed] after the checkbox
+            line = line.replace("- [ ] ", "- [ ] [stale: spec changed] ", 1)
+        new_lines.append(line)
+
+    improvements_path.write_text("\n".join(new_lines))
+    return False
+
+
 def _count_checked(path: Path) -> int:
     """Count the number of completed improvements in an improvements.md file.
 
@@ -715,6 +766,13 @@ def _run_rounds(
     print(f"[probe] _run_rounds starting from round {start_round} to {max_rounds}")
     while True:
         for round_num in range(start_round, max_rounds + 1):
+            # Phase 2 — Spec freshness gate: if spec is newer than
+            # improvements.md, mark unchecked items as stale so the agent
+            # rebuilds the backlog from the updated spec.
+            spec_fresh = _check_spec_freshness(project_dir, improvements_path, spec=spec)
+            if not spec_fresh:
+                print(f"[probe] spec freshness gate: spec is newer than improvements.md — backlog marked stale")
+
             current = _get_current_improvement(improvements_path, yolo=yolo)
             checked = _count_checked(improvements_path)
             unchecked = _count_unchecked(improvements_path)
@@ -863,8 +921,18 @@ def _run_rounds(
             if error_log.is_file():
                 error_log.unlink()
 
-            # Check convergence
+            # Check convergence — requires spec freshness gate
+            # (mtime(improvements.md) >= mtime(spec)) AND CONVERGED file
             converged_path = run_dir / "CONVERGED"
+            if converged_path.is_file():
+                # Verify spec freshness gate — don't mark stale again,
+                # just check the mtime relationship
+                spec_file = spec or "README.md"
+                spec_path = project_dir / spec_file
+                if spec_path.is_file() and improvements_path.is_file():
+                    if spec_path.stat().st_mtime > improvements_path.stat().st_mtime:
+                        print("[probe] convergence rejected: spec is newer than improvements.md — removing CONVERGED marker")
+                        converged_path.unlink()
             if converged_path.is_file():
                 reason = converged_path.read_text().strip()
                 print(f"[probe] CONVERGED at round {round_num}: {reason[:80]}")
