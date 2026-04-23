@@ -26,6 +26,10 @@ substitution-site-unique markers over substrings shared with surrounding docs.
 top-level). Read-back in `_compute_readme_sync` from prior state. Internal
 field — SPEC schema shows only 4 documented keys but persistence needs 5th.
 
+### Mechanism C: first-warn round off-by-one — round 3 of 20260423_142834
+threshold `> 3` strict — drift-starts-at-R1 → first warn R5 (rss=4), not R4
+(rss=3). Round N since=1 → rss = N-1. Easy test misread.
+
 ## Patterns
 
 ## Insights
