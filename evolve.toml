@@ -4,7 +4,7 @@
 check = "pytest"
 rounds = 10
 timeout = 300
-model = "claude-opus-4-7"
+model = "claude-opus-4-6"
 allow_installs = true
 
 # Evolve converges to SPEC.md, not README.md.
