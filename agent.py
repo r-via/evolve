@@ -48,6 +48,45 @@ def _detect_current_attempt(run_dir: Path | None, round_num: int) -> int:
 MODEL = "claude-opus-4-6"
 
 
+# Prompt section emitted on a debug retry to hand the agent the previous
+# attempt's full conversation log — SPEC.md § "Retry continuity" rule (2).
+# Kept as a module-level format constant so the single call site in
+# ``build_prompt`` and any future test / helper share the same wording.
+# Format placeholders: ``{current}`` (current attempt number, int),
+# ``{round}`` (round number, int), ``{prior}`` (prior attempt number, int),
+# ``{log_path}`` (absolute path to the prior attempt's log file).
+_PREV_ATTEMPT_LOG_FMT = (
+    "\n## Previous attempt log\n"
+    "This is attempt {current} of round {round}. "
+    "The full conversation log of attempt {prior} is at:\n\n"
+    "  {log_path}\n\n"
+    "**Read this file FIRST.** It contains everything the previous "
+    "attempt already discovered — the tool calls, the dead ends, the "
+    "working hypotheses. Do not redo that investigation. Continue "
+    "from where it stopped.\n"
+)
+
+
+# Diagnostic section emitted to the agent when the orchestrator detects a
+# >50% memory.md shrink without the ``memory: compaction`` marker in the
+# commit message — SPEC.md § "Byte-size sanity gate".  Kept as a
+# module-level format constant so the header wording cannot silently drift
+# between the prompt builder, the orchestrator's detection path
+# (``loop._MEMORY_COMPACTION_MARKER`` / ``_MEMORY_WIPE_THRESHOLD``), and
+# any future test / helper.  Single format placeholder: ``{diagnostic}``
+# (the raw diagnostic text from ``subprocess_error_round_N.txt``).
+_MEMORY_WIPED_HEADER_FMT = (
+    "\n## CRITICAL — Previous round silently wiped memory.md\n"
+    "The previous round shrank memory.md by more than 50% "
+    "without declaring `memory: compaction` in its commit "
+    "message. Memory is append-only below ~500 lines; "
+    "compaction requires the explicit COMMIT_MSG marker. "
+    "Do NOT repeat this — preserve existing entries and "
+    "append, do not rewrite or wipe sections.\n"
+    "```\n{diagnostic}\n```\n"
+)
+
+
 def _load_project_context(project_dir: Path, spec: str | None = None) -> dict[str, str]:
     """Load shared project context: spec file (README) and improvements.
 
@@ -220,20 +259,11 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     readme_section = f"## README (specification)\n{readme}" if readme else "## README\n(no README found)"
     improvements_section = f"## runs/improvements.md (current state)\n{improvements}" if improvements else "## runs/improvements.md\n(does not exist yet — you must create it)"
     target_section = f"Current target improvement: {current}" if current else "No improvements yet — create initial runs/improvements.md based on your analysis."
-    memory_section = f"\n## Memory (errors from previous rounds — do NOT repeat these)\n{memory}\n" if memory else ""
+    memory_section = f"\n## Memory (cumulative learning log — read, then append during your turn)\n{memory}\n" if memory else ""
     prev_check_section = f"\n## Previous round check results\n{prev_check}\n" if prev_check else ""
     if prev_crash:
         if "MEMORY WIPED" in prev_crash:
-            prev_crash_section = (
-                f"\n## CRITICAL — Previous round silently wiped memory.md\n"
-                f"The previous round shrank memory.md by more than 50% "
-                f"without declaring `memory: compaction` in its commit "
-                f"message. Memory is append-only below ~500 lines; "
-                f"compaction requires the explicit COMMIT_MSG marker. "
-                f"Do NOT repeat this — preserve existing entries and "
-                f"append, do not rewrite or wipe sections.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
+            prev_crash_section = _MEMORY_WIPED_HEADER_FMT.format(diagnostic=prev_crash)
         elif "BACKLOG VIOLATION" in prev_crash:
             # Backlog discipline rule 1 (empty-queue gate) — see SPEC.md §
             # "Backlog discipline".  The previous attempt added a new `- [ ]`
@@ -277,15 +307,11 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
         prior_k = current_attempt - 1
         prior_log = Path(run_dir) / f"conversation_loop_{round_num}_attempt_{prior_k}.md"
         if prior_log.is_file():
-            prev_attempt_section = (
-                f"\n## Previous attempt log\n"
-                f"This is attempt {current_attempt} of round {round_num}. "
-                f"The full conversation log of attempt {prior_k} is at:\n\n"
-                f"  {prior_log}\n\n"
-                f"**Read this file FIRST.** It contains everything the previous "
-                f"attempt already discovered — the tool calls, the dead ends, the "
-                f"working hypotheses. Do not redo that investigation. Continue "
-                f"from where it stopped.\n"
+            prev_attempt_section = _PREV_ATTEMPT_LOG_FMT.format(
+                current=current_attempt,
+                round=round_num,
+                prior=prior_k,
+                log_path=prior_log,
             )
 
     check_section = ""

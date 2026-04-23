@@ -13,6 +13,19 @@ from typing import Protocol, runtime_checkable
 _log = logging.getLogger(__name__)
 
 
+# Warning emitted when ``capture_frames`` is enabled but the optional
+# ``cairosvg`` dependency (from the ``[vision]`` extra) is not installed.
+# Kept as a module-level constant so the startup-time availability check in
+# :class:`RichTUI.__init__` and the runtime fallback in
+# :meth:`RichTUI.capture_frame` emit the same text — see SPEC.md § "Frame
+# capture" § Dependencies.  Any future wording change lands in one place.
+_CAIROSVG_MISSING_WARN = (
+    "capture_frames is enabled but cairosvg is not installed. "
+    "Install with: pip install 'evolve[vision]'. "
+    "Frame capture will be a no-op until cairosvg is available."
+)
+
+
 @runtime_checkable
 class TUIProtocol(Protocol):
     """Protocol enforcing method parity between RichTUI and PlainTUI.
@@ -139,11 +152,7 @@ class RichTUI:
             try:
                 import cairosvg  # type: ignore[import-untyped]  # noqa: F401
             except ImportError:
-                _log.warning(
-                    "capture_frames is enabled but cairosvg is not installed. "
-                    "Install with: pip install 'evolve[vision]'. "
-                    "Frame capture will be a no-op until cairosvg is available."
-                )
+                _log.warning(_CAIROSVG_MISSING_WARN)
                 self._cairosvg_warned = True
 
     def round_header(self, round_num: int, max_rounds: int,
@@ -406,11 +415,7 @@ class RichTUI:
             import cairosvg  # type: ignore[import-untyped]
         except ImportError:
             if not self._cairosvg_warned:
-                _log.warning(
-                    "capture_frames is enabled but cairosvg is not installed. "
-                    "Install with: pip install 'evolve[vision]'. "
-                    "Frame capture is a no-op without it."
-                )
+                _log.warning(_CAIROSVG_MISSING_WARN)
                 self._cairosvg_warned = True
             # Clean up the SVG since we can't convert it
             svg_path.unlink(missing_ok=True)

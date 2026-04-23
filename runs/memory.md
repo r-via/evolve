@@ -82,3 +82,6 @@ SPEC § "Growth monitoring" documents `state.backlog.{pending,done,blocked,added
 
 ### Rules 2-4 are prompt-only — tests assert text, not behavior — round 16 of 20260423_142834
 Rule 1 = orchestrator code (`_detect_backlog_violation`). Rules 2-4 = system prompt directives only. Tests grep `prompts/system.md` AND the `build_prompt()` output for rule labels + key directives (`"extend the existing item"`, `[P1/P2/P3]` + `TOP/middle/BOTTOM`, `last 3`/`conversation_loop_`). Must collapse whitespace before substring match — rule 2 phrase wraps across a line break in source.
+
+### Constant-drift test: `count <= 1` heuristic — round 19 of 20260423_142834
+Drift-catch via `src.count("literal") <= 1` — allow 1 (the constant definition itself), fail on 2+. Simpler than AST-walk + survives future docstring quotes of same literal provided they're spelled differently. Picked distinctive substrings (`"README drift:"`, `## Previous attempt log`, `silently wiped memory.md`, `capture_frames is enabled but cairosvg`) — NOT whole-sentence match, which would false-positive on SPEC.md-style prose.

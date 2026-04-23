@@ -1176,6 +1176,17 @@ WATCHDOG_TIMEOUT = 120
 _MEMORY_COMPACTION_MARKER = "memory: compaction"
 _MEMORY_WIPE_THRESHOLD = 0.5
 
+# README drift warning template — Mechanism C.  SPEC.md § "README sync
+# discipline" § "Mechanism C" documents the exact prose the TUI must emit.
+# Kept as a module-level constant so the single call site in _run_rounds
+# and any future test / integration helper reference the same literal.
+# Format placeholders: ``{spec}`` (spec-file label, e.g. ``SPEC.md``) and
+# ``{rounds}`` (int, rounds since the spec was touched without a
+# corresponding README update).
+_README_DRIFT_WARN_FMT = (
+    "README drift: {spec} touched {rounds} rounds ago, README.md unchanged"
+)
+
 # Backlog discipline rule 1 (empty-queue gate) constants — keep the runtime
 # check aligned with SPEC.md § "Backlog discipline".  The agent is forbidden
 # from adding a new `- [ ]` item while any other `- [ ]` item already exists
@@ -1696,11 +1707,10 @@ def _run_rounds(
             readme_sync = _compute_readme_sync(project_dir, run_dir, round_num, spec)
             if readme_sync and readme_sync.get("stale") and readme_sync.get("rounds_since_stale", 0) > 3:
                 spec_label = spec or "SPEC.md"
-                ui.warn(
-                    f"README drift: {spec_label} touched "
-                    f"{readme_sync['rounds_since_stale']} rounds ago, "
-                    f"README.md unchanged"
-                )
+                ui.warn(_README_DRIFT_WARN_FMT.format(
+                    spec=spec_label,
+                    rounds=readme_sync["rounds_since_stale"],
+                ))
 
             # Update state.json after every round
             _write_state_json(
