@@ -212,6 +212,70 @@ class TestRichTUICaptureFrame:
 
 
 # ---------------------------------------------------------------------------
+# RichTUI startup-time cairosvg availability check
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not _has_rich(), reason="rich not installed")
+class TestRichTUIStartupCairosvgWarning:
+    """Verify the startup-time cairosvg availability check in RichTUI.__init__.
+
+    SPEC.md § "Frame capture" Dependencies paragraph requires that when the
+    [vision] extra is missing, evolve logs a one-line warning *at startup*
+    rather than deferring it to the first capture_frame() call. The warning
+    must NOT fire when capture_frames=False or when cairosvg IS importable.
+    """
+
+    def test_warns_at_startup_when_cairosvg_missing(self, tmp_path, caplog):
+        """capture_frames=True + cairosvg missing → single startup warning."""
+        from tui import RichTUI
+
+        # Force cairosvg import to fail by stubbing sys.modules with None
+        # BEFORE constructing RichTUI (the check happens in __init__).
+        with patch.dict("sys.modules", {"cairosvg": None}):
+            with caplog.at_level(logging.WARNING, logger="tui"):
+                ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
+
+        # Assert the documented warning fired at construction time
+        warnings = [r for r in caplog.records if "cairosvg" in r.message.lower()]
+        assert len(warnings) >= 1, "expected startup warning when cairosvg missing"
+        # The warning should mention the [vision] extra so users know how to fix it
+        assert any("vision" in r.message.lower() for r in warnings), \
+            "warning must mention the [vision] extra for actionable guidance"
+        # The startup-time check should mark _cairosvg_warned so subsequent
+        # capture_frame() calls don't double-log.
+        assert ui._cairosvg_warned is True
+
+    def test_no_warning_when_capture_frames_false(self, tmp_path, caplog):
+        """capture_frames=False → no warning even if cairosvg is unimportable."""
+        from tui import RichTUI
+
+        with patch.dict("sys.modules", {"cairosvg": None}):
+            with caplog.at_level(logging.WARNING, logger="tui"):
+                ui = RichTUI(run_dir=str(tmp_path), capture_frames=False)
+
+        warnings = [r for r in caplog.records if "cairosvg" in r.message.lower()]
+        assert warnings == [], \
+            "no warning should fire when capture_frames=False (feature disabled)"
+        assert ui._cairosvg_warned is False
+
+    def test_no_warning_when_cairosvg_importable(self, tmp_path, caplog):
+        """capture_frames=True + cairosvg importable → no startup warning."""
+        from tui import RichTUI
+
+        # Inject a fake importable cairosvg module into sys.modules so the
+        # `import cairosvg` inside __init__ succeeds without the real package.
+        fake_cairosvg = MagicMock()
+        with patch.dict("sys.modules", {"cairosvg": fake_cairosvg}):
+            with caplog.at_level(logging.WARNING, logger="tui"):
+                ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
+
+        warnings = [r for r in caplog.records if "cairosvg" in r.message.lower()]
+        assert warnings == [], \
+            "no warning should fire when cairosvg is importable"
+        assert ui._cairosvg_warned is False
+
+
+# ---------------------------------------------------------------------------
 # _run_party_mode frame attachment
 # ---------------------------------------------------------------------------
 

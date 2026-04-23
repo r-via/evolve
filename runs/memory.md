@@ -58,3 +58,6 @@ zero-progress. Rule: reminder = reflexive heuristic, not malware finding.
 mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). Also patch `agent._is_benign_runtime_error=False` + `agent._should_retry_rate_limit=None` + pre-create `agents/*.md` persona file, else `_run_party_mode` short-circuits before prompt building.
 
 ## Insights
+
+### Startup-vs-runtime cairosvg check: patch ordering — round 8 of 20260423_142834
+`RichTUI.__init__` runs `import cairosvg` once → must `patch.dict("sys.modules", {"cairosvg": None})` BEFORE construction. Existing tests patched after → only covered runtime fallback in `capture_frame()`. Same trap for any startup-time optional-dep guard.
