@@ -49,7 +49,7 @@ python evolve.py start ~/projects/my-tool --check "pytest"
 evolve init <project-dir>
 
 # Evolve a project (README = spec)
-evolve start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo] [--json]
+evolve start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo] [--json] [--spec SPEC.md]
 
 # Preview what the agent would do (read-only, no file changes)
 evolve start <project-dir> --dry-run [--check "pytest"]
@@ -109,6 +109,10 @@ evolve start ~/projects/my-tool --check "pytest" --forever
 # JSON output for CI/CD pipelines
 evolve start ~/projects/my-tool --check "pytest" --json
 
+# Use a custom spec file instead of README.md
+evolve start ~/projects/my-tool --check "pytest" --spec SPEC.md
+evolve start ~/projects/my-tool --check "pytest" --spec docs/specification.md
+
 # Initialize a config file with sensible defaults
 evolve init ~/projects/my-tool
 
@@ -135,6 +139,7 @@ rounds = 20
 timeout = 300
 model = "claude-opus-4-6"
 yolo = false
+spec = "README.md"  # path to the spec file (default: README.md)
 
 # Event hooks — shell commands executed on lifecycle events
 [hooks]
@@ -476,6 +481,40 @@ Can also be set via the `EVOLVE_MODEL` environment variable (CLI flag takes prec
 export EVOLVE_MODEL=claude-sonnet-4-20250514
 evolve start ~/projects/my-tool --check "pytest"
 ```
+
+### The --spec flag
+
+By default, evolve treats `README.md` as the project specification. Use `--spec` to
+point at a different file if your project uses a different convention (e.g. `SPEC.md`,
+`docs/specification.md`, `CLAIMS.md`).
+
+```bash
+# Use a custom spec filename at the project root
+evolve start ~/projects/my-tool --check "pytest" --spec SPEC.md
+
+# Use a spec file nested in a subdirectory
+evolve start ~/projects/my-tool --check "pytest" --spec docs/specification.md
+```
+
+The path is resolved relative to the project directory. The chosen file takes the
+exact role that `README.md` normally plays:
+
+- It is the source of truth the agent converges to
+- Every claim in it is verified during `--validate`
+- In `--forever` mode, party mode produces a `<spec>_proposal.md` next to it and
+  replaces it at the start of the next cycle
+
+Can also be set via `evolve.toml`:
+
+```toml
+spec = "SPEC.md"
+```
+
+Or via the `EVOLVE_SPEC` environment variable. Resolution order is the same as
+every other setting (CLI → env → `evolve.toml` → `pyproject.toml` → default).
+
+If the specified file does not exist, evolve exits with code 2 and a clear error
+message — it does not fall back to `README.md`.
 
 ### The --dry-run flag
 
