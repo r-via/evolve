@@ -19,6 +19,7 @@ from loop import (
     _audit_readme_sync,
     _auto_detect_check,
     _extract_spec_claims,
+    _generate_evolution_report,
     _get_current_improvement,
     _git_show_at,
     evolve_loop,
@@ -347,3 +348,434 @@ class TestCheckOutputStderr:
 
         assert "stderr:" in captured["check_output"]
         assert "validation broke" in captured["check_output"]
+
+
+# ---------------------------------------------------------------------------
+# _generate_evolution_report — visual timeline section (lines 1023-1034)
+# ---------------------------------------------------------------------------
+
+class TestGenerateEvolutionReportVisualTimeline:
+    def test_visual_timeline_included_when_frames_exist(self, tmp_path: Path):
+        """Visual timeline appears when capture_frames=True and frames/ has PNGs."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        run_dir = runs_dir / "20260101_120000"
+        run_dir.mkdir()
+        (runs_dir / "improvements.md").write_text("# Improvements\n- [x] done\n")
+
+        # Create frames directory with PNG files
+        frames_dir = run_dir / "frames"
+        frames_dir.mkdir()
+        (frames_dir / "round_1_end.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (frames_dir / "converged.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(
+                project_dir, run_dir, max_rounds=10, final_round=1,
+                converged=True, capture_frames=True,
+            )
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "## Visual timeline" in report
+        assert "![Round 1 End](frames/round_1_end.png)" in report
+        assert "![Converged](frames/converged.png)" in report
+
+    def test_visual_timeline_skipped_when_frames_dir_missing(self, tmp_path: Path):
+        """Visual timeline NOT emitted when capture_frames=True but no frames/."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        run_dir = runs_dir / "20260101_120000"
+        run_dir.mkdir()
+        (runs_dir / "improvements.md").write_text("# Improvements\n- [x] done\n")
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(
+                project_dir, run_dir, max_rounds=10, final_round=1,
+                converged=True, capture_frames=True,
+            )
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "## Visual timeline" not in report
+
+    def test_visual_timeline_skipped_when_frames_dir_empty(self, tmp_path: Path):
+        """Visual timeline NOT emitted when frames/ is empty (no .png)."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir()
+        run_dir = runs_dir / "20260101_120000"
+        run_dir.mkdir()
+        (runs_dir / "improvements.md").write_text("# Improvements\n- [x] done\n")
+        (run_dir / "frames").mkdir()  # empty dir
+
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(
+                project_dir, run_dir, max_rounds=10, final_round=1,
+                converged=True, capture_frames=True,
+            )
+
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "## Visual timeline" not in report
+
+
+# ---------------------------------------------------------------------------
+# evolve_loop — hooks loaded print (line 1081)
+# ---------------------------------------------------------------------------
+
+class TestEvolveLoopHooksPrint:
+    def test_hooks_loaded_print_fires(self, tmp_path: Path, capsys):
+        """evolve_loop prints hook count when load_hooks returns non-empty."""
+        (tmp_path / "README.md").write_text("# Test\n")
+        (tmp_path / "runs").mkdir()
+
+        fake_hooks = {"on_round_start": "echo start", "on_round_end": "echo end"}
+
+        with patch("loop.load_hooks", return_value=fake_hooks), \
+             patch("loop._run_rounds"), \
+             patch("loop._ensure_git"):
+            evolve_loop(
+                tmp_path,
+                max_rounds=1,
+                check_cmd="pytest",
+            )
+
+        captured = capsys.readouterr()
+        assert "loaded 2 hook(s)" in captured.out
+        # Both hook names appear in the probe message
+        assert "on_round_start" in captured.out
+        assert "on_round_end" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# _compute_readme_sync — spec missing / readme missing / spec same as README
+# ---------------------------------------------------------------------------
+
+class TestComputeReadmeSyncEdges:
+    def test_spec_none_returns_none(self, tmp_path: Path):
+        """When spec is None, readme_sync is None (no tracking)."""
+        result = loop._compute_readme_sync(tmp_path, tmp_path, 1, spec=None)
+        assert result is None
+
+    def test_spec_equals_readme_returns_none(self, tmp_path: Path):
+        """When spec is README.md, readme_sync is None."""
+        result = loop._compute_readme_sync(tmp_path, tmp_path, 1, spec="README.md")
+        assert result is None
+
+    def test_missing_spec_file_returns_none(self, tmp_path: Path):
+        """Spec file not on disk → no drift tracking."""
+        result = loop._compute_readme_sync(tmp_path, tmp_path, 1, spec="SPEC.md")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _run_rounds — check_file parsing + README drift warning + README audit
+# at CONVERGED + CONVERGED rejected when spec is newer than improvements.md
+# (covers lines 1538-1539, 1561-1564, 1691-1692, 1698-1699, 1736-1742,
+# 1754-1755, 1646)
+# ---------------------------------------------------------------------------
+
+class TestRunRoundsIntegrationBranches:
+    """Drive _run_rounds through specific branches not covered elsewhere."""
+
+    def _setup(self, tmp_path: Path):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        run_dir = project_dir / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        imp_path = project_dir / "runs" / "improvements.md"
+        imp_path.write_text("- [ ] [functional] do something\n")
+        return project_dir, run_dir, imp_path
+
+    def test_check_file_parsing_branch(self, tmp_path: Path):
+        """check_round_N.txt is read and parsed in _run_rounds (1691-1692)."""
+        project_dir, run_dir, imp_path = self._setup(tmp_path)
+        ui = MagicMock()
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round")
+            imp_path.write_text("- [x] [functional] do something\n")
+            # Seed the check_round_N.txt file so the parsing branch fires
+            (run_dir / f"check_round_{round_num}.txt").write_text(
+                "Round 1 post-fix check: PASS\n42 passed\n"
+            )
+            (run_dir / "CONVERGED").write_text("Done")
+            return 0, "out", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             pytest.raises(SystemExit):
+            loop._run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+        # state.json should have been written with tests=42
+        state = (run_dir / "state.json").read_text()
+        assert "42" in state
+
+    def test_git_log_timeout_gracefully_handled(self, tmp_path: Path):
+        """TimeoutExpired in commit-msg check (1538-1539) swallowed."""
+        project_dir, run_dir, imp_path = self._setup(tmp_path)
+        ui = MagicMock()
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round")
+            imp_path.write_text("- [x] [functional] do something\n")
+            (run_dir / "CONVERGED").write_text("Done")
+            return 0, "out", False
+
+        real_run = subprocess.run
+
+        def flaky_run(cmd, *args, **kwargs):
+            # Specifically raise on the "git log -1 --format=%s" call
+            if isinstance(cmd, list) and "log" in cmd and "--format=%s" in cmd:
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
+            return real_run(cmd, *args, **kwargs)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop.subprocess.run", side_effect=flaky_run), \
+             pytest.raises(SystemExit):
+            loop._run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+        # Got through without crashing
+        assert (run_dir / "state.json").is_file()
+
+    def test_memory_wipe_commit_body_timeout(self, tmp_path: Path):
+        """TimeoutExpired reading commit body (1561-1564) swallowed → wipe assumed."""
+        project_dir, run_dir, imp_path = self._setup(tmp_path)
+        ui = MagicMock()
+
+        # Pre-seed memory.md with enough content that a <half shrink is a wipe
+        mem = project_dir / "runs" / "memory.md"
+        mem.write_text("x" * 1000)
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round")
+            # Shrink memory.md to trigger wipe detection
+            mem.write_text("x" * 100)
+            imp_path.write_text("- [x] [functional] do something\n")
+            (run_dir / "CONVERGED").write_text("Done")
+            return 0, "out", False
+
+        real_run = subprocess.run
+
+        def flaky_run(cmd, *args, **kwargs):
+            if isinstance(cmd, list) and "log" in cmd and "--format=%B" in cmd:
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
+            return real_run(cmd, *args, **kwargs)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._save_subprocess_diagnostic"), \
+             patch("loop.subprocess.run", side_effect=flaky_run), \
+             pytest.raises(SystemExit):
+            loop._run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+
+    def test_converged_rejected_when_spec_newer(self, tmp_path: Path):
+        """CONVERGED is unlinked when spec mtime > improvements mtime (1754-1755)."""
+        project_dir, run_dir, imp_path = self._setup(tmp_path)
+        ui = MagicMock()
+
+        spec_path = project_dir / "SPEC.md"
+        spec_path.write_text("# Spec\n")
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round")
+            # Mark item done and write CONVERGED
+            imp_path.write_text("- [x] [functional] done\n")
+            (run_dir / "CONVERGED").write_text("Done")
+            # Now make the spec NEWER than improvements.md. Set an older mtime
+            # on improvements.md and a newer mtime on SPEC.md.
+            import os, time as _time
+            old = _time.time() - 1000
+            new = _time.time()
+            os.utime(imp_path, (old, old))
+            os.utime(spec_path, (new, new))
+            return 0, "out", False
+
+        # When spec is newer, _check_spec_freshness marks items stale —
+        # which means "add a next item". So the loop will continue past the
+        # rejected CONVERGED. Use max_rounds=1 so it exits at max via SystemExit.
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             pytest.raises(SystemExit):
+            loop._run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+                spec="SPEC.md",
+            )
+
+    def test_readme_drift_warning_after_threshold(self, tmp_path: Path):
+        """ui.warn fires when rounds_since_stale > 3 (1698-1699)."""
+        project_dir, run_dir, imp_path = self._setup(tmp_path)
+        ui = MagicMock()
+
+        # Set up spec newer than README, persisted across rounds
+        spec_path = project_dir / "SPEC.md"
+        spec_path.write_text("# Spec\n")
+        readme = project_dir / "README.md"
+        readme.write_text("# Readme\n")
+
+        import os, time as _time
+        old = _time.time() - 10000
+        new = _time.time()
+        os.utime(readme, (old, old))
+        os.utime(spec_path, (new, new))
+
+        round_counter = {"n": 0}
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            round_counter["n"] += 1
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text(f"# Round {round_num}")
+            # Mark existing item done and add a new one so progress is detected
+            imp_path.write_text(
+                f"- [x] [functional] old item {round_num}\n"
+                f"- [ ] [functional] new item {round_num}\n"
+            )
+            # Keep improvements.md mtime OLDER than spec so drift persists
+            os.utime(imp_path, (old, old))
+            return 0, "out", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._check_spec_freshness", return_value=True), \
+             pytest.raises(SystemExit):
+            loop._run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=5, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+                spec="SPEC.md",
+            )
+
+        # ui.warn should have been called with the drift message at round 5
+        # (rounds_since_stale > 3)
+        warn_calls = [str(c) for c in ui.warn.call_args_list]
+        drift_warnings = [c for c in warn_calls if "README drift" in c]
+        assert len(drift_warnings) > 0
+
+    def test_no_progress_diagnostic_written(self, tmp_path: Path):
+        """No-progress round (line 1646) triggers _save_subprocess_diagnostic."""
+        project_dir, run_dir, imp_path = self._setup(tmp_path)
+        ui = MagicMock()
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            # Don't touch improvements.md, don't write COMMIT_MSG — zero progress
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round")
+            return 0, "out", False
+
+        save_calls = []
+
+        def spy_save(*args, **kwargs):
+            save_calls.append(kwargs.get("reason", ""))
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic", side_effect=spy_save), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit):
+            loop._run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+
+        # At least one save call with the "no progress" reason
+        assert any("no progress" in r.lower() for r in save_calls)
+
+    def test_spec_freshness_gate_prints_when_stale(self, tmp_path: Path, capsys):
+        """Line 1431 prints when spec is newer than improvements.md."""
+        project_dir, run_dir, imp_path = self._setup(tmp_path)
+        ui = MagicMock()
+
+        spec_path = project_dir / "SPEC.md"
+        spec_path.write_text("# Spec\n")
+
+        # spec newer than improvements.md from the very first round
+        import os, time as _time
+        old = _time.time() - 10000
+        new = _time.time()
+        os.utime(imp_path, (old, old))
+        os.utime(spec_path, (new, new))
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round")
+            imp_path.write_text("- [x] [functional] done\n")
+            (run_dir / "CONVERGED").write_text("Done")
+            # Keep spec newer than improvements.md
+            os.utime(imp_path, (old, old))
+            return 0, "out", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             pytest.raises(SystemExit):
+            loop._run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+                spec="SPEC.md",
+            )
+
+        captured = capsys.readouterr()
+        assert "spec freshness gate" in captured.out
+
+    def test_readme_audit_at_convergence_appends_items(self, tmp_path: Path):
+        """_audit_readme_sync>0 appends items + commits (1736-1742)."""
+        project_dir, run_dir, imp_path = self._setup(tmp_path)
+        ui = MagicMock()
+
+        # Pre-create SPEC.md with a claim absent from README.md
+        (project_dir / "SPEC.md").write_text(
+            "# Spec\n\n### The --foo flag\n\nDoes foo.\n"
+        )
+        (project_dir / "README.md").write_text("# Readme\n")
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round")
+            imp_path.write_text("- [x] [functional] done\n")
+            (run_dir / "CONVERGED").write_text("Done")
+            return 0, "out", False
+
+        commit_calls = []
+
+        def spy_commit(pd, msg, ui_, *args, **kwargs):
+            commit_calls.append(msg)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._git_commit", side_effect=spy_commit), \
+             pytest.raises(SystemExit):
+            loop._run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+                spec="SPEC.md",
+            )
+
+        # At least one commit with the docs(readme-sync) prefix
+        assert any("readme-sync" in m for m in commit_calls)
