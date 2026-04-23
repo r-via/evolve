@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from costs import aggregate_usage, build_usage_state, format_cost
 from hooks import fire_hook, load_hooks
 from tui import TUIProtocol, get_tui
 
@@ -569,6 +570,7 @@ def _write_state_json(
     check_tests: int | None = None,
     check_duration_s: float | None = None,
     started_at: str | None = None,
+    usage: dict | None = None,
 ) -> None:
     """Write or update the real-time state.json file in the session directory.
 
@@ -582,13 +584,15 @@ def _write_state_json(
         max_rounds: Maximum rounds configured for the session.
         phase: Current phase (``"error"``, ``"improvement"``, ``"convergence"``).
         status: Current status (``"running"``, ``"converged"``, ``"max_rounds"``,
-                ``"error"``, ``"party_mode"``).
+                ``"error"``, ``"party_mode"``, ``"budget_reached"``).
         improvements_path: Path to the improvements.md file.
         check_passed: Whether the last check command passed (None if not run).
         check_tests: Number of tests passed in the last check (None if unknown).
         check_duration_s: Duration of the last check in seconds (None if unknown).
         started_at: ISO timestamp when the session started. If None, read from
                     existing state.json or use current time.
+        usage: Token usage and cost aggregation dict (from ``build_usage_state``).
+            Included in state.json when provided.
     """
     done = _count_checked(improvements_path)
     remaining = _count_unchecked(improvements_path)
@@ -619,7 +623,7 @@ def _write_state_json(
     )
 
     state: dict = {
-        "version": 1,
+        "version": 2,
         "session": run_dir.name,
         "project": project_dir.name,
         "round": round_num,
@@ -632,6 +636,8 @@ def _write_state_json(
         "started_at": started_at,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    if usage is not None:
+        state["usage"] = usage
     state_path = run_dir / "state.json"
     state_path.write_text(json.dumps(state, indent=2) + "\n")
 
@@ -872,6 +878,7 @@ def evolve_loop(
     yolo: bool | None = None,
     capture_frames: bool = False,
     effort: str | None = "max",
+    max_cost: float | None = None,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess.
 
@@ -891,6 +898,8 @@ def evolve_loop(
         spec: Path to the spec file relative to project_dir (default: README.md).
         yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
         capture_frames: If True, capture TUI frames as PNG at key moments.
+        max_cost: Budget cap in USD. When cumulative cost exceeds this, the
+            session pauses after the current round.
     """
     if yolo is not None:
         allow_installs = yolo
@@ -963,6 +972,7 @@ def evolve_loop(
                     forever=forever, hooks=hooks, spec=spec,
                     capture_frames=capture_frames,
                     effort=effort,
+                    max_cost=max_cost,
                 )
 
     # Create timestamped run directory
@@ -981,6 +991,7 @@ def evolve_loop(
         forever=forever, hooks=hooks, spec=spec,
         capture_frames=capture_frames,
         effort=effort,
+        max_cost=max_cost,
     )
 
 
@@ -1223,6 +1234,7 @@ def _run_rounds(
     spec: str | None = None,
     capture_frames: bool = False,
     effort: str | None = "max",
+    max_cost: float | None = None,
 ) -> None:
     """Run evolution rounds from start_round to max_rounds.
 
@@ -1245,6 +1257,7 @@ def _run_rounds(
         hooks: Event hook configuration dict (from ``load_hooks``).
         spec: Path to the spec file relative to project_dir (default: README.md).
         capture_frames: If True, capture TUI frames as PNG at key moments.
+        max_cost: Budget cap in USD. Session pauses when exceeded.
     """
     if hooks is None:
         hooks = {}
@@ -1531,6 +1544,14 @@ def _run_rounds(
                 _ct = check_file.read_text(errors="replace")
                 _check_passed, _check_tests, _check_duration = _parse_check_output(_ct)
 
+            # Aggregate token usage across all rounds for cost tracking
+            _usage_total, _usage_cost, _usage_rounds = aggregate_usage(
+                run_dir, round_num
+            )
+            _usage_state = build_usage_state(
+                _usage_total, _usage_cost, _usage_rounds
+            )
+
             # Update state.json after every round
             _write_state_json(
                 run_dir=run_dir,
@@ -1544,7 +1565,41 @@ def _run_rounds(
                 check_tests=_check_tests,
                 check_duration_s=_check_duration,
                 started_at=_started_at,
+                usage=_usage_state,
             )
+
+            # Budget enforcement — pause session if cost exceeds --max-cost
+            if max_cost is not None and _usage_cost is not None:
+                if _usage_cost >= max_cost:
+                    print(
+                        f"[probe] budget reached: "
+                        f"{format_cost(_usage_cost)} / {format_cost(max_cost)}"
+                    )
+                    ui.budget_reached(
+                        round_num, max_cost, _usage_cost
+                    )
+                    # Update state with budget_reached status
+                    _write_state_json(
+                        run_dir=run_dir,
+                        project_dir=project_dir,
+                        round_num=round_num,
+                        max_rounds=max_rounds,
+                        phase="improvement",
+                        status="budget_reached",
+                        improvements_path=improvements_path,
+                        check_passed=_check_passed,
+                        check_tests=_check_tests,
+                        check_duration_s=_check_duration,
+                        started_at=_started_at,
+                        usage=_usage_state,
+                    )
+                    fire_hook(
+                        hooks, "on_error",
+                        session=session_name,
+                        round_num=round_num,
+                        status="budget_reached",
+                    )
+                    sys.exit(1)
 
             # Clean up diagnostic file on success (no longer relevant)
             error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
@@ -1607,6 +1662,7 @@ def _run_rounds(
                     check_tests=_check_tests,
                     check_duration_s=_check_duration,
                     started_at=_started_at,
+                    usage=_usage_state,
                 )
 
                 # Generate evolution report
@@ -1685,6 +1741,12 @@ def _run_rounds(
             checked = _count_checked(improvements_path)
             print(f"[probe] max rounds reached ({max_rounds}) — checked={checked}, unchecked={unchecked}")
 
+            # Aggregate final usage for max_rounds state
+            _mr_total, _mr_cost, _mr_rounds = aggregate_usage(
+                run_dir, max_rounds
+            )
+            _mr_usage = build_usage_state(_mr_total, _mr_cost, _mr_rounds)
+
             # Update state.json to max_rounds
             _write_state_json(
                 run_dir=run_dir,
@@ -1695,6 +1757,7 @@ def _run_rounds(
                 status="max_rounds",
                 improvements_path=improvements_path,
                 started_at=_started_at,
+                usage=_mr_usage,
             )
 
             # Generate evolution report

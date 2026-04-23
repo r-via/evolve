@@ -122,6 +122,7 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         ("spec", "EVOLVE_SPEC", None, "str"),
         ("capture_frames", "EVOLVE_CAPTURE_FRAMES", False, "bool"),
         ("effort", "EVOLVE_EFFORT", "max", "str"),
+        ("max_cost", "EVOLVE_MAX_COST", None, "float"),
     ]
 
     # Deprecated fallback: check old yolo config/env if new name not found
@@ -133,9 +134,10 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         # Step 1: Check if CLI flag was explicitly set
         if ftype == "bool":
             cli_set = bool(current)
-        elif ftype == "int":
+        elif ftype in ("int", "float"):
+            cli_flag = f"--{name.replace('_', '-')}"
             cli_set = any(
-                a == f"--{name}" or a.startswith(f"--{name}=") for a in sys.argv
+                a == cli_flag or a.startswith(f"{cli_flag}=") for a in sys.argv
             )
         else:  # str
             cli_set = current is not None
@@ -152,6 +154,12 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
                 except ValueError:
                     pass  # invalid int — leave as-is
                 continue  # env was present; skip file/default regardless
+            elif ftype == "float":
+                try:
+                    setattr(args, name, float(env_val))
+                except ValueError:
+                    pass  # invalid float — leave as-is
+                continue
             elif ftype == "bool":
                 if env_val.lower() in ("1", "true", "yes"):
                     setattr(args, name, True)
@@ -165,12 +173,14 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
             file_val = file_config[name]
             if ftype == "int":
                 setattr(args, name, int(file_val))
+            elif ftype == "float":
+                setattr(args, name, float(file_val))
             elif ftype == "bool":
                 setattr(args, name, bool(file_val))
             elif file_val:  # str — only set if truthy (non-empty)
                 setattr(args, name, file_val)
                 continue
-            if ftype != "str":
+            if ftype not in ("str",):
                 continue
 
         # Step 4: Apply default (only if not already set)
@@ -289,6 +299,13 @@ def main():
         default=None,
         help="Reasoning effort level passed to the Claude Agent SDK: low, medium, high, or max (default: max, or EVOLVE_EFFORT env var)",
     )
+    start_p.add_argument(
+        "--max-cost",
+        type=float,
+        default=None,
+        dest="max_cost",
+        help="Budget cap in USD — pause session after estimated cost exceeds this amount (default: no cap, or EVOLVE_MAX_COST env var)",
+    )
 
     # --- status ---
     status_p = sub.add_parser("status", help="Show evolution status for a project")
@@ -395,6 +412,7 @@ def main():
                 spec=spec,
                 capture_frames=getattr(args, "capture_frames", False),
                 effort=getattr(args, "effort", "max"),
+                max_cost=getattr(args, "max_cost", None),
             )
 
     elif args.command == "status":
