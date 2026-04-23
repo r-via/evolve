@@ -109,3 +109,6 @@ attempt 1 landed the code/test deletions (commit 8ce882f) but ran out of 40-turn
 
 ### sync-readme: `NO_SYNC_NEEDED` sentinel for exit-1 — round 4 attempt 2 of 20260423_171103
 agent has 2 outputs: write `<project>/README_proposal.md` (or `README.md` in apply) → exit 0; write `<run_dir>/NO_SYNC_NEEDED` → exit 1; neither → exit 2. Apply mode also asserts mtime advanced before `_git_commit`, else exit 2 (catches silent agent no-op). Spec=None / "README.md" → refuse with exit 1, no agent call, no run_dir creation. Backlog rule 1: `--effort` re-add legitimate only because queue was genuinely empty post-checkoff.
+
+### --effort plumbing: 3-attempt pattern — module global + grep-count test — round 5 of 20260423_171103
+`agent.EFFORT` module global overwritten by loop entry points (`run_single_round` etc.) — NOT threaded through every function signature. `ClaudeAgentOptions(...)` opened in 3 agent sites; test greps `agent.py.count("effort=EFFORT") >= 3` instead of mocking each site. Attempts 1+2 did the code but skipped checkoff+COMMIT_MSG → zero-progress twice. Rule: on retry, finish bookkeeping BEFORE any new code.

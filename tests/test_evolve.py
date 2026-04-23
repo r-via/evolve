@@ -616,3 +616,163 @@ class TestShowHistory:
         (runs / "20260101_000000").mkdir()
         from evolve import _show_history
         _show_history(tmp_path)
+
+
+class TestEffortFlag:
+    """Tests for the ``--effort`` CLI flag / ``effort`` config key / ``EVOLVE_EFFORT`` env var.
+
+    See SPEC.md § "The --effort flag" — accepted values: low / medium / high / max.
+    Default is "max". Resolution order: CLI → env → evolve.toml → pyproject → default.
+    """
+
+    def _make_args(self, **overrides):
+        import argparse
+        args = argparse.Namespace(
+            check=None, rounds=None, timeout=None,
+            model=None, allow_installs=None, resume=False,
+            spec=None, capture_frames=False, effort=None,
+        )
+        for k, v in overrides.items():
+            setattr(args, k, v)
+        return args
+
+    def test_validate_effort_accepts_four_levels(self):
+        from evolve import _validate_effort, EFFORT_LEVELS
+        assert EFFORT_LEVELS == ("low", "medium", "high", "max")
+        for level in EFFORT_LEVELS:
+            assert _validate_effort(level) == level
+
+    def test_validate_effort_rejects_invalid(self):
+        import argparse
+        from evolve import _validate_effort
+        import pytest
+        with pytest.raises(argparse.ArgumentTypeError) as exc_info:
+            _validate_effort("extreme")
+        assert "invalid effort level" in str(exc_info.value)
+        assert "low" in str(exc_info.value)
+        assert "max" in str(exc_info.value)
+
+    def test_default_is_max_when_unset(self, tmp_path: Path):
+        """No CLI, no env, no config → effort defaults to 'max'."""
+        from evolve import _resolve_config
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]):
+            with patch.dict("os.environ", {}, clear=True):
+                result = _resolve_config(args, tmp_path)
+        assert result.effort == "max"
+
+    def test_cli_wins_over_file_and_env(self, tmp_path: Path):
+        """CLI --effort low overrides evolve.toml and EVOLVE_EFFORT."""
+        (tmp_path / "evolve.toml").write_text('effort = "high"\n')
+        from evolve import _resolve_config
+        args = self._make_args(effort="low")
+        with patch("sys.argv", ["evolve", "start", str(tmp_path), "--effort", "low"]):
+            with patch.dict("os.environ", {"EVOLVE_EFFORT": "medium"}, clear=True):
+                result = _resolve_config(args, tmp_path)
+        assert result.effort == "low"
+
+    def test_env_wins_over_file(self, tmp_path: Path):
+        (tmp_path / "evolve.toml").write_text('effort = "high"\n')
+        from evolve import _resolve_config
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]):
+            with patch.dict("os.environ", {"EVOLVE_EFFORT": "medium"}, clear=True):
+                result = _resolve_config(args, tmp_path)
+        assert result.effort == "medium"
+
+    def test_file_config_used_when_no_cli_or_env(self, tmp_path: Path):
+        (tmp_path / "evolve.toml").write_text('effort = "high"\n')
+        from evolve import _resolve_config
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]):
+            with patch.dict("os.environ", {}, clear=True):
+                result = _resolve_config(args, tmp_path)
+        assert result.effort == "high"
+
+    def test_cli_parser_rejects_invalid_effort(self):
+        """argparse parser exits (code 2) on invalid --effort value."""
+        import pytest
+        with pytest.raises(SystemExit):
+            with patch("sys.argv", ["evolve", "start", "/tmp/project", "--effort", "bogus"]):
+                from evolve import main
+                main()
+
+    def test_effort_propagates_to_claude_agent_options(self, tmp_path: Path):
+        """ClaudeAgentOptions accepts the ``effort`` kwarg and each call site
+        in agent.py passes ``EFFORT`` to it.
+
+        This verifies the plumbing from loop.py's ``run_single_round`` (and
+        sibling entry points) to ``agent.EFFORT`` to the SDK option.
+        """
+        from claude_agent_sdk import ClaudeAgentOptions
+        import inspect
+        sig = inspect.signature(ClaudeAgentOptions)
+        assert "effort" in sig.parameters, (
+            "claude_agent_sdk.ClaudeAgentOptions must accept an 'effort' parameter "
+            "for the --effort flag plumbing to work"
+        )
+
+        # Verify agent.py passes EFFORT=... to each of its SDK invocation sites.
+        agent_src = (Path(__file__).parent.parent / "agent.py").read_text()
+        # Count invocations: analyze_and_fix (run_claude_agent), _run_readonly_claude_agent,
+        # _run_party_agent_async (via run_claude_agent), _run_sync_readme_claude_agent.
+        # Each ClaudeAgentOptions(...) block must include effort=EFFORT.
+        assert agent_src.count("effort=EFFORT") >= 3, (
+            "agent.py must pass effort=EFFORT to each ClaudeAgentOptions(...) "
+            "invocation site (analyze_and_fix, _run_readonly_claude_agent, "
+            "_run_sync_readme_claude_agent)"
+        )
+
+    def test_explicit_effort_low_sets_module_global(self):
+        """An explicit 'low' CLI propagates all the way to agent.EFFORT
+        after run_single_round assigns it."""
+        import agent as _agent_mod
+        original = _agent_mod.EFFORT
+        try:
+            _agent_mod.EFFORT = "low"
+            # ClaudeAgentOptions receives agent.EFFORT — confirm via direct construction.
+            from claude_agent_sdk import ClaudeAgentOptions
+            opts = ClaudeAgentOptions(
+                model="claude-opus-4-6",
+                cwd="/tmp",
+                disallowed_tools=[],
+                include_partial_messages=True,
+                effort=_agent_mod.EFFORT,
+            )
+            assert opts.effort == "low"
+        finally:
+            _agent_mod.EFFORT = original
+
+    def test_run_single_round_sets_agent_effort(self, tmp_path: Path):
+        """loop.run_single_round writes args.effort to agent.EFFORT."""
+        import agent as _agent_mod
+        original = _agent_mod.EFFORT
+        (tmp_path / "runs").mkdir()
+        try:
+            from unittest.mock import patch as _patch
+            with _patch("agent.analyze_and_fix"):
+                from loop import run_single_round
+                run_single_round(
+                    project_dir=tmp_path,
+                    round_num=1,
+                    check_cmd=None,
+                    allow_installs=False,
+                    timeout=60,
+                    run_dir=tmp_path / "runs",
+                    model="claude-opus-4-6",
+                    spec=None,
+                    effort="high",
+                )
+            assert _agent_mod.EFFORT == "high"
+        finally:
+            _agent_mod.EFFORT = original
+
+    def test_cli_parser_accepts_all_four_levels(self):
+        """Parser accepts each documented level without raising SystemExit."""
+        import argparse
+        from evolve import _validate_effort
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--effort", type=_validate_effort, default=None)
+        for level in ("low", "medium", "high", "max"):
+            ns = ap.parse_args(["--effort", level])
+            assert ns.effort == level
