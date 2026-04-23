@@ -282,7 +282,8 @@ class TestRunDryRun:
             run_dry_run(tmp_path)
 
         output = capsys.readouterr().out
-        assert "dry_run_report.md" in output
+        # Rich may wrap long paths across lines, so join before checking
+        assert "dry_run_report.md" in output.replace("\n", "")
         # Should NOT have WARN since report exists
         # (both messages could appear in different contexts)
 
