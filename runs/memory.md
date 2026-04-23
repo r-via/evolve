@@ -12,6 +12,9 @@ style, non-obvious gate).
 ### Zero-progress false positive on convergence — round 3 attempt 2 of 20260423_180038
 `imp_unchanged` fires even when CONVERGED written + all items already `[x]`. Fix: `effective_imp_unchanged = imp_unchanged and not converged_written`. Convergence-gate backstop handles premature case independently. Note: fix on disk doesn't help running orchestrator process — must also change improvements.md in same round.
 
+### Stale marker false positive persists across attempts — round 4 of 20260423_180038
+Running orchestrator still uses old `_detect_premature_converged` (full-text match) even after fix committed. Rephrasing `[stale: spec changed]` in `[x]` item descriptions is the only workaround — code fix applies to NEW sessions only.
+
 ## Decisions
 
 ### Mechanism B: redundant warn suppression — round 1 of 20260423_142834
