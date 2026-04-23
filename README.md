@@ -132,6 +132,11 @@ evolve history ~/projects/my-tool
 
 # Clean up old sessions, keeping the 5 most recent
 evolve clean ~/projects/my-tool --keep 5
+
+# CI/CD: run from project root and check the exit code
+# (0 = converged, 1 = max rounds reached, 2 = error — see SPEC.md § Exit codes)
+evolve start . --check "pytest" --rounds 20
+if [ $? -eq 0 ]; then echo "Converged!"; fi
 ```
 
 ## Configuration
