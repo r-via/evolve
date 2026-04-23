@@ -177,6 +177,12 @@ secrets and sandboxed shells). The most common one is `EVOLVE_MODEL`:
 EVOLVE_MODEL=claude-sonnet-4-20250514 evolve start ~/projects/my-tool --check "pytest"
 ```
 
+Other env var examples — point at an alternate spec file via `EVOLVE_SPEC`:
+
+```bash
+EVOLVE_SPEC=SPEC.md evolve start ~/projects/my-tool --check "pytest"
+```
+
 Scaffold a config file quickly:
 
 ```bash
