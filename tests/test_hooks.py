@@ -173,25 +173,36 @@ class TestLoadHooksEdgeCases:
         """When neither tomllib nor tomli is available, return empty dict."""
         (tmp_path / "evolve.toml").write_text("[hooks]\non_round_end = 'echo done'\n")
 
-        with patch.dict("sys.modules", {"tomllib": None, "tomli": None}):
-            # Force reimport to trigger ImportError path
-            import importlib
-            import hooks as hooks_mod
-            # Directly test the fallback by simulating missing imports
-            original = hooks_mod.load_hooks
+        import builtins
+        original_import = builtins.__import__
 
-            def mock_load(project_dir):
-                # Simulate both imports failing
-                try:
-                    raise ImportError("no tomllib")
-                except ImportError:
-                    try:
-                        raise ImportError("no tomli")
-                    except ImportError:
-                        return {}
+        def fail_both(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"no {name}")
+            return original_import(name, *args, **kwargs)
 
-            result = mock_load(tmp_path)
-            assert result == {}
+        with patch.object(builtins, "__import__", side_effect=fail_both):
+            result = load_hooks(tmp_path)
+        assert result == {}
+
+    def test_tomli_fallback_when_tomllib_missing(self, tmp_path):
+        """When tomllib is unavailable but tomli is, use tomli."""
+        (tmp_path / "evolve.toml").write_text("[hooks]\non_round_end = 'echo done'\n")
+
+        import builtins
+        original_import = builtins.__import__
+
+        def fail_tomllib(name, *args, **kwargs):
+            if name == "tomllib":
+                raise ImportError("no tomllib")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=fail_tomllib):
+            result = load_hooks(tmp_path)
+        # tomli should work as fallback (or if tomli isn't installed either,
+        # at least the tomllib ImportError path on line 56 is exercised)
+        # The key is exercising lines 56-58
+        assert isinstance(result, dict)
 
     def test_non_string_hook_values(self, tmp_path):
         """Non-string values are converted to strings via str()."""

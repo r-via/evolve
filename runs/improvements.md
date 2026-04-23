@@ -26,4 +26,5 @@
 - [x] [functional] Add test coverage for evolve_loop with --resume and --forever combined: verify that resuming a forever-mode session correctly restores the branch, detects last round, and continues the evolution loop from the right starting point
 - [x] [functional] Add test coverage for the uncovered lines in agent.py (lines 181-186, 390-393): verify the agent retry logic for rate limit errors with exponential backoff and the benign async teardown error detection paths
 - [x] [functional] Add test coverage for the remaining uncovered lines in evolve.py (lines 62-63, 177-180, 185-190, 258-262, 269-270, 293): cover the main() entry point error paths, config file parsing edge cases, and CLI dispatch for history/clean subcommands with error conditions
-- [ ] [functional] Add test coverage for hooks.py uncovered lines 56-60 (hook execution timeout and subprocess error handling) to bring hooks.py from 91% to 100% coverage
+- [x] [functional] Add test coverage for hooks.py uncovered lines 56-60 (hook execution timeout and subprocess error handling) to bring hooks.py from 91% to 100% coverage
+- [ ] [functional] Add test coverage for the remaining uncovered lines in loop.py (lines 71-72, 488, 522-523, 531-532, 729, 837-838, 1135, 1218) to bring loop.py from 98% to 100% coverage
