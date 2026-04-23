@@ -1167,10 +1167,23 @@ def _save_subprocess_diagnostic(
             "target, and include a 'Phase 1 bypass: <summary>' line in "
             "COMMIT_MSG.\n\n"
         )
+    # Retry continuity: surface the path of the per-attempt log so the next
+    # attempt can read it and continue the investigation from where this one
+    # stopped.  The agent.py prompt builder also injects a dedicated
+    # "## Previous attempt log" section based on this same convention; the
+    # path here is for the diagnostic reader and as a single source of truth.
+    prev_attempt_log = run_dir / f"conversation_loop_{round_num}_attempt_{attempt}.md"
+    prev_attempt_section = (
+        "### Previous attempt log\n"
+        f"Full conversation log of attempt {attempt}: {prev_attempt_log}\n"
+        "Read this file FIRST in the next attempt — do not redo the "
+        "investigation, continue from where it stopped.\n\n"
+    )
     error_log.write_text(
         f"Round {round_num} — {reason} (attempt {attempt})\n"
         f"Command: {' '.join(str(c) for c in cmd)}\n\n"
         f"{escape_hatch_banner}"
+        f"{prev_attempt_section}"
         f"Output (last 3000 chars):\n{(output or '')[-3000:]}\n"
     )
 

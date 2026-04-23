@@ -605,8 +605,13 @@ class TestAnalyzeAndFixRunInner:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-    def test_first_attempt_uses_default_log_filename(self, tmp_path: Path):
-        """First attempt passes log_filename=None to run_claude_agent."""
+    def test_first_attempt_uses_attempt_1_log_filename(self, tmp_path: Path):
+        """First subprocess attempt writes to conversation_loop_N_attempt_1.md.
+
+        Per SPEC.md § "Retry continuity" rule (1), every attempt — including
+        the first — gets its own per-attempt log file so debug retries can
+        read the prior attempt's full transcript.
+        """
         self._setup_project(tmp_path)
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir()
@@ -616,6 +621,10 @@ class TestAnalyzeAndFixRunInner:
 
         async def mock_run_agent(prompt, project_dir, round_num=1, run_dir=None, log_filename=None):
             captured_calls.append({"round_num": round_num, "log_filename": log_filename})
+            # Simulate the agent writing the per-attempt log so the post-run
+            # copy step can find it.
+            if run_dir is not None and log_filename is not None:
+                (Path(run_dir) / log_filename).write_text("# Round\n")
 
         mock_sdk = MagicMock()
 
@@ -625,11 +634,21 @@ class TestAnalyzeAndFixRunInner:
             analyze_and_fix(tmp_path, round_num=3, run_dir=run_dir)
 
         assert len(captured_calls) == 1
-        assert captured_calls[0]["log_filename"] is None
+        assert captured_calls[0]["log_filename"] == "conversation_loop_3_attempt_1.md"
         assert captured_calls[0]["round_num"] == 3
+        # Per-attempt log is also copied to the canonical name.
+        assert (run_dir / "conversation_loop_3.md").is_file()
+        assert (run_dir / "conversation_loop_3_attempt_1.md").is_file()
 
-    def test_retry_attempts_use_numbered_log_filenames(self, tmp_path: Path):
-        """Retry attempts generate conversation_loop_N_attempt_M.md filenames."""
+    def test_sdk_rate_limit_retries_share_attempt_log(self, tmp_path: Path):
+        """SDK rate-limit retries within a single subprocess attempt write
+        to the SAME per-attempt log file.
+
+        Per-attempt log naming is keyed off the orchestrator-level subprocess
+        attempt (parsed from subprocess_error_round_N.txt), not the in-process
+        SDK rate-limit retry counter.  Three SDK retries within attempt 1 all
+        share ``conversation_loop_5_attempt_1.md``.
+        """
         self._setup_project(tmp_path)
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir()
@@ -644,6 +663,8 @@ class TestAnalyzeAndFixRunInner:
             captured_calls.append({"round_num": round_num, "log_filename": log_filename, "attempt": call_count})
             if call_count < 3:
                 raise Exception("rate_limit_exceeded")
+            if run_dir is not None and log_filename is not None:
+                (Path(run_dir) / log_filename).write_text("# Round\n")
 
         mock_sdk = MagicMock()
 
@@ -654,9 +675,36 @@ class TestAnalyzeAndFixRunInner:
             analyze_and_fix(tmp_path, round_num=5, run_dir=run_dir, max_retries=5)
 
         assert len(captured_calls) == 3
-        # First attempt: no special filename
-        assert captured_calls[0]["log_filename"] is None
-        # Second attempt: attempt_2
-        assert captured_calls[1]["log_filename"] == "conversation_loop_5_attempt_2.md"
-        # Third attempt: attempt_3
-        assert captured_calls[2]["log_filename"] == "conversation_loop_5_attempt_3.md"
+        # All three SDK retries share the same per-attempt log file
+        # because the orchestrator-level attempt is still 1 (no
+        # subprocess_error_round_5.txt exists).
+        for call in captured_calls:
+            assert call["log_filename"] == "conversation_loop_5_attempt_1.md"
+
+    def test_subsequent_orchestrator_attempt_uses_attempt_2_log(self, tmp_path: Path):
+        """When subprocess_error_round_N.txt records attempt 1 failed, the
+        next subprocess attempt writes to ``..._attempt_2.md``."""
+        self._setup_project(tmp_path)
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir()
+        # Simulate orchestrator-written diagnostic from attempt 1's failure.
+        (run_dir / "subprocess_error_round_7.txt").write_text(
+            "Round 7 — crashed (attempt 1)\nCommand: foo\n\nOutput:\n...\n"
+        )
+        mock_ui = MagicMock()
+
+        captured_calls = []
+
+        async def mock_run_agent(prompt, project_dir, round_num=1, run_dir=None, log_filename=None):
+            captured_calls.append({"log_filename": log_filename})
+            if run_dir is not None and log_filename is not None:
+                (Path(run_dir) / log_filename).write_text("# Round\n")
+
+        mock_sdk = MagicMock()
+
+        with patch("agent.get_tui", return_value=mock_ui), \
+             patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
+             patch("agent.run_claude_agent", side_effect=mock_run_agent):
+            analyze_and_fix(tmp_path, round_num=7, run_dir=run_dir)
+
+        assert captured_calls[0]["log_filename"] == "conversation_loop_7_attempt_2.md"

@@ -4,11 +4,45 @@ from __future__ import annotations
 
 import asyncio
 import re
+import shutil
 import time
 from pathlib import Path
 
 from loop import _is_needs_package
 from tui import get_tui
+
+
+def _detect_current_attempt(run_dir: Path | None, round_num: int) -> int:
+    """Return the current attempt number (1-based) for *round_num*.
+
+    Inspects ``subprocess_error_round_{round_num}.txt`` left by the
+    orchestrator after a failed attempt.  Each diagnostic header ends in
+    ``(attempt K)`` — if K=2 just failed, the next run is attempt 3.
+
+    Returns 1 when no diagnostic for the current round exists (first attempt).
+    """
+    if not run_dir:
+        return 1
+    rdir = Path(run_dir)
+    candidates = sorted(
+        rdir.glob("subprocess_error_round_*.txt"),
+        key=lambda p: int(re.search(r'_(\d+)\.txt$', p.name).group(1)),
+        reverse=True,
+    )
+    if not candidates:
+        return 1
+    f = candidates[0]
+    m_round = re.search(r"subprocess_error_round_(\d+)\.txt$", str(f))
+    if not m_round or int(m_round.group(1)) != round_num:
+        return 1
+    try:
+        text = f.read_text()
+    except OSError:
+        return 1
+    m_att = re.search(r"\(attempt (\d+)\)", text)
+    if m_att:
+        return int(m_att.group(1)) + 1
+    return 1
 
 #: Default Claude model used by the agent for code analysis and fixes.
 MODEL = "claude-opus-4-6"
@@ -125,21 +159,10 @@ def build_prompt(
             prev_crash_file = f
             break
 
-    # Determine the current attempt number for this run.
-    #
-    # The orchestrator writes `subprocess_error_round_N.txt` when an attempt
-    # fails, with a header line ending in "(attempt K)" — so if K=2 failed,
-    # THIS run is attempt 3 (the final retry). We parse that here so the
-    # agent knows whether the Phase 1 escape hatch is permitted.
-    current_attempt = 1
-    if prev_crash and prev_crash_file is not None:
-        # Only treat the diagnostic as referring to "this round" if the file
-        # matches the round number we are running.
-        m_round = re.search(r"subprocess_error_round_(\d+)\.txt$", str(prev_crash_file))
-        if m_round and int(m_round.group(1)) == round_num:
-            m_att = re.search(r"\(attempt (\d+)\)", prev_crash)
-            if m_att:
-                current_attempt = int(m_att.group(1)) + 1
+    # Determine the current attempt number for this run.  Uses the same
+    # helper as ``analyze_and_fix`` so per-attempt log naming and the Phase 1
+    # escape-hatch banner agree on which attempt this is.
+    current_attempt = _detect_current_attempt(run_dir, round_num)
 
     allow_installs_note = ""
     if not allow_installs:
@@ -212,6 +235,28 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     else:
         prev_crash_section = ""
 
+    # Retry continuity: when this run is a debug retry (attempt > 1), surface
+    # the previous attempt's full conversation log so the agent can continue
+    # from where it stopped instead of restarting the investigation.  The
+    # diagnostic in `prev_crash_section` is only the last 3000 chars of
+    # output; the full per-attempt log holds every tool call, dead end, and
+    # working hypothesis.  See SPEC.md § "Retry continuity" rule (2).
+    prev_attempt_section = ""
+    if current_attempt > 1 and run_dir:
+        prior_k = current_attempt - 1
+        prior_log = Path(run_dir) / f"conversation_loop_{round_num}_attempt_{prior_k}.md"
+        if prior_log.is_file():
+            prev_attempt_section = (
+                f"\n## Previous attempt log\n"
+                f"This is attempt {current_attempt} of round {round_num}. "
+                f"The full conversation log of attempt {prior_k} is at:\n\n"
+                f"  {prior_log}\n\n"
+                f"**Read this file FIRST.** It contains everything the previous "
+                f"attempt already discovered — the tool calls, the dead ends, the "
+                f"working hypotheses. Do not redo that investigation. Continue "
+                f"from where it stopped.\n"
+            )
+
     check_section = ""
     if check_cmd and check_output:
         check_section = (
@@ -239,6 +284,7 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
 
 {target_section}
 {prev_crash_section}
+{prev_attempt_section}
 {memory_section}
 {prev_check_section}
 {check_section}"""
@@ -520,20 +566,40 @@ def analyze_and_fix(
         allow_installs = yolo
     prompt = build_prompt(project_dir, check_output, check_cmd, allow_installs, run_dir, spec=spec, round_num=round_num)
 
-    # Track attempt number for retry log filenames via a mutable closure.
-    attempt_counter = [0]
+    # Per-attempt conversation log filename.  Each orchestrator-level subprocess
+    # attempt gets its own file (no overwrite), so a debug retry can read the
+    # prior attempt's full transcript and continue from where it stopped.
+    # See SPEC.md § "Retry continuity" rule (1).
+    current_attempt = _detect_current_attempt(run_dir, round_num)
+    attempt_log_fname = f"conversation_loop_{round_num}_attempt_{current_attempt}.md"
 
     async def _run():
-        attempt_counter[0] += 1
-        attempt = attempt_counter[0]
-        log_fname = f"conversation_loop_{round_num}_attempt_{attempt}.md" if attempt > 1 else None
-        await run_claude_agent(prompt, project_dir, round_num=round_num, run_dir=run_dir, log_filename=log_fname)
+        await run_claude_agent(
+            prompt, project_dir,
+            round_num=round_num, run_dir=run_dir, log_filename=attempt_log_fname,
+        )
 
     _run_agent_with_retries(
         _run,
         fail_label="Claude Code agent",
         max_retries=max_retries,
     )
+
+    # Copy the successful attempt's log to the canonical
+    # ``conversation_loop_{round_num}.md`` for backward compatibility with
+    # report generation, party mode, and the agent's own stuck-loop self-
+    # monitoring (which globs the canonical name from prior rounds).
+    if run_dir is not None:
+        attempt_log = Path(run_dir) / attempt_log_fname
+        canonical_log = Path(run_dir) / f"conversation_loop_{round_num}.md"
+        if attempt_log.is_file():
+            try:
+                shutil.copyfile(attempt_log, canonical_log)
+            except OSError:
+                # Cross-filesystem or permission issues are non-fatal — the
+                # per-attempt log is the source of truth; the copy is just
+                # convenience for downstream consumers.
+                pass
 
 
 def _build_check_section(check_cmd: str | None, check_output: str) -> str:

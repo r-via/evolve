@@ -155,7 +155,25 @@ Do NOT converge prematurely. If a feature is described but not implemented, add 
 ## Stuck-loop self-monitoring — BEFORE any work
 
 You are round {round_num}. Before doing any improvement work, you MUST check for
-stuck loops by inspecting the previous two rounds' conversation logs:
+stuck loops AND for prior attempts of the **current** round.
+
+### Step 0 — prior attempts of THIS round (highest priority)
+
+Debug retries of the same round must reuse the previous attempt's work,
+otherwise each retry wastes 40 turns rediscovering the same facts.
+
+1. Glob `{run_dir}/conversation_loop_{round_num}_attempt_*.md`. These are
+   prior attempts of the **current** round (attempt 1, attempt 2, …).
+2. If any exist, **read them all before doing anything else** — they carry
+   far more relevant context than rounds N-1 / N-2. They contain every
+   tool call, dead end, and working hypothesis from the previous attempt.
+3. Continue from where the prior attempt stopped. Do **not** redo its
+   investigation. The build_prompt also surfaces the prior attempt log
+   path under `## Previous attempt log` when applicable.
+
+### Step 1 — stuck-loop check (previous two rounds)
+
+After Step 0, inspect the previous two rounds' conversation logs:
 
 1. Read `{run_dir}/conversation_loop_{prev_round_1}.md` and
    `{run_dir}/conversation_loop_{prev_round_2}.md` (if they exist).
@@ -172,7 +190,8 @@ stuck loops by inspecting the previous two rounds' conversation logs:
 5. Log the decision to `runs/memory.md` so future rounds don't re-attempt the
    same broken split.
 
-If round {round_num} is 1 or 2, or the previous logs don't exist, skip this check.
+If round {round_num} is 1 or 2, or the previous logs don't exist, skip Step 1.
+Step 0 (prior-attempt check) still applies on every round.
 
 ## Verification — MANDATORY for every action
 - BEFORE starting, read the run directory ({run_dir}) for previous conversations and results.
