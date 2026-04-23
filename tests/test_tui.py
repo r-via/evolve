@@ -112,6 +112,11 @@ class TestPlainTUIMethods:
         assert "/tmp/proj" in out
         assert "5 done" in out
 
+    def test_budget_reached(self, capsys):
+        self.ui.budget_reached(5, 10.0, 10.24)
+        out = capsys.readouterr().out
+        assert "budget" in out.lower() or "Budget" in out
+
 
 class TestGetTUIJson:
     """Test that get_tui returns JsonTUI when _use_json is True."""
@@ -285,3 +290,10 @@ class TestJsonTUIMethods:
         obj = self._parse_line(capsys)
         assert obj["type"] == "sdk_rate_limited"
         assert obj["wait"] == 60
+
+    def test_budget_reached(self, capsys):
+        self.ui.budget_reached(5, 10.0, 10.24)
+        obj = self._parse_line(capsys)
+        assert obj["type"] == "budget_reached"
+        assert obj["budget_usd"] == 10.0
+        assert obj["spent_usd"] == 10.24

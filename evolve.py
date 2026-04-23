@@ -110,9 +110,10 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
 
     file_config = _load_config(project_dir)
 
-    # Field definitions: (name, env_var, default, type)
-    # type is "str", "int", or "bool" — controls parsing of env/file values
-    # and CLI-set detection logic.
+    # Field definitions: (name, env_var, default, type[, config_key])
+    # type is "str", "int", "bool", or "float" — controls parsing of env/file
+    # values and CLI-set detection logic.  Optional 5th element overrides the
+    # config-file key (defaults to name).
     fields = [
         ("check", "EVOLVE_CHECK", None, "str"),
         ("rounds", "EVOLVE_ROUNDS", 10, "int"),
@@ -122,13 +123,15 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         ("spec", "EVOLVE_SPEC", None, "str"),
         ("capture_frames", "EVOLVE_CAPTURE_FRAMES", False, "bool"),
         ("effort", "EVOLVE_EFFORT", "max", "str"),
-        ("max_cost", "EVOLVE_MAX_COST", None, "float"),
+        ("max_cost", "EVOLVE_MAX_COST", None, "float", "max_cost_usd"),
     ]
 
     # Deprecated fallback: check old yolo config/env if new name not found
     # (handled after the main loop)
 
-    for name, env_var, default, ftype in fields:
+    for field in fields:
+        name, env_var, default, ftype = field[:4]
+        config_key = field[4] if len(field) > 4 else name
         current = getattr(args, name, None)
 
         # Step 1: Check if CLI flag was explicitly set
@@ -157,9 +160,9 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
             elif ftype == "float":
                 try:
                     setattr(args, name, float(env_val))
+                    continue  # valid float from env — skip file/default
                 except ValueError:
-                    pass  # invalid float — leave as-is
-                continue
+                    pass  # invalid float — fall through to file/default
             elif ftype == "bool":
                 if env_val.lower() in ("1", "true", "yes"):
                     setattr(args, name, True)
@@ -169,8 +172,8 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
                 continue
 
         # Step 3: Check config file
-        if name in file_config:
-            file_val = file_config[name]
+        if config_key in file_config:
+            file_val = file_config[config_key]
             if ftype == "int":
                 setattr(args, name, int(file_val))
             elif ftype == "float":

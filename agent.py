@@ -498,6 +498,12 @@ async def run_claude_agent(
 
         turn = 0
         tools_used = 0
+        # Token usage tracking — updated from messages with a ``usage`` attr.
+        # The final ResultMessage typically carries cumulative totals.
+        _usage_input = 0
+        _usage_output = 0
+        _usage_cache_create = 0
+        _usage_cache_read = 0
         # Track already-logged block IDs to skip duplicate partial messages.
         # With include_partial_messages=True, the same AssistantMessage is
         # re-emitted with progressively more content.  We keep the option
@@ -588,10 +594,40 @@ async def run_claude_agent(
                         _log(f"\n> Rate limited\n")
                     elif msg_type == "SystemMessage":
                         _log(f"\n---\n*Session initialized*\n---\n")
+
+                # Extract token usage from any message that carries it.
+                # The SDK's ResultMessage and AssistantMessage may include a
+                # ``usage`` object; we always keep the latest values (the
+                # final ResultMessage has cumulative totals).
+                _mu = getattr(message, "usage", None)
+                if _mu is not None:
+                    _usage_input = getattr(_mu, "input_tokens", 0) or 0
+                    _usage_output = getattr(_mu, "output_tokens", 0) or 0
+                    _usage_cache_create = getattr(_mu, "cache_creation_input_tokens", 0) or 0
+                    _usage_cache_read = getattr(_mu, "cache_read_input_tokens", 0) or 0
+
         except Exception as e:
             _log(f"\n> SDK error: {e}\n")
 
         _log(f"\n---\n\n**Done**: {turn} messages, {tools_used} tool calls\n")
+
+    # Write usage_round_N.json — always, even if counts are zero (the
+    # aggregate_usage scanner expects the file to exist for tracked rounds).
+    try:
+        from costs import TokenUsage
+        from datetime import datetime as _dt, timezone as _tz
+        _tok = TokenUsage(
+            input_tokens=_usage_input,
+            output_tokens=_usage_output,
+            cache_creation_tokens=_usage_cache_create,
+            cache_read_tokens=_usage_cache_read,
+            round=round_num,
+            model=MODEL,
+            timestamp=_dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        _tok.save(out_dir / f"usage_round_{round_num}.json")
+    except Exception:
+        pass  # Non-fatal — usage tracking is observability, not control flow
 
     ui.agent_done(tools_used, str(log_path))
 

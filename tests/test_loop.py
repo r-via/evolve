@@ -900,6 +900,64 @@ class TestWriteStateJson:
         assert "T" in state["started_at"]
         assert state["started_at"].endswith("Z")
 
+    def test_state_json_with_usage(self, tmp_path: Path):
+        """state.json includes usage dict when provided."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n- [x] done\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        usage_data = {
+            "total_input_tokens": 45000,
+            "total_output_tokens": 12000,
+            "total_cache_creation_tokens": 8000,
+            "total_cache_read_tokens": 38000,
+            "estimated_cost_usd": 1.24,
+            "rounds_tracked": 1,
+        }
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-04-23T18:00:00Z",
+            usage=usage_data,
+        )
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        assert "usage" in state
+        assert state["usage"]["total_input_tokens"] == 45000
+        assert state["usage"]["estimated_cost_usd"] == 1.24
+        assert state["usage"]["rounds_tracked"] == 1
+
+    def test_state_json_without_usage(self, tmp_path: Path):
+        """state.json omits usage key when not provided."""
+        run_dir = tmp_path / "session"
+        run_dir.mkdir()
+        improvements = tmp_path / "improvements.md"
+        improvements.write_text("# Improvements\n")
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-04-23T18:00:00Z",
+        )
+        import json
+        state = json.loads((run_dir / "state.json").read_text())
+        assert "usage" not in state
+
 
 # ---------------------------------------------------------------------------
 # _parse_check_output
