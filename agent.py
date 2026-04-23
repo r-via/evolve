@@ -241,6 +241,7 @@ async def run_claude_agent(
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         model=MODEL,
+        max_turns=40,
         cwd=str(project_dir),
         disallowed_tools=["Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
@@ -617,6 +618,7 @@ async def _run_readonly_claude_agent(
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         model=MODEL,
+        max_turns=40,
         cwd=str(project_dir),
         disallowed_tools=disallowed_tools,
         include_partial_messages=True,
