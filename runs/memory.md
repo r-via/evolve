@@ -61,3 +61,6 @@ mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). A
 
 ### Startup-vs-runtime cairosvg check: patch ordering — round 8 of 20260423_142834
 `RichTUI.__init__` runs `import cairosvg` once → must `patch.dict("sys.modules", {"cairosvg": None})` BEFORE construction. Existing tests patched after → only covered runtime fallback in `capture_frame()`. Same trap for any startup-time optional-dep guard.
+
+### Memory-discipline rewrite: static vs runtime header drift — round 9 of 20260423_142834
+`prompts/system.md` § Memory now says log broad (errors, decisions, surprises, patterns, insights). BUT `agent.py:223` still injects `## Memory (errors from previous rounds — do NOT repeat these)` — contradicts broadened policy. Static template ≠ runtime section header; both must move together or discipline doesn't land.

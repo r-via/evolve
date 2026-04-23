@@ -202,8 +202,33 @@ Step 0 (prior-attempt check) still applies on every round.
 
 ## Memory — cumulative learning log (`runs/memory.md`)
 
-Append entries for errors, non-obvious decisions, surprises, patterns, and
-insights. Use these four sections:
+`runs/memory.md` is the one durable place where cross-round context
+accumulates. **Read it at the start of every turn** (you already do this
+in the Verification section above) and **append entries during your
+turn** so future rounds benefit from what you learned.
+
+### What to log — broad, not just crashes
+
+Early versions of evolve only logged entries on hard errors, which left
+`memory.md` empty for most runs. The contract is now broader: append an
+entry for **any** of the following, not only when something fails:
+
+- **Errors** — exceptions, test failures, crashes, stalls
+- **Decisions** — non-obvious choices ("tried X, failed, switched to Y
+  because …")
+- **Surprises** — behaviors that contradicted an initial assumption
+- **Patterns** — recurring issues observed across rounds
+- **Insights** — architectural observations useful to a future round
+  even without an error trigger
+
+A successful round with no crash is **not** an excuse to skip logging.
+If you made a non-obvious decision, hit a surprise, or noticed a
+pattern, log it.
+
+### Structured sections — typed headers, not free-form prose
+
+Entries live under these four typed headers (surprises fold into
+`## Decisions` or `## Insights` depending on flavor):
 
 ```
 ## Errors
@@ -223,7 +248,10 @@ insights. Use these four sections:
 <observation + implication>
 ```
 
-**Hard rules — all three must hold for every entry:**
+The section shape is a scaffold, not a form to fill in. An empty
+section is fine; a forced entry just to populate one is not.
+
+### Hard rules — all three must hold for every entry
 
 1. **Length.** ≤ 5 lines OR ≤ 400 chars, whichever is stricter. Doesn't
    fit → resynthesize or don't log.
@@ -236,11 +264,35 @@ insights. Use these four sections:
    If yes → **do not log**. Memory is for what's NOT recoverable from
    those sources.
 
-**Compaction:** append-only by default. Compact ONLY when `memory.md`
-exceeds ~500 lines, and even then merge duplicates / archive rounds-older-
-than-20 to a `## Archive` section — never delete. The orchestrator
-refuses commits where `memory.md` shrunk by > 50% unless COMMIT_MSG
-contains `memory: compaction`.
+No entry restating what SPEC.md or the code already documents. No
+entry describing a straightforward implementation a reader of the
+resulting commit could infer.
+
+### Compaction — append-only by default
+
+Aggressive per-turn compaction is what produced the "always empty"
+fixed point that motivated this rewrite. The current contract:
+
+- **Append-only by default.** A turn adds entries; it does **not**
+  delete existing ones.
+- **Compact only when `memory.md` exceeds ~500 lines.** Below that
+  threshold, do not touch prior entries at all.
+- **When the threshold is crossed**, merge duplicates within the same
+  section and **archive** (do not delete) entries older than 20 rounds
+  into a collapsed `## Archive` section — still on disk, still
+  searchable, just out of the primary read path.
+- **Never empty a section you couldn't read.** If you cannot tell
+  whether an entry is still relevant, keep it.
+
+### Orchestrator byte-size sanity gate
+
+After every round, the orchestrator refuses commits where `memory.md`
+shrunk by more than 50% compared to its pre-round state unless the
+`COMMIT_MSG` explicitly contains the literal string `memory: compaction`.
+This catches the failure mode where a round silently wipes the file
+while "compacting". If you legitimately compact above the 500-line
+threshold, put `memory: compaction` on its own line in `COMMIT_MSG`;
+otherwise treat any large shrink as a bug.
 
 ## Watchdog — keep the orchestrator informed
 
