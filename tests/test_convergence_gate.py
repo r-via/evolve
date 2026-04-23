@@ -135,6 +135,29 @@ class TestDetectPrematureConverged:
         assert "spec freshness gate" in reason
         assert "[stale: spec changed]" in reason
 
+    def test_stale_phrase_in_checked_item_description_not_premature(
+        self, tmp_path: Path
+    ):
+        """``[stale: spec changed]`` inside a ``[x]`` description must NOT trigger the gate.
+
+        Regression test: the gate previously did a naive substring match on
+        the full file text, which matched the phrase inside completed item
+        descriptions like "Implement Phase 2 … mark items as
+        ``[stale: spec changed]``".
+        """
+        _, spec, imp = _make_project(
+            tmp_path,
+            improvements_text=(
+                "- [x] [functional] Implement Phase 2 spec freshness gate: "
+                "mark every unchecked item as `[stale: spec changed]` and "
+                "rebuild improvements.md\n"
+            ),
+            improvements_newer=True,
+        )
+        is_premature, reason = _detect_premature_converged(imp, spec)
+        assert is_premature is False
+        assert reason == ""
+
     def test_spec_newer_than_improvements_premature(self, tmp_path: Path):
         """mtime(spec) > mtime(improvements.md) → premature via freshness."""
         _, spec, imp = _make_project(

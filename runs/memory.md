@@ -6,6 +6,9 @@ style, non-obvious gate).
 
 ## Errors
 
+### Convergence gate false positive on stale marker — round 3 of 20260423_180038
+`_detect_premature_converged` did full-text `"[stale: spec changed]" in imp_text` → matched phrase inside `[x]` item descriptions. Fix: scan only `- [ ]` lines. Same trap as backlog gate — always iterate lines, never substring-match whole file.
+
 ## Decisions
 
 ### Mechanism B: redundant warn suppression — round 1 of 20260423_142834

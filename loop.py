@@ -251,7 +251,16 @@ def _detect_premature_converged(
             )
     if improvements_path.is_file():
         imp_text = improvements_path.read_text()
-        if "[stale: spec changed]" in imp_text:
+        # Only check *unchecked* lines for stale markers — the phrase may
+        # appear inside the description text of completed [x] items (e.g.
+        # "Implement Phase 2 spec freshness gate ... mark items as
+        # `[stale: spec changed]`") and those must not trigger the gate.
+        has_stale = any(
+            "[stale: spec changed]" in line
+            for line in imp_text.splitlines()
+            if line.strip().startswith("- [ ]")
+        )
+        if has_stale:
             reasons.append(
                 "spec freshness gate: [stale: spec changed] items still "
                 "present in improvements.md — backlog must be rebuilt"
