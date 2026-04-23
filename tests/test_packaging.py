@@ -126,10 +126,13 @@ class TestBuildSystem:
         assert any("setuptools" in r for r in requires)
 
     def test_py_modules_declared(self):
-        """All four modules from README Architecture should be declared."""
+        """Root-level modules and the evolve package should be declared."""
         data = _load_pyproject()
         modules = data["tool"]["setuptools"]["py-modules"]
-        for expected in ["evolve", "loop", "agent", "tui"]:
+        packages = data["tool"]["setuptools"].get("packages", [])
+        # evolve is now a package, not a py-module
+        assert "evolve" in packages, "'evolve' missing from packages"
+        for expected in ["loop", "agent", "tui"]:
             assert expected in modules, f"{expected!r} missing from py-modules"
 
     def test_core_dependency(self):

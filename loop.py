@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from costs import TokenUsage, aggregate_usage, build_usage_state, estimate_cost, format_cost
-from hooks import fire_hook, load_hooks
+from evolve.hooks import fire_hook, load_hooks
 from tui import TUIProtocol, get_tui
 
 
@@ -2156,6 +2156,85 @@ def run_validate(
     else:
         # No markers found — likely an error in report generation
         ui.warn("Could not determine pass/fail from validate_report.md")
+        return 2
+
+
+def run_diff(
+    project_dir: Path,
+    spec: str | None = None,
+    model: str = "claude-opus-4-6",
+    effort: str | None = "low",
+) -> int:
+    """Run the ``evolve diff`` one-shot subcommand.
+
+    Launches the agent in read-only mode with ``--effort low`` and a
+    gap-detection prompt.  Does NOT run the check command.  Produces
+    ``diff_report.md`` with per-section compliance and overall percentage.
+
+    Args:
+        project_dir: Root directory of the project.
+        spec: Path to the spec file relative to project_dir (default: README.md).
+        model: Claude model identifier to use.
+        effort: Reasoning effort level (default: ``"low"``).
+
+    Returns:
+        Exit code: 0 if all major sections present, 1 if gaps found, 2 on error.
+    """
+    ui = get_tui()
+
+    print(f"[probe] diff starting — project={project_dir.name}")
+
+    # Validate spec file exists if --spec is set
+    if spec:
+        spec_path = project_dir / spec
+        if not spec_path.is_file():
+            ui.warn(f"Spec file not found: {spec_path}")
+            return 2
+
+    # Create timestamped run directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = project_dir / "runs" / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ui.run_dir_info(str(run_dir))
+    ui.info("  Mode: DIFF (lightweight gap detection, no file changes)")
+    print(f"[probe] diff session: {run_dir}")
+
+    # Launch agent in diff mode (restricted tools, effort low)
+    from agent import run_diff_agent
+    import agent as _agent_mod
+    _agent_mod.MODEL = model
+    _agent_mod.EFFORT = effort
+
+    ui.agent_working()
+    run_diff_agent(
+        project_dir=project_dir,
+        run_dir=run_dir,
+        spec=spec,
+    )
+
+    # Parse the diff report for pass/fail determination
+    report_path = run_dir / "diff_report.md"
+    if not report_path.is_file():
+        ui.warn("No diff_report.md produced by the agent")
+        return 2
+
+    ui.info(f"  Diff report: {report_path}")
+
+    report_text = report_path.read_text(errors="replace")
+    # Count ✅ and ❌ markers
+    passed = len(re.findall(r"✅", report_text))
+    failed = len(re.findall(r"❌", report_text))
+
+    if failed > 0:
+        ui.info(f"  Result: GAPS FOUND — {passed} present, {failed} missing")
+        print(f"[probe] diff result: GAPS ({passed} present, {failed} missing)")
+        return 1
+    elif passed > 0:
+        ui.info(f"  Result: COMPLIANT — {passed} sections present")
+        print(f"[probe] diff result: COMPLIANT ({passed} sections present)")
+        return 0
+    else:
+        ui.warn("Could not determine compliance from diff_report.md")
         return 2
 
 

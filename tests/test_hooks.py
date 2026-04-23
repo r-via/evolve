@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from hooks import load_hooks, fire_hook, SUPPORTED_EVENTS, HOOK_TIMEOUT
+from evolve.hooks import load_hooks, fire_hook, SUPPORTED_EVENTS, HOOK_TIMEOUT
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ class TestLoadHooksEdgeCases:
 class TestFireHookSuccess:
     def test_fires_configured_hook(self):
         hooks = {"on_round_end": "echo done"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             result = fire_hook(hooks, "on_round_end", session="abc", round_num=5, status="success")
 
@@ -237,7 +237,7 @@ class TestFireHookSuccess:
 
     def test_sets_environment_variables(self):
         hooks = {"on_round_end": "echo $EVOLVE_SESSION"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             fire_hook(hooks, "on_round_end", session="20260325_123456", round_num=3, status="success")
 
@@ -264,7 +264,7 @@ class TestFireHookSuccess:
 class TestFireHookFailure:
     def test_returns_false_on_nonzero_exit(self):
         hooks = {"on_error": "exit 1"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="something went wrong")
             result = fire_hook(hooks, "on_error", session="s", round_num=1, status="error")
 
@@ -272,7 +272,7 @@ class TestFireHookFailure:
 
     def test_returns_false_on_timeout(self):
         hooks = {"on_round_end": "sleep 60"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep 60", timeout=30)
             result = fire_hook(hooks, "on_round_end")
 
@@ -280,7 +280,7 @@ class TestFireHookFailure:
 
     def test_returns_false_on_exception(self):
         hooks = {"on_round_end": "nonexistent_cmd"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.side_effect = OSError("command not found")
             result = fire_hook(hooks, "on_round_end")
 
@@ -293,9 +293,9 @@ class TestFireHookFailure:
 
     def test_nonzero_exit_logs_stderr(self):
         hooks = {"on_error": "exit 1"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=42, stderr="big error message")
-            with patch("hooks.logger") as mock_logger:
+            with patch("evolve.hooks.logger") as mock_logger:
                 fire_hook(hooks, "on_error", session="s", round_num=1, status="error")
                 mock_logger.warning.assert_called()
                 warning_msg = mock_logger.warning.call_args[0][0]
@@ -303,9 +303,9 @@ class TestFireHookFailure:
 
     def test_timeout_logs_warning(self):
         hooks = {"on_round_end": "sleep 60"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep 60", timeout=30)
-            with patch("hooks.logger") as mock_logger:
+            with patch("evolve.hooks.logger") as mock_logger:
                 fire_hook(hooks, "on_round_end")
                 mock_logger.warning.assert_called()
                 warning_msg = mock_logger.warning.call_args[0][0]
@@ -313,18 +313,18 @@ class TestFireHookFailure:
 
     def test_exception_logs_warning(self):
         hooks = {"on_round_end": "bad"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.side_effect = RuntimeError("unexpected")
-            with patch("hooks.logger") as mock_logger:
+            with patch("evolve.hooks.logger") as mock_logger:
                 fire_hook(hooks, "on_round_end")
                 mock_logger.warning.assert_called()
 
     def test_empty_stderr_on_failure(self):
         """When stderr is empty, the warning message should show '(no stderr)'."""
         hooks = {"on_error": "exit 1"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="")
-            with patch("hooks.logger") as mock_logger:
+            with patch("evolve.hooks.logger") as mock_logger:
                 fire_hook(hooks, "on_error", session="s", round_num=1, status="error")
                 # Check that the warning includes "(no stderr)"
                 warning_args = mock_logger.warning.call_args[0]
@@ -338,7 +338,7 @@ class TestFireHookFailure:
 class TestFireHookEnvDefaults:
     def test_default_env_values(self):
         hooks = {"on_round_end": "echo test"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             fire_hook(hooks, "on_round_end")
 
@@ -349,7 +349,7 @@ class TestFireHookEnvDefaults:
 
     def test_env_inherits_parent_environment(self):
         hooks = {"on_round_end": "echo test"}
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             with patch.dict(os.environ, {"MY_CUSTOM_VAR": "hello"}):
                 fire_hook(hooks, "on_round_end")
@@ -371,7 +371,7 @@ class TestHooksIntegration:
         (tmp_path / "evolve.toml").write_text(toml_content)
 
         hooks = load_hooks(tmp_path)
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             result = fire_hook(hooks, "on_converged", session="test_session", round_num=10, status="converged")
 
@@ -394,7 +394,7 @@ class TestHooksIntegration:
         (tmp_path / "evolve.toml").write_text(toml_content)
 
         hooks = load_hooks(tmp_path)
-        with patch("hooks.subprocess.run") as mock_run:
+        with patch("evolve.hooks.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             for event in SUPPORTED_EVENTS:
                 result = fire_hook(hooks, event, session="s", round_num=1, status="ok")

@@ -1,15 +1,18 @@
-#!/usr/bin/env python3
 """evolve — Self-improving evolution loop for any project.
+
+Package marker and CLI entry point.  Re-exports all public names from
+the CLI module for backward compatibility — ``from evolve import main``
+continues to work.
 
 Takes a project directory with a README (the spec) and iteratively improves
 the code until it fully converges to the specification.
 
 Usage:
-  python evolve.py init <project-dir>
-  python evolve.py start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--allow-installs] [--json]
-  python evolve.py start <project-dir> --resume
-  python evolve.py status <project-dir>
-  python evolve.py clean <project-dir> [--keep 5]
+  evolve init <project-dir>
+  evolve start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--allow-installs] [--json]
+  evolve start <project-dir> --resume
+  evolve status <project-dir>
+  evolve clean <project-dir> [--keep 5]
 """
 
 import argparse
@@ -221,7 +224,8 @@ def _check_deps():
     is not importable.  Detects whether a venv exists and tailors the
     instructions accordingly.
     """
-    evolve_dir = Path(__file__).parent
+    # __file__ is evolve/__init__.py; project root is one level up.
+    evolve_dir = Path(__file__).resolve().parent.parent
     venv_dir = evolve_dir / ".venv"
 
     # Check if we're running inside evolve's venv
@@ -342,6 +346,23 @@ def main():
         help="Reasoning effort level passed to the Claude Agent SDK: low, medium, high, or max (default: max, or EVOLVE_EFFORT env var)",
     )
 
+    # --- diff ---
+    diff_p = sub.add_parser(
+        "diff",
+        help="Show delta between spec and implementation (lightweight gap detection)",
+    )
+    diff_p.add_argument("project_dir", nargs="?", default=".", help="Path to the project (default: cwd)")
+    diff_p.add_argument("--spec", default=None,
+                        help="Path to spec file relative to project dir (default: README.md, or EVOLVE_SPEC env var)")
+    diff_p.add_argument("--model", default=None,
+                        help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
+    diff_p.add_argument(
+        "--effort",
+        type=_validate_effort,
+        default=None,
+        help="Reasoning effort level (default: low for diff subcommand)",
+    )
+
     # --- _round (internal) ---
     if len(sys.argv) > 1 and sys.argv[1] == "_round":
         args = _parse_round_args()
@@ -440,6 +461,32 @@ def main():
             apply=getattr(args, "apply", False),
             model=args.model or "claude-opus-4-6",
             effort=getattr(args, "effort", "max"),
+        ))
+
+    elif args.command == "diff":
+        import os as _os
+        project_path = Path(args.project_dir).resolve()
+        args = _resolve_config(args, project_path)
+        # SPEC § "evolve diff": default effort is "low", not "max".
+        # _resolve_config defaults effort to "max"; override to "low"
+        # when the user didn't explicitly set effort via CLI/env/config.
+        _effort_cli = any(a == "--effort" or a.startswith("--effort=") for a in sys.argv)
+        _effort_env = bool(_os.environ.get("EVOLVE_EFFORT", ""))
+        _effort_cfg = "effort" in _load_config(project_path)
+        if not (_effort_cli or _effort_env or _effort_cfg):
+            args.effort = "low"
+        spec = getattr(args, "spec", None)
+        if spec:
+            spec_path = project_path / spec
+            if not spec_path.is_file():
+                print(f"ERROR: spec file not found: {spec_path}")
+                sys.exit(2)
+        from loop import run_diff
+        sys.exit(run_diff(
+            project_dir=project_path,
+            spec=spec,
+            model=args.model or "claude-opus-4-6",
+            effort=getattr(args, "effort", "low"),
         ))
 
     elif args.command == "_round":
