@@ -190,6 +190,23 @@ effect as the `--allow-installs` flag; unlocks `[needs-package]` items):
 EVOLVE_ALLOW_INSTALLS=1 evolve start ~/projects/my-tool --check "pytest"
 ```
 
+Hook commands (configured under `[hooks]` in `evolve.toml`, see example
+above) receive runtime context via three environment variables that
+evolve sets automatically before executing each hook: `EVOLVE_SESSION`
+(the current session id, e.g. `20260324_160000`), `EVOLVE_ROUND` (the
+current round number), and `EVOLVE_STATUS` (the round outcome —
+`running`, `converged`, `error`, etc.). Hooks can read them to emit
+contextual notifications:
+
+```bash
+# evolve.toml
+[hooks]
+on_round_end = 'echo "Round $EVOLVE_ROUND of session $EVOLVE_SESSION: $EVOLVE_STATUS"'
+```
+
+See [SPEC.md § Hook execution](SPEC.md#hook-execution) for the full
+contract.
+
 Scaffold a config file quickly:
 
 ```bash
