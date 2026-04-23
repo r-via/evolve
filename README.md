@@ -340,7 +340,7 @@ automatically detected and killed.
 ├── evolve.toml                        # (optional) project-level config
 ├── runs/
 │   ├── improvements.md                # shared — one improvement added per round
-│   ├── memory.md                      # shared — cumulative error log, compacted each round
+│   ├── memory.md                      # shared — cumulative learning log (errors, decisions, patterns, insights); append-only, compacted only past ~500 lines
 │   ├── 20260324_160000/               # session 1
 │   │   ├── state.json                 # real-time session state (queryable)
 │   │   ├── conversation_loop_1.md     # full opus conversation log
@@ -391,7 +391,8 @@ automatically detected and killed.
    issue).
 7. Phase 4 — CONVERGENCE: only when `mtime(improvements.md) >= mtime(README.md)`
    AND `improvements.md` has no unchecked non-blocked items, write `CONVERGED`
-8. Opus logs errors to memory.md, compacts it
+8. Opus appends errors/decisions/patterns/insights to memory.md (append-only;
+   compacts only if >500 lines — see "memory.md" section)
 9. Opus verifies every file it wrote by reading it back
 10. Opus writes COMMIT_MSG with conventional commit message
 11. Git commit + push
@@ -588,6 +589,38 @@ This makes the agent self-healing for the most common failure mode — getting
 lost in a target that's too large — without operator intervention. The
 orchestrator's zero-progress retry remains the safety net; agent-side detection
 is the first line of defense and catches the loop one round earlier.
+
+**Retry continuity — do not re-investigate what the previous attempt already
+found.** Debug retries of the **same round** must reuse the previous attempt's
+work; otherwise the retry wastes 40 turns re-discovering the same facts. Three
+rules implement this:
+
+1. **Per-attempt log files.** Each attempt of round N writes to its own file:
+   `conversation_loop_N_attempt_1.md`, `conversation_loop_N_attempt_2.md`, etc.
+   Nothing is overwritten. The final successful attempt is also symlinked (or
+   copied) to `conversation_loop_N.md` for backward compatibility with
+   downstream consumers (report generation, party mode, self-monitoring).
+2. **Enriched diagnostic in the retry prompt.** Instead of just the last 3000
+   chars of output, the debug retry prompt includes a dedicated
+   `## Previous attempt log` section with the **full path** to
+   `conversation_loop_N_attempt_{K-1}.md` and an explicit instruction:
+   *"Read this file first. It contains everything the previous attempt
+   already discovered — the tool calls, the dead ends, the working
+   hypotheses. Do not redo that investigation. Continue from where it
+   stopped."*
+3. **Retry-aware self-monitoring.** The agent's first action in any round is
+   to check for prior attempts of the **current** round number on disk (glob
+   `conversation_loop_{current_round}_attempt_*.md`). If any exist, read them
+   **before** looking at rounds N-1 / N-2 — they carry the most relevant
+   context by far. The N-1 / N-2 check remains, but runs after.
+
+This closes the gap where retries are currently blind to their own prior
+attempt: the first attempt crashes after 40 turns of investigation, the
+diagnostic gives the retry a 3000-char snippet (usually just the error
+traceback), and the retry restarts the same investigation from scratch.
+Treating each round as a continuum of attempts — not a fresh start each
+time — is the difference between 3 wasted retries and 3 retries that each
+progress further.
 
 ### The --check flag
 
@@ -829,9 +862,76 @@ One improvement added per round:
 - A type tag: `[functional]` or `[performance]`
 - Optional `[needs-package]` flag — skipped unless `--allow-installs`
 
-### memory.md — cumulative error log
+### memory.md — cumulative learning log
 
-Each agent reads it to avoid repeating mistakes. Each agent compacts it at end of turn.
+Each agent reads `runs/memory.md` at the start of its turn and appends to it
+during work so future rounds can benefit from what was learned. The file is
+shared across rounds and across sessions of the same project — it is the one
+durable place where cross-round context accumulates.
+
+**What to log (broad, not just crashes).** Early versions of evolve only
+triggered writes on hard errors, which left `memory.md` empty for most runs
+because successful rounds had "nothing to log". The current contract is
+broader — the agent appends entries for **any** of:
+
+- **Errors** — exceptions, test failures, crashes, stalls
+- **Decisions** — non-obvious choices ("tried X, failed, switched to Y and
+  why")
+- **Surprises** — behaviors that contradicted an initial assumption
+- **Patterns** — recurring issues across rounds (e.g. "mocking the SDK
+  consistently breaks after upgrades")
+- **Insights** — architectural observations that would be useful to a future
+  round even without an error trigger
+
+**Structured sections.** `memory.md` uses typed headers so the agent (and
+humans) can scan it quickly and the compaction pass doesn't accidentally
+merge unrelated entries:
+
+```markdown
+# Agent Memory
+
+## Errors
+### <title> — <round ref>
+- What happened: ...
+- Root cause: ...
+- Fix: ...
+
+## Decisions
+### <title> — <round ref>
+- Context: ...
+- Choice: ...
+- Rationale: ...
+
+## Patterns
+### <title>
+- Observed in rounds: ...
+- Signature: ...
+
+## Insights
+### <title>
+- Observation: ...
+- Implication: ...
+```
+
+**Compaction discipline.** Aggressive per-turn compaction is what used to
+produce the "always empty" fixed point. The current contract:
+
+- **Append-only by default.** A turn adds entries but does not delete
+  existing ones.
+- **Compact only when `memory.md` exceeds ~500 lines.** When the threshold
+  is crossed, the agent merges duplicates within the same section and
+  archives entries older than 20 rounds into a collapsed `## Archive`
+  section (still on disk, still searchable, just out of the primary read
+  path).
+- **Never empty a section it couldn't read.** If the agent can't tell
+  whether an entry is still relevant, it keeps it.
+
+**Byte-size sanity gate (orchestrator-side).** After every round, the
+orchestrator refuses commits where `memory.md` shrunk by more than 50%
+compared to its pre-round state unless the commit message explicitly
+mentions `memory: compaction`. This is the same family of safeguard as
+zero-progress detection — it catches the failure mode where an agent
+"compacts" by silently wiping the file.
 
 ### Convergence
 
