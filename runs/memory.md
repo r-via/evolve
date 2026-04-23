@@ -100,3 +100,6 @@ Dropping `[wontfix-sync:]` from `_detect_premature_converged` requires sync edit
 
 ### Mechanism B revert: preserve tuple return shape — round 2 of 20260423_171103
 `_forever_restart` still returns `tuple[bool, bool]` (2nd always `False`) — caller in `evolve_loop` unpacks as tuple + legacy path used `isinstance(_, tuple)` guard. Changing to bare `bool` → unpacking break. Also kept `test_legacy_commit_message_when_spec_is_readme` untouched — its `startswith("chore(evolve): forever mode")` assertion survives new "adopt proposal" tail.
+
+### Mechanism C revert: bookkeeping-only attempt 2 — round 3 of 20260423_171103
+attempt 1 landed the code/test deletions (commit 8ce882f) but ran out of 40-turn budget before ticking box + writing COMMIT_MSG → orchestrator flagged NO-PROGRESS. attempt 2 = pure bookkeeping close-out. Rule: on retry, check working tree / last commit BEFORE re-reading source — work may already be done, only the two bookkeeping signals (checkbox + COMMIT_MSG) missing.
