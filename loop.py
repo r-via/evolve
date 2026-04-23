@@ -453,6 +453,50 @@ def _parse_check_output(text: str) -> tuple[bool | None, int | None, float | Non
     return (passed, tests, duration)
 
 
+def _parse_restart_required(run_dir: Path) -> dict | None:
+    """Parse a RESTART_REQUIRED marker file if present.
+
+    The marker is written by the agent when a structural change is detected
+    (SPEC.md § "Structural change self-detection").  Format::
+
+        # RESTART_REQUIRED
+        reason: <one-line why the process must restart>
+        verify: <shell command(s) the operator should run>
+        resume: <shell command to continue evolution>
+        round: <current round number>
+        timestamp: <ISO-8601 UTC>
+
+    Args:
+        run_dir: Session directory to check for the marker.
+
+    Returns:
+        Dict with keys reason/verify/resume/round/timestamp, or None if no
+        marker is present.
+    """
+    marker_path = run_dir / "RESTART_REQUIRED"
+    if not marker_path.is_file():
+        return None
+
+    marker: dict[str, str] = {}
+    try:
+        text = marker_path.read_text(errors="replace")
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("#") or not line:
+                continue
+            if ":" in line:
+                key, _, value = line.partition(":")
+                marker[key.strip()] = value.strip()
+    except OSError:
+        return None
+
+    # Must have at least the reason field to be valid
+    if "reason" not in marker:
+        return None
+
+    return marker
+
+
 def _extract_unchecked_set(text: str) -> set[str]:
     """Return the set of verbatim ``- [ ]`` lines in an improvements.md text.
 
@@ -1653,6 +1697,37 @@ def _run_rounds(
             error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
             if error_log.is_file():
                 error_log.unlink()
+
+            # --- Structural change detection (SPEC § "Structural change
+            # self-detection" — orchestrator-side protocol).  The agent
+            # writes RESTART_REQUIRED when it detects a structural commit.
+            # We check AFTER state.json + budget, BEFORE convergence.
+            # --forever does NOT bypass — structural changes always pause.
+            restart_marker = _parse_restart_required(run_dir)
+            if restart_marker is not None:
+                print(f"[probe] RESTART_REQUIRED detected: {restart_marker.get('reason', '?')}")
+
+                # Fire on_structural_change hook with marker fields as env vars
+                structural_env = {
+                    "EVOLVE_STRUCTURAL_REASON": restart_marker.get("reason", ""),
+                    "EVOLVE_STRUCTURAL_VERIFY": restart_marker.get("verify", ""),
+                    "EVOLVE_STRUCTURAL_RESUME": restart_marker.get("resume", ""),
+                    "EVOLVE_STRUCTURAL_ROUND": restart_marker.get("round", ""),
+                    "EVOLVE_STRUCTURAL_TIMESTAMP": restart_marker.get("timestamp", ""),
+                }
+                fire_hook(
+                    hooks, "on_structural_change",
+                    session=session_name,
+                    round_num=round_num,
+                    status="structural_change",
+                    extra_env=structural_env,
+                )
+
+                # Render blocking red panel
+                ui.structural_change_required(restart_marker)
+
+                # Exit with code 3 — structural change, manual restart required
+                sys.exit(3)
 
             # Check convergence — requires spec freshness gate
             # (mtime(improvements.md) >= mtime(spec)) AND CONVERGED file

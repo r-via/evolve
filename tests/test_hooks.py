@@ -21,9 +21,10 @@ class TestSupportedEvents:
         assert "on_round_end" in SUPPORTED_EVENTS
         assert "on_converged" in SUPPORTED_EVENTS
         assert "on_error" in SUPPORTED_EVENTS
+        assert "on_structural_change" in SUPPORTED_EVENTS
 
-    def test_exactly_four_events(self):
-        assert len(SUPPORTED_EVENTS) == 4
+    def test_exactly_five_events(self):
+        assert len(SUPPORTED_EVENTS) == 5
 
     def test_is_frozenset(self):
         assert isinstance(SUPPORTED_EVENTS, frozenset)

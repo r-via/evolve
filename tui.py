@@ -115,6 +115,8 @@ class TUIProtocol(Protocol):
     def budget_reached(self, round_num: int, budget_usd: float,
                        spent_usd: float) -> None: ...
 
+    def structural_change_required(self, marker: dict) -> None: ...
+
     def capture_frame(self, label: str) -> Path | None: ...
 
 
@@ -424,6 +426,34 @@ class RichTUI:
         self.console.print()
         self.console.print(panel)
 
+    def structural_change_required(self, marker: dict) -> None:
+        """Display a blocking red panel for structural changes requiring restart."""
+        from rich.panel import Panel
+        from rich.table import Table
+
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column()
+        grid.add_row(f"Round {marker.get('round', '?')} committed a structural change:")
+        grid.add_row(f"  {marker.get('reason', '(no reason)')}")
+        grid.add_row("")
+        grid.add_row("Verify before restarting:")
+        grid.add_row(f"  $ {marker.get('verify', '(none)')}")
+        grid.add_row("")
+        grid.add_row("When ready to continue:")
+        grid.add_row(f"  $ {marker.get('resume', '(none)')}")
+        grid.add_row("")
+        grid.add_row("Or abort and revert:")
+        grid.add_row("  $ git reset --hard HEAD~1")
+
+        panel = Panel(
+            grid,
+            title="[bold red]Structural Change \u2014 Operator Review Required[/bold red]",
+            border_style="red",
+            width=min(self.console.width, 60),
+        )
+        self.console.print()
+        self.console.print(panel)
+
     def capture_frame(self, label: str) -> Path | None:
         """Snapshot the recorded Rich buffer as a PNG frame.
 
@@ -651,6 +681,24 @@ class PlainTUI:
         print(f"  Use --resume with a higher --max-cost to continue")
         print(f"{'─' * 46}")
 
+    def structural_change_required(self, marker: dict) -> None:
+        """Display a plain text structural change panel."""
+        print(f"\n{'─' * 56}")
+        print(f"  Structural Change \u2014 Operator Review Required")
+        print(f"{'─' * 56}")
+        print(f"  Round {marker.get('round', '?')} committed a structural change:")
+        print(f"    {marker.get('reason', '(no reason)')}")
+        print()
+        print(f"  Verify before restarting:")
+        print(f"    $ {marker.get('verify', '(none)')}")
+        print()
+        print(f"  When ready to continue:")
+        print(f"    $ {marker.get('resume', '(none)')}")
+        print()
+        print(f"  Or abort and revert:")
+        print(f"    $ git reset --hard HEAD~1")
+        print(f"{'─' * 56}")
+
     def capture_frame(self, label: str) -> Path | None:
         """Plain text TUI has no visual to capture — always returns None."""
         return None
@@ -811,6 +859,14 @@ class JsonTUI:
                        spent_usd: float) -> None:
         self._emit("budget_reached", round=round_num,
                     budget_usd=budget_usd, spent_usd=spent_usd)
+
+    def structural_change_required(self, marker: dict) -> None:
+        self._emit("structural_change_required",
+                    reason=marker.get("reason", ""),
+                    verify=marker.get("verify", ""),
+                    resume=marker.get("resume", ""),
+                    round=marker.get("round", ""),
+                    timestamp=marker.get("timestamp", ""))
 
     def capture_frame(self, label: str) -> Path | None:
         """JSON TUI has no visual to capture — always returns None."""

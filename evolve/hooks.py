@@ -8,6 +8,7 @@ Supported events:
   - on_round_end: A round completes successfully
   - on_converged: The project reaches convergence
   - on_error: A round fails (crash, stall, or check failure)
+  - on_structural_change: A round committed a structural change requiring restart
 
 Hook execution model:
   - Hooks run as fire-and-forget subprocesses with a 30-second timeout
@@ -31,6 +32,7 @@ SUPPORTED_EVENTS = frozenset({
     "on_round_end",
     "on_converged",
     "on_error",
+    "on_structural_change",
 })
 
 # Maximum time (seconds) a hook subprocess is allowed to run.
@@ -97,6 +99,7 @@ def fire_hook(
     session: str = "",
     round_num: int = 0,
     status: str = "",
+    extra_env: dict[str, str] | None = None,
 ) -> bool:
     """Fire a lifecycle event hook if one is configured.
 
@@ -106,12 +109,16 @@ def fire_hook(
       - EVOLVE_ROUND: current round number
       - EVOLVE_STATUS: event-specific status string
 
+    Additional env vars can be passed via *extra_env* (e.g. structural
+    change marker fields for ``on_structural_change``).
+
     Args:
         hooks: Hook configuration dict (from ``load_hooks``).
         event: The event name to fire (e.g. ``"on_round_end"``).
         session: Session directory name for EVOLVE_SESSION env var.
         round_num: Current round number for EVOLVE_ROUND env var.
         status: Status string for EVOLVE_STATUS env var.
+        extra_env: Additional environment variables to pass to the hook.
 
     Returns:
         True if the hook ran successfully, False if it failed or timed out.
@@ -129,6 +136,8 @@ def fire_hook(
     env["EVOLVE_SESSION"] = str(session)
     env["EVOLVE_ROUND"] = str(round_num)
     env["EVOLVE_STATUS"] = str(status)
+    if extra_env:
+        env.update(extra_env)
 
     try:
         result = subprocess.run(
