@@ -32,4 +32,7 @@ threshold `> 3` strict — drift-starts-at-R1 → first warn R5 (rss=4), not R4
 
 ## Patterns
 
+### Party-mode prompt capture: patch target is `agent.run_claude_agent`
+mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). Also patch `agent._is_benign_runtime_error=False` + `agent._should_retry_rate_limit=None` + pre-create `agents/*.md` persona file, else `_run_party_mode` short-circuits before prompt building.
+
 ## Insights
