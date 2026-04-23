@@ -163,6 +163,47 @@ class TestResolveConfigEnvVars:
         assert result.model == "claude-sonnet-4-20250514"
         assert result.allow_installs is True
 
+    def test_evolve_max_cost_env(self, tmp_path: Path):
+        """EVOLVE_MAX_COST env var sets max_cost."""
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
+             patch.dict("os.environ", {"EVOLVE_MAX_COST": "10.50"}, clear=True):
+            result = _resolve_config(args, tmp_path)
+        assert result.max_cost == 10.50
+
+    def test_evolve_max_cost_env_invalid(self, tmp_path: Path):
+        """EVOLVE_MAX_COST with non-float value falls through to default."""
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
+             patch.dict("os.environ", {"EVOLVE_MAX_COST": "not_a_number"}, clear=True):
+            result = _resolve_config(args, tmp_path)
+        assert result.max_cost is None
+
+    def test_evolve_max_cost_cli(self, tmp_path: Path):
+        """CLI --max-cost takes precedence over env and file config."""
+        args = self._make_args(max_cost=25.0)
+        with patch("sys.argv", ["evolve", "start", str(tmp_path), "--max-cost", "25.0"]), \
+             patch.dict("os.environ", {"EVOLVE_MAX_COST": "10.0"}, clear=True):
+            result = _resolve_config(args, tmp_path)
+        assert result.max_cost == 25.0
+
+    def test_evolve_max_cost_file_config(self, tmp_path: Path):
+        """max_cost_usd from evolve.toml is used when no CLI/env."""
+        (tmp_path / "evolve.toml").write_text("max_cost_usd = 50.0\n")
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
+             patch.dict("os.environ", {}, clear=True):
+            result = _resolve_config(args, tmp_path)
+        assert result.max_cost == 50.0
+
+    def test_evolve_max_cost_default_none(self, tmp_path: Path):
+        """max_cost defaults to None when not set anywhere."""
+        args = self._make_args()
+        with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
+             patch.dict("os.environ", {}, clear=True):
+            result = _resolve_config(args, tmp_path)
+        assert result.max_cost is None
+
 
 # ---------------------------------------------------------------------------
 # _load_config — tomllib fallback paths

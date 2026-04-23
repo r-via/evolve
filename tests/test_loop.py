@@ -513,7 +513,7 @@ class TestWriteStateJson:
 
         import json
         state = json.loads((run_dir / "state.json").read_text())
-        assert state["version"] == 1
+        assert state["version"] == 2
         assert state["session"] == "session"
         assert state["project"] == "myproject"
         assert state["round"] == 3

@@ -110,6 +110,9 @@ class TUIProtocol(Protocol):
                            bugs_fixed: int, tests_passing: int | None,
                            report_path: str) -> None: ...
 
+    def budget_reached(self, round_num: int, budget_usd: float,
+                       spent_usd: float) -> None: ...
+
     def capture_frame(self, label: str) -> Path | None: ...
 
 
@@ -392,6 +395,24 @@ class RichTUI:
         self.console.print()
         self.console.print(panel)
 
+    def budget_reached(self, round_num: int, budget_usd: float,
+                       spent_usd: float) -> None:
+        """Display a rich panel when the session's budget cap is exceeded."""
+        from rich.panel import Panel
+        from rich.table import Table
+
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column()
+        grid.add_row(f"\u26a0\ufe0f  Session paused at round {round_num}")
+        grid.add_row(f"Budget: ${budget_usd:.2f} / Used: ${spent_usd:.2f}")
+        grid.add_row("Use --resume with a higher --max-cost to continue")
+
+        panel = Panel(grid, title="[bold]Budget Reached[/bold]",
+                      border_style="yellow",
+                      width=min(self.console.width, 50))
+        self.console.print()
+        self.console.print(panel)
+
     def capture_frame(self, label: str) -> Path | None:
         """Snapshot the recorded Rich buffer as a PNG frame.
 
@@ -603,6 +624,15 @@ class PlainTUI:
         print(f"  Report: {report_path}")
         print(f"{'─' * 46}")
 
+    def budget_reached(self, round_num: int, budget_usd: float,
+                       spent_usd: float) -> None:
+        """Display a plain text budget-reached message."""
+        print(f"\n{'─' * 46}")
+        print(f"  \u26a0\ufe0f  Session paused at round {round_num}")
+        print(f"  Budget: ${budget_usd:.2f} / Used: ${spent_usd:.2f}")
+        print(f"  Use --resume with a higher --max-cost to continue")
+        print(f"{'─' * 46}")
+
     def capture_frame(self, label: str) -> Path | None:
         """Plain text TUI has no visual to capture — always returns None."""
         return None
@@ -754,6 +784,11 @@ class JsonTUI:
                     duration_s=duration_s, improvements=improvements,
                     bugs_fixed=bugs_fixed, tests_passing=tests_passing,
                     report_path=report_path)
+
+    def budget_reached(self, round_num: int, budget_usd: float,
+                       spent_usd: float) -> None:
+        self._emit("budget_reached", round=round_num,
+                    budget_usd=budget_usd, spent_usd=spent_usd)
 
     def capture_frame(self, label: str) -> Path | None:
         """JSON TUI has no visual to capture — always returns None."""
