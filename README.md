@@ -300,17 +300,33 @@ automatically detected and killed.
    + crash diagnostic from previous round (if any)
 3. Opus reads run directory and memory.md for context
 4. Phase 1 — ERRORS: fix any failures from check command (mandatory)
-5. Phase 2 — IMPROVEMENT: implement one item, verify, check it off
-   Then add exactly one new improvement (most impactful next issue)
-6. Phase 3 — CONVERGENCE: only when README 100% implemented + best practices
-7. Opus logs errors to memory.md, compacts it
-8. Opus verifies every file it wrote by reading it back
-9. Opus writes COMMIT_MSG with conventional commit message
-10. Git commit + push
-11. Fire event hooks (on_round_end)
-12. Orchestrator re-runs check → saves check_round_N.txt
-13. Write updated state.json
-14. Next round starts as fresh subprocess (reloaded code)
+5. Phase 2 — SPEC FRESHNESS CHECK (gate): compare
+   `mtime(README.md)` vs `mtime(improvements.md)`.
+     - If the README is **newer** than `improvements.md`, the spec has
+       changed since the backlog was last built and the existing items are
+       considered stale. The agent sets the whole backlog aside (items are
+       marked `[stale: spec changed]`) and rebuilds `improvements.md` from
+       the README: one item per claim that is not yet implemented. The
+       round's target becomes the first of those rebuilt items.
+     - If `improvements.md` is newer or equal, skip to Phase 3 — the backlog
+       is still aligned with the spec.
+   This cheap mtime check is what guarantees README edits take priority over
+   the improvement queue: touching `README.md` today means the next round
+   first rebuilds the backlog from the updated spec, then works on the new
+   gap — no full spec walk required every round.
+6. Phase 3 — IMPROVEMENT: implement one item from `improvements.md`, verify,
+   check it off. Then add exactly one new improvement (most impactful next
+   issue).
+7. Phase 4 — CONVERGENCE: only when `mtime(improvements.md) >= mtime(README.md)`
+   AND `improvements.md` has no unchecked non-blocked items, write `CONVERGED`
+8. Opus logs errors to memory.md, compacts it
+9. Opus verifies every file it wrote by reading it back
+10. Opus writes COMMIT_MSG with conventional commit message
+11. Git commit + push
+12. Fire event hooks (on_round_end)
+13. Orchestrator re-runs check → saves check_round_N.txt
+14. Write updated state.json
+15. Next round starts as fresh subprocess (reloaded code)
 
 --- watchdog & debug retry ---
 
@@ -438,6 +454,61 @@ The agent is aware of the watchdog via the system prompt and is instructed to:
 - Print progress lines as it works (silence = kill)
 - Add logging/probes in delivered code for runtime observability
 - Print a status line before long-running commands
+
+**"Zero progress" detection.** A round is counted as no-progress (and therefore
+triggers the debug retry loop) when **any** of the following holds:
+
+- The subprocess exits non-zero (crash)
+- The watchdog fires (120s silence)
+- The check command regressed (was passing, now failing)
+- The agent committed **without** writing a `COMMIT_MSG` file — the orchestrator
+  falls back to `chore(evolve): round N`, which is the tell-tale sign the agent
+  ran out of turn budget before finishing its work
+- **No improvement was checked off and no new improvement was added** to
+  `improvements.md` — the round ended with `improvements.md` byte-identical to
+  its pre-round state
+
+The last two conditions matter because they catch the failure mode where the
+agent spends its entire turn budget on reconnaissance (Reads, Greps) and is
+killed before writing any Edit/Write. The subprocess exits 0, the check still
+passes (nothing changed), but no real work happened — previously this would
+silently burn rounds until `max_rounds`. The debug retry now kicks in, and the
+agent receives a "CRITICAL — Previous round made NO PROGRESS" header
+instructing it to start with Edit/Write immediately and defer exploration.
+
+**No per-turn cap.** The Claude Agent SDK's `max_turns` parameter is **not set**
+when invoking the agent, so a round can run as many tool calls as it needs to
+finish the improvement. The watchdog (stall detection on 120s of silence) and
+the round-level timeout are the only bounds on agent runtime — an explicit
+`max_turns` was removed after it caused rounds to be killed mid-work on large
+targets, producing the silent no-progress loops described above. If a target is
+so big that a round runs for hours, that is a signal to split the improvement,
+not to re-introduce a turn cap.
+
+**Agent-side self-monitoring.** On top of the orchestrator's zero-progress
+detection, the agent itself inspects the last two rounds' conversation logs
+(`conversation_loop_{N-1}.md` and `conversation_loop_{N-2}.md`) at the start of
+every round and refuses to repeat a stuck pattern. Specifically, before doing
+any work the agent:
+
+1. Reads the previous two conversation logs from the current run directory
+2. Extracts the improvement target each round was attempting
+3. Flags a **stuck loop** if the current target matches either of them and the
+   prior round(s) contain no `Edit`/`Write` tool calls — i.e. pure
+   reconnaissance followed by a placeholder commit
+4. When stuck is detected, the agent does **not** resume the original target.
+   Instead, it:
+   - Splits the target in `improvements.md` into smaller independent items
+     (one per file, per uncovered line range, per behavior), or
+   - Marks the target as blocked with `[blocked: target too broad — split required]`
+     and picks a different unchecked item
+5. Logs the decision to `memory.md` so future rounds don't re-attempt the same
+   broken split
+
+This makes the agent self-healing for the most common failure mode — getting
+lost in a target that's too large — without operator intervention. The
+orchestrator's zero-progress retry remains the safety net; agent-side detection
+is the first line of defense and catches the loop one round earlier.
 
 ### The --check flag
 
@@ -685,10 +756,26 @@ Each agent reads it to avoid repeating mistakes. Each agent compacts it at end o
 
 ### Convergence
 
-Opus decides convergence. It must verify line-by-line that every README claim is implemented
-and functional. When certain, it writes `CONVERGED` with justification.
+Opus decides convergence, but only after **two independent gates** both pass in
+the same round:
 
-### Phase 4 — Party mode (post-convergence)
+1. **Spec freshness gate** (Phase 2 above) —
+   `mtime(improvements.md) >= mtime(README.md)`. If the README was touched
+   more recently than the backlog, the backlog is stale and must be rebuilt
+   before anything else happens.
+2. **Improvement backlog gate** — `improvements.md` has zero unchecked
+   non-blocked items.
+
+The spec gate always runs first, on every round, *before* any improvement
+work. This guarantees README edits made mid-run take priority: touching
+`README.md` today means the next round rebuilds `improvements.md` from the
+updated spec, pushing the stale backlog aside until the new claims are
+implemented. A single `stat` call is all it takes — no full spec walk on
+rounds where the README hasn't moved.
+
+When both gates pass, Opus writes `CONVERGED` with justification.
+
+### Phase 5 — Party mode (post-convergence)
 
 After convergence, all agents from `agents/` brainstorm the next evolution:
 
