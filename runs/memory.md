@@ -88,3 +88,6 @@ Drift-catch via `src.count("literal") <= 1` — allow 1 (the constant definition
 
 ### `_init_config` spec plumbing: keep constant agnostic, substitute at render — round 20 of 20260423_142834
 `_DEFAULT_MEMORY_MD` stays spec-agnostic (constant-drift test asserts "SPEC.md §" NOT in template). Added `_render_default_memory_md(spec)` seam: None / "README.md" → return verbatim; explicit spec → `.replace("your project's spec file", spec)`. Init now calls `_resolve_config` first so EVOLVE_SPEC env honored before scaffold write.
+
+### Mechanism A blocking: helper vs loop split — round 1 of 20260423_162904
+`_audit_readme_sync` stays pure item-adder (never touches CONVERGED). New `_enforce_readme_sync_gate` + `_has_unresolved_readme_sync_items` in loop.py do the unlink. Idempotency now scans for `` `<claim>` `` substring (not full item line) + skips any line with both claim marker AND `[wontfix-sync:`. Checked `[x]` without wontfix-sync does NOT bypass re-propose — test must also update README text, else next audit re-queues.

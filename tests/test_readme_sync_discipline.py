@@ -6,7 +6,9 @@ and C (drift warning) are covered individually in ``test_readme_audit.py``,
 ``test_readme_drift_integration.py``. This file consolidates the
 discipline-level invariants that span all three mechanisms:
 
-1. Mechanism A NEVER blocks convergence, even when it appends items
+1. Mechanism A is a pure item-adder — it mutates ``improvements.md`` but
+   never touches the ``CONVERGED`` marker directly (blocking is done by
+   ``_enforce_readme_sync_gate`` in the loop).
 2. Mechanism B's README_proposal.md is produced ONLY when ``--spec``
    differs from ``README.md``
 3. Mechanism C's warning/counter fire at exactly the documented
@@ -48,7 +50,13 @@ def _touch(path: Path, mtime: float) -> None:
 
 
 class TestMechanismADoesNotBlockConvergence:
-    """Mechanism A is advisory — gaps generate items but convergence proceeds."""
+    """Mechanism A's audit helper is a pure item-adder.
+
+    Per SPEC.md § "Mechanism A", appended items DO block convergence — but
+    the blocking happens in ``_enforce_readme_sync_gate`` (loop-level), not
+    in ``_audit_readme_sync`` itself. These tests verify the audit helper
+    never mutates the ``CONVERGED`` marker directly.
+    """
 
     def test_audit_returns_count_not_exception_even_with_many_gaps(
         self, tmp_path: Path

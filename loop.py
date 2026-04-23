@@ -371,16 +371,29 @@ def _audit_readme_sync(
           (documented in <spec> § <section> but absent from README.md)
 
     The audit is intentionally a grep-level heuristic — being cheap is what
-    lets it run every round without budget concerns. It **never blocks
-    convergence**; the sync items it appends simply become the first targets
-    of the next evolution cycle.
+    lets it run every round without budget concerns. Items it appends are
+    **regular ``[ ]`` blockers**: the convergence gate rejects ``CONVERGED``
+    until every sync item is either checked off (``[x]``) or annotated with
+    a ``[wontfix-sync: <reason>]`` suffix (see SPEC.md § "Escape hatch for
+    intrinsically-unsyncable claims").
+
+    **Idempotency contract.** Before appending an item for a claim, the
+    audit scans ``improvements.md`` for:
+
+    1. A pending ``[ ]`` item whose description already contains the same
+       ```<claim>``` phrase (e.g. ``` `--foo` ```), in which case the item
+       is already queued and must not be duplicated.
+    2. Any line (pending OR checked) that contains both the same
+       ```<claim>``` phrase AND a ``[wontfix-sync:`` marker, in which case
+       the claim has been intentionally exempted and must not be re-proposed
+       by future audits.
 
     The audit is a no-op when:
 
     - ``spec`` is unset or equals ``"README.md"`` (nothing to sync with)
     - Either the spec file or ``README.md`` is missing
     - There are no gaps (every claim is already mentioned)
-    - Every gap's sync item already exists in ``improvements.md`` (idempotent)
+    - Every gap is already pending or ``wontfix-sync``'d (idempotent)
 
     Args:
         project_dir: Root directory of the project.
@@ -415,6 +428,7 @@ def _audit_readme_sync(
 
     readme_lower = readme_text.lower()
     existing_items = improvements_path.read_text() if improvements_path.is_file() else ""
+    existing_lines = existing_items.splitlines()
 
     new_items: list[str] = []
     for claim, ctype, section in claims:
@@ -422,14 +436,32 @@ def _audit_readme_sync(
         # anywhere in README.md — even a brief reference or a link suffices.
         if claim.lower() in readme_lower:
             continue
+
+        claim_marker = f"`{claim}`"
+
+        # Idempotency: skip if (1) a pending sync item already names this
+        # claim, or (2) any line (pending or checked) has a
+        # [wontfix-sync:] marker naming this claim.
+        already_queued = False
+        for line in existing_lines:
+            stripped = line.strip()
+            if claim_marker not in stripped:
+                continue
+            if "[wontfix-sync:" in stripped:
+                already_queued = True
+                break
+            if stripped.startswith("- [ ]") and "README sync:" in stripped:
+                already_queued = True
+                break
+        if already_queued:
+            continue
+
         readme_section = _suggest_readme_section(ctype)
         item = (
-            f"- [ ] [functional] README sync: mention `{claim}` "
+            f"- [ ] [functional] README sync: mention {claim_marker} "
             f"in {readme_section} "
             f"(documented in {spec_file} § {section} but absent from README.md)"
         )
-        if item in existing_items:
-            continue  # idempotent
         new_items.append(item)
 
     if not new_items:
@@ -443,6 +475,72 @@ def _audit_readme_sync(
             f.write(item + "\n")
 
     return len(new_items)
+
+
+def _has_unresolved_readme_sync_items(improvements_path: Path) -> bool:
+    """Return True if any ``- [ ]`` README-sync item is still unresolved.
+
+    A ``README sync: mention`` item counts as **resolved** when it is either:
+
+    - Checked off (``- [x]``), OR
+    - Annotated with a ``[wontfix-sync: <reason>]`` suffix (SPEC.md §
+      "Escape hatch for intrinsically-unsyncable claims").
+
+    An item that is still ``- [ ]`` without a ``[wontfix-sync:]`` marker is
+    **unresolved** and blocks the convergence gate per SPEC.md §
+    "Mechanism A — Pre-convergence README audit" (rule 4).
+
+    Args:
+        improvements_path: Path to ``improvements.md``.
+
+    Returns:
+        True iff at least one unresolved ``README sync:`` item exists.
+    """
+    if not improvements_path.is_file():
+        return False
+    for line in improvements_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("- [ ]"):
+            continue
+        if "README sync:" not in stripped:
+            continue
+        if "[wontfix-sync:" in stripped:
+            continue
+        return True
+    return False
+
+
+def _enforce_readme_sync_gate(
+    converged_path: Path,
+    improvements_path: Path,
+    sync_added: int,
+) -> bool:
+    """Enforce Mechanism A convergence gate (SPEC.md § "Mechanism A").
+
+    Mechanism A items are regular ``[ ]`` blockers: the convergence gate
+    rejects ``CONVERGED`` until every sync item is resolved (``[x]`` or
+    ``[wontfix-sync:]``). When the gate rejects, the ``CONVERGED`` marker
+    is unlinked so the next round processes the sync items before retrying
+    convergence.
+
+    Args:
+        converged_path: Path to the ``CONVERGED`` marker file.
+        improvements_path: Path to ``improvements.md``.
+        sync_added: Number of items added by the most recent audit call.
+
+    Returns:
+        True iff the gate rejected convergence (marker unlinked), False
+        otherwise.
+    """
+    blocked = sync_added > 0 or _has_unresolved_readme_sync_items(improvements_path)
+    if blocked and converged_path.is_file():
+        print(
+            "[probe] convergence rejected: README sync gaps must be "
+            "addressed ([x] or [wontfix-sync:]) — removing CONVERGED marker"
+        )
+        converged_path.unlink()
+        return True
+    return False
 
 
 def _count_checked(path: Path) -> int:
@@ -1745,7 +1843,7 @@ def _run_rounds(
                 if sync_added > 0:
                     print(
                         f"[probe] README audit: appended {sync_added} sync "
-                        f"item(s) to improvements.md (does not block convergence)"
+                        f"item(s) to improvements.md — blocking CONVERGED"
                     )
                     # Commit the updated improvements.md so the next cycle
                     # picks it up cleanly and the working tree stays clean.
@@ -1755,11 +1853,18 @@ def _run_rounds(
                         ui,
                     )
 
+                # Mechanism A gate: newly-added items AND any pre-existing
+                # unresolved sync items (from prior rounds) block CONVERGED
+                # until they are checked off or marked [wontfix-sync: ...].
+                _enforce_readme_sync_gate(
+                    converged_path, improvements_path, sync_added
+                )
+
                 # Verify spec freshness gate — don't mark stale again,
                 # just check the mtime relationship
                 spec_file = spec or "README.md"
                 spec_path = project_dir / spec_file
-                if spec_path.is_file() and improvements_path.is_file():
+                if converged_path.is_file() and spec_path.is_file() and improvements_path.is_file():
                     if spec_path.stat().st_mtime > improvements_path.stat().st_mtime:
                         print("[probe] convergence rejected: spec is newer than improvements.md — removing CONVERGED marker")
                         converged_path.unlink()

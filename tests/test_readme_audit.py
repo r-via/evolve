@@ -19,7 +19,9 @@ import pytest
 
 from loop import (
     _audit_readme_sync,
+    _enforce_readme_sync_gate,
     _extract_spec_claims,
+    _has_unresolved_readme_sync_items,
     _suggest_readme_section,
 )
 
@@ -323,3 +325,291 @@ class TestAuditAgainstRealProject:
         assert count >= 0
         if count > 0:
             assert "README sync" in imp.read_text()
+
+
+# ---------------------------------------------------------------------------
+# Idempotency & wontfix-sync — SPEC.md § "Mechanism A" rules (a)-(c)
+# ---------------------------------------------------------------------------
+
+
+class TestAuditIdempotencyBySubstring:
+    """Idempotency scans for the ``<claim>`` phrase, not the full item text.
+
+    This is what SPEC § "Idempotency is mandatory" prescribes: a later
+    audit must find the same phrase and skip, even if the existing line's
+    wording differs slightly from the audit's generated template.
+    """
+
+    def _setup(self, tmp_path: Path) -> Path:
+        (tmp_path / "SPEC.md").write_text(
+            "### The --brand-new flag\nDoes something.\n"
+        )
+        (tmp_path / "README.md").write_text("# Project\n")
+        imp = tmp_path / "improvements.md"
+        imp.write_text("# Improvements\n")
+        return imp
+
+    def test_skips_when_existing_pending_item_mentions_same_claim(
+        self, tmp_path: Path
+    ) -> None:
+        imp = self._setup(tmp_path)
+        # A pre-existing pending item already mentions `--brand-new` with a
+        # slightly different wording than the audit would generate.
+        imp.write_text(
+            "# Improvements\n"
+            "- [ ] [functional] README sync: mention `--brand-new` in README "
+            "(user asked for this earlier)\n"
+        )
+        count = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+        assert count == 0, (
+            "audit must skip claims whose phrase is already present in a "
+            "pending item, even if the rest of the wording differs"
+        )
+        # The line count for this claim stays at one.
+        assert imp.read_text().count("`--brand-new`") == 1
+
+    def test_skips_when_wontfix_sync_on_pending_line(self, tmp_path: Path) -> None:
+        imp = self._setup(tmp_path)
+        imp.write_text(
+            "# Improvements\n"
+            "- [ ] [functional] README sync: mention `--brand-new` "
+            "[wontfix-sync: internal flag, not user-visible]\n"
+        )
+        count = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+        assert count == 0
+        assert imp.read_text().count("`--brand-new`") == 1
+
+    def test_skips_when_wontfix_sync_on_checked_line(self, tmp_path: Path) -> None:
+        """SPEC rule (c): the wontfix-sync marker survives across rounds
+        even under ``[x]`` items — the future audit must not re-propose it.
+        """
+        imp = self._setup(tmp_path)
+        imp.write_text(
+            "# Improvements\n"
+            "- [x] [functional] README sync: mention `--brand-new` "
+            "[wontfix-sync: implementation detail, not worth documenting]\n"
+        )
+        count = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+        assert count == 0, (
+            "wontfix-sync marked phrases must never be re-proposed by a "
+            "later audit run, even when the item is already checked off"
+        )
+        # No new line was appended
+        assert imp.read_text().count("`--brand-new`") == 1
+
+
+class TestHasUnresolvedReadmeSyncItems:
+    """Convergence-gate helper: which sync items count as unresolved?"""
+
+    def test_empty_file(self, tmp_path: Path) -> None:
+        imp = tmp_path / "improvements.md"
+        imp.write_text("")
+        assert _has_unresolved_readme_sync_items(imp) is False
+
+    def test_missing_file(self, tmp_path: Path) -> None:
+        imp = tmp_path / "improvements.md"
+        assert _has_unresolved_readme_sync_items(imp) is False
+
+    def test_unchecked_plain_sync_item_is_unresolved(self, tmp_path: Path) -> None:
+        imp = tmp_path / "improvements.md"
+        imp.write_text(
+            "- [ ] [functional] README sync: mention `--foo` in Usage\n"
+        )
+        assert _has_unresolved_readme_sync_items(imp) is True
+
+    def test_checked_sync_item_is_resolved(self, tmp_path: Path) -> None:
+        imp = tmp_path / "improvements.md"
+        imp.write_text(
+            "- [x] [functional] README sync: mention `--foo` in Usage\n"
+        )
+        assert _has_unresolved_readme_sync_items(imp) is False
+
+    def test_wontfix_sync_suffix_is_resolved(self, tmp_path: Path) -> None:
+        """Even an unchecked item counts as resolved when it has
+        ``[wontfix-sync:]`` — SPEC.md § "Escape hatch"."""
+        imp = tmp_path / "improvements.md"
+        imp.write_text(
+            "- [ ] [functional] README sync: mention `--foo` in Usage "
+            "[wontfix-sync: internal constant]\n"
+        )
+        assert _has_unresolved_readme_sync_items(imp) is False
+
+    def test_non_sync_pending_items_ignored(self, tmp_path: Path) -> None:
+        """Only README-sync items count toward this gate."""
+        imp = tmp_path / "improvements.md"
+        imp.write_text(
+            "- [ ] [functional] some regular pending improvement\n"
+            "- [ ] [performance] another unrelated item\n"
+        )
+        assert _has_unresolved_readme_sync_items(imp) is False
+
+    def test_mix_of_resolved_and_unresolved(self, tmp_path: Path) -> None:
+        imp = tmp_path / "improvements.md"
+        imp.write_text(
+            "- [x] [functional] README sync: mention `--foo` in Usage\n"
+            "- [ ] [functional] README sync: mention `--bar` in Usage\n"
+            "- [ ] [functional] README sync: mention `--baz` in Usage "
+            "[wontfix-sync: reason]\n"
+        )
+        # --bar is unchecked without wontfix-sync → unresolved
+        assert _has_unresolved_readme_sync_items(imp) is True
+
+
+class TestEnforceReadmeSyncGate:
+    """The convergence gate unlinks CONVERGED when sync items are unresolved."""
+
+    def _setup_converged(self, tmp_path: Path) -> tuple[Path, Path]:
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        converged = run_dir / "CONVERGED"
+        converged.write_text("All spec claims verified.")
+        imp = tmp_path / "improvements.md"
+        imp.write_text("# Improvements\n")
+        return converged, imp
+
+    def test_gate_allows_convergence_when_queue_clean(self, tmp_path: Path) -> None:
+        converged, imp = self._setup_converged(tmp_path)
+        imp.write_text(
+            "# Improvements\n"
+            "- [x] [functional] README sync: mention `--foo` in Usage\n"
+        )
+        rejected = _enforce_readme_sync_gate(converged, imp, sync_added=0)
+        assert rejected is False
+        assert converged.is_file(), "CONVERGED must stand when all sync items resolved"
+
+    def test_gate_rejects_when_audit_just_added_items(self, tmp_path: Path) -> None:
+        converged, imp = self._setup_converged(tmp_path)
+        rejected = _enforce_readme_sync_gate(converged, imp, sync_added=3)
+        assert rejected is True
+        assert not converged.is_file(), "CONVERGED marker must be removed"
+
+    def test_gate_rejects_when_prior_sync_items_still_unchecked(
+        self, tmp_path: Path
+    ) -> None:
+        """Even with sync_added=0 (audit idempotent), any pre-existing
+        unresolved sync item must block convergence."""
+        converged, imp = self._setup_converged(tmp_path)
+        imp.write_text(
+            "# Improvements\n"
+            "- [ ] [functional] README sync: mention `--foo` in Usage\n"
+        )
+        rejected = _enforce_readme_sync_gate(converged, imp, sync_added=0)
+        assert rejected is True
+        assert not converged.is_file()
+
+    def test_gate_allows_when_all_sync_items_wontfix_or_checked(
+        self, tmp_path: Path
+    ) -> None:
+        converged, imp = self._setup_converged(tmp_path)
+        imp.write_text(
+            "# Improvements\n"
+            "- [x] [functional] README sync: mention `--foo` in Usage\n"
+            "- [ ] [functional] README sync: mention `--bar` in Usage "
+            "[wontfix-sync: implementation detail]\n"
+        )
+        rejected = _enforce_readme_sync_gate(converged, imp, sync_added=0)
+        assert rejected is False
+        assert converged.is_file()
+
+    def test_gate_is_noop_when_no_converged_marker(self, tmp_path: Path) -> None:
+        """If CONVERGED isn't written yet, gate returns False regardless."""
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        converged = run_dir / "CONVERGED"  # intentionally does not exist
+        imp = tmp_path / "improvements.md"
+        imp.write_text(
+            "# Improvements\n"
+            "- [ ] [functional] README sync: mention `--foo` in Usage\n"
+        )
+        rejected = _enforce_readme_sync_gate(converged, imp, sync_added=5)
+        assert rejected is False
+        assert not converged.exists()
+
+
+class TestAuditWorkflowEndToEnd:
+    """Exercise the full audit → convergence-gate loop.
+
+    Mirrors SPEC.md § "Mechanism A" rule (4): round N queues gaps, round
+    N+1 fixes one and re-audits finding N-1 gaps (no duplicates queued),
+    …, round N+k finds 0 gaps and convergence proceeds.
+    """
+
+    def test_second_audit_adds_no_duplicates(self, tmp_path: Path) -> None:
+        (tmp_path / "SPEC.md").write_text(
+            "### The --alpha flag\n"
+            "### The --beta flag\n"
+        )
+        (tmp_path / "README.md").write_text("# README\n")
+        imp = tmp_path / "improvements.md"
+        imp.write_text("# Improvements\n")
+
+        first = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+        assert first == 2
+        second = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+        assert second == 0, "second invocation must not re-append any item"
+        # Each claim appears exactly once in the file
+        text = imp.read_text()
+        assert text.count("`--alpha`") == 1
+        assert text.count("`--beta`") == 1
+
+    def test_convergence_blocked_until_items_checked_or_wontfix(
+        self, tmp_path: Path
+    ) -> None:
+        # Initial state: spec claims with no README mention, CONVERGED written.
+        (tmp_path / "SPEC.md").write_text("### The --only flag\n")
+        (tmp_path / "README.md").write_text("# README\n")
+        imp = tmp_path / "improvements.md"
+        imp.write_text("# Improvements\n")
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        converged = run_dir / "CONVERGED"
+        converged.write_text("done")
+
+        # Round N — audit queues the gap, gate rejects CONVERGED
+        added = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+        assert added == 1
+        assert _enforce_readme_sync_gate(converged, imp, added) is True
+        assert not converged.is_file()
+
+        # Round N+1 — agent writes CONVERGED again, audit finds no new
+        # gaps (idempotent), but the pre-existing item still blocks.
+        converged.write_text("done2")
+        added = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+        assert added == 0
+        assert _enforce_readme_sync_gate(converged, imp, added) is True
+        assert not converged.is_file()
+
+        # Round N+2 — agent actually updates the README to mention the
+        # claim AND checks off the sync item; gate now allows.
+        (tmp_path / "README.md").write_text("# README\n\nUse `--only` to ...\n")
+        text = imp.read_text().replace(
+            "- [ ] [functional] README sync: mention `--only`",
+            "- [x] [functional] README sync: mention `--only`",
+        )
+        imp.write_text(text)
+        converged.write_text("done3")
+        added = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+        assert added == 0  # claim now in README → audit finds no gap
+        assert _enforce_readme_sync_gate(converged, imp, added) is False
+        assert converged.is_file()
+
+    def test_wontfix_phrase_never_re_proposed(self, tmp_path: Path) -> None:
+        """Rule (c): once a claim is wontfix-sync'd, future audits skip it
+        even after the original item has been checked off and archived."""
+        (tmp_path / "SPEC.md").write_text("### The --internal flag\n")
+        (tmp_path / "README.md").write_text("# README\n")
+        imp = tmp_path / "improvements.md"
+        imp.write_text(
+            "# Improvements\n"
+            "- [x] [functional] README sync: mention `--internal` "
+            "[wontfix-sync: internal-only, not user facing]\n"
+        )
+
+        for _ in range(5):
+            # Every subsequent round — the claim is still a spec-vs-README
+            # gap, but the wontfix-sync marker must make the audit skip it.
+            added = _audit_readme_sync(tmp_path, imp, spec="SPEC.md")
+            assert added == 0, "wontfix-sync must persist across rounds"
+
+        # Body unchanged — no new line appended on any of the 5 runs
+        assert imp.read_text().count("`--internal`") == 1
