@@ -370,6 +370,7 @@ def _generate_evolution_report(
     max_rounds: int,
     final_round: int,
     converged: bool,
+    capture_frames: bool = False,
 ) -> None:
     """Generate evolution_report.md summarizing the session.
 
@@ -501,6 +502,21 @@ def _generate_evolution_report(
     if unchecked > 0:
         report_lines.append(f"- {unchecked} improvements remaining")
     report_lines.append("")
+
+    # Add visual timeline section if frame capture is enabled
+    if capture_frames:
+        frames_dir = run_dir / "frames"
+        if frames_dir.is_dir():
+            frame_files = sorted(frames_dir.glob("*.png"))
+            if frame_files:
+                report_lines.append("## Visual timeline")
+                report_lines.append("")
+                for frame_file in frame_files:
+                    # Use relative path from report location into frames/
+                    label = frame_file.stem.replace("_", " ").title()
+                    report_lines.append(f"### {label}")
+                    report_lines.append(f"![{label}](frames/{frame_file.name})")
+                    report_lines.append("")
 
     report_path = run_dir / "evolution_report.md"
     report_path.write_text("\n".join(report_lines))
@@ -1019,7 +1035,7 @@ def _run_rounds(
                 )
 
                 # Generate evolution report
-                _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True)
+                _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True, capture_frames=capture_frames)
 
                 # Display completion summary panel
                 duration_s = time.monotonic() - _rounds_start_time
@@ -1081,7 +1097,7 @@ def _run_rounds(
             )
 
             # Generate evolution report
-            _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False)
+            _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False, capture_frames=capture_frames)
 
             # Display completion summary panel
             duration_s = time.monotonic() - _rounds_start_time
