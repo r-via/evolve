@@ -106,3 +106,6 @@ attempt 1 landed the code/test deletions (commit 8ce882f) but ran out of 40-turn
 
 ### Stale-README advisory: integer-floor drift at day boundary — round 4 of 20260423_171103
 `drift_days = int(drift_seconds // 86400)` + strict `>` → drift == threshold is silent (30 days drift + threshold 30 → int=30, 30>30 False). Matches SPEC "default threshold 30 days" wording — fires at 31+. Config resolution: env > evolve.toml > default, invalid env silently falls through to config (not default) — checked via `threshold_days is None` sentinel, not empty string.
+
+### sync-readme: `NO_SYNC_NEEDED` sentinel for exit-1 — round 4 attempt 2 of 20260423_171103
+agent has 2 outputs: write `<project>/README_proposal.md` (or `README.md` in apply) → exit 0; write `<run_dir>/NO_SYNC_NEEDED` → exit 1; neither → exit 2. Apply mode also asserts mtime advanced before `_git_commit`, else exit 2 (catches silent agent no-op). Spec=None / "README.md" → refuse with exit 1, no agent call, no run_dir creation. Backlog rule 1: `--effort` re-add legitimate only because queue was genuinely empty post-checkoff.

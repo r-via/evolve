@@ -275,6 +275,19 @@ def main():
     clean_p.add_argument("project_dir", help="Path to the project")
     clean_p.add_argument("--keep", type=int, default=5, help="Number of recent sessions to keep (default: 5)")
 
+    # --- sync-readme ---
+    sync_p = sub.add_parser(
+        "sync-readme",
+        help="Refresh README.md to reflect the current spec (one-shot, never runs during rounds)",
+    )
+    sync_p.add_argument("project_dir", nargs="?", default=".", help="Path to the project (default: cwd)")
+    sync_p.add_argument("--spec", default=None,
+                        help="Path to spec file relative to project dir (default: README.md, or EVOLVE_SPEC env var)")
+    sync_p.add_argument("--apply", action="store_true",
+                        help="Write directly to README.md and commit (default: write README_proposal.md only)")
+    sync_p.add_argument("--model", default=None,
+                        help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
+
     # --- _round (internal) ---
     if len(sys.argv) > 1 and sys.argv[1] == "_round":
         args = _parse_round_args()
@@ -355,6 +368,20 @@ def main():
 
     elif args.command == "clean":
         _clean_sessions(Path(args.project_dir).resolve(), args.keep)
+
+    elif args.command == "sync-readme":
+        project_path = Path(args.project_dir).resolve()
+        # Resolve --spec / --model via _resolve_config so EVOLVE_SPEC /
+        # EVOLVE_MODEL env vars and evolve.toml are honored exactly like
+        # they are for `evolve start`.
+        args = _resolve_config(args, project_path)
+        from loop import run_sync_readme
+        sys.exit(run_sync_readme(
+            project_dir=project_path,
+            spec=getattr(args, "spec", None),
+            apply=getattr(args, "apply", False),
+            model=args.model or "claude-opus-4-6",
+        ))
 
     elif args.command == "_round":
         from loop import run_single_round

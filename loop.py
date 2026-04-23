@@ -2018,6 +2018,128 @@ def run_validate(
         return 2
 
 
+def run_sync_readme(
+    project_dir: Path,
+    spec: str | None = None,
+    apply: bool = False,
+    model: str = "claude-opus-4-6",
+) -> int:
+    """Run the ``evolve sync-readme`` one-shot subcommand.
+
+    Refreshes README.md so it reflects the current spec, preserving the
+    README's tutorial voice (brevity, examples, links to the spec for
+    internals).  Per SPEC.md § "evolve sync-readme":
+
+    - Default mode writes ``<project>/README_proposal.md`` for human
+      review and does NOT touch ``README.md``.
+    - ``apply=True`` writes directly to ``README.md`` and creates a
+      ``docs(readme): sync to spec`` git commit.
+
+    Refuses to run when the spec IS the README — i.e. ``spec`` is
+    ``None`` or equals ``"README.md"`` — because there is nothing to
+    sync against.  In that case the function emits a ``ui.info``
+    explaining the no-op and returns exit code 1.
+
+    Args:
+        project_dir: Root directory of the project.
+        spec: Path to the spec file relative to ``project_dir``.
+        apply: When True, write directly to README.md and commit.
+        model: Claude model identifier to use.
+
+    Returns:
+        Exit code: 0 (proposal written / applied), 1 (already in sync
+        OR spec IS README), 2 (error — spec missing, agent failure,
+        etc.).
+    """
+    ui = get_tui()
+
+    print(f"[probe] sync-readme starting — project={project_dir.name}")
+
+    # Refuse when the spec IS the README — no sync to perform.
+    if spec is None or spec == "README.md":
+        ui.info(
+            "  sync-readme is a no-op when --spec is unset or equals "
+            "README.md (README is the spec)"
+        )
+        print("[probe] sync-readme: no-op (README is the spec)")
+        return 1
+
+    # Validate spec exists.
+    spec_path = project_dir / spec
+    if not spec_path.is_file():
+        ui.error(f"ERROR: spec file not found: {spec_path}")
+        print(f"[probe] sync-readme: ERROR — spec missing")
+        return 2
+
+    # Create timestamped run directory for the conversation log + sentinel.
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = project_dir / "runs" / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ui.run_dir_info(str(run_dir))
+    mode_label = "APPLY (will commit README.md)" if apply else "PROPOSAL (writes README_proposal.md)"
+    ui.info(f"  Mode: SYNC-README — {mode_label}")
+    print(f"[probe] sync-readme session: {run_dir} (apply={apply})")
+
+    # Snapshot README.md mtime before agent runs (used to detect whether
+    # apply mode actually overwrote the file).
+    readme_path = project_dir / "README.md"
+    readme_mtime_before = readme_path.stat().st_mtime if readme_path.is_file() else None
+
+    # Launch agent.
+    from agent import run_sync_readme_agent, SYNC_README_NO_CHANGES_SENTINEL
+    import agent as _agent_mod
+    _agent_mod.MODEL = model
+
+    ui.agent_working()
+    try:
+        run_sync_readme_agent(
+            project_dir=project_dir,
+            run_dir=run_dir,
+            spec=spec,
+            apply=apply,
+        )
+    except Exception as e:
+        ui.error(f"sync-readme agent failed: {e}")
+        print(f"[probe] sync-readme: ERROR — agent exception {e}")
+        return 2
+
+    # Inspect filesystem outputs to compute exit code.
+    sentinel = run_dir / SYNC_README_NO_CHANGES_SENTINEL
+    proposal = project_dir / "README_proposal.md"
+
+    if sentinel.is_file():
+        ui.info("  README already in sync — no proposal written")
+        print("[probe] sync-readme: no changes needed (exit 1)")
+        return 1
+
+    if apply:
+        # Agent should have overwritten README.md.  Verify the mtime moved
+        # forward (or the file appeared) — if not, treat as error.
+        if not readme_path.is_file():
+            ui.error("sync-readme apply mode: README.md missing after agent run")
+            return 2
+        readme_mtime_after = readme_path.stat().st_mtime
+        if readme_mtime_before is not None and readme_mtime_after == readme_mtime_before:
+            ui.warn("sync-readme apply mode: README.md was not modified")
+            return 2
+        # Commit the updated README.
+        _ensure_git(project_dir, ui=ui)
+        _git_commit(project_dir, "docs(readme): sync to spec", ui=ui)
+        ui.info(f"  README.md updated and committed")
+        print("[probe] sync-readme: applied + committed (exit 0)")
+        return 0
+
+    # Default mode: agent should have written README_proposal.md.
+    if proposal.is_file():
+        ui.info(f"  README proposal written: {proposal}")
+        print("[probe] sync-readme: proposal written (exit 0)")
+        return 0
+
+    ui.warn("sync-readme: agent produced no README_proposal.md and no NO_SYNC_NEEDED sentinel")
+    print("[probe] sync-readme: ERROR — no agent output (exit 2)")
+    return 2
+
+
 def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = None, spec: str | None = None) -> None:
     """Launch party mode: multi-agent brainstorming post-convergence.
 
