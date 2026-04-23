@@ -626,6 +626,111 @@ def _compute_readme_sync(
     return result
 
 
+def _extract_unchecked_set(text: str) -> set[str]:
+    """Return the set of verbatim ``- [ ]`` lines in an improvements.md text.
+
+    Used by ``_compute_backlog_stats`` to detect new-item additions via a
+    line-set diff against a prior git commit (the same shape used by
+    ``_detect_backlog_violation``). Whitespace is stripped to make the
+    comparison resilient to incidental edits like trailing-space cleanup.
+
+    Args:
+        text: Raw contents of an improvements.md file.
+
+    Returns:
+        Set of lines (whitespace-stripped) that begin with ``- [ ]``.
+    """
+    return {
+        line.rstrip()
+        for line in text.splitlines()
+        if line.lstrip().startswith("- [ ]")
+    }
+
+
+def _git_show_at(project_dir: Path, ref: str, rel_path: str) -> str | None:
+    """Return the contents of ``rel_path`` at git ref ``ref``, or None on failure.
+
+    Used by ``_compute_backlog_stats`` to read prior commits of
+    improvements.md so backlog growth can be computed. Returns None on
+    any git failure (no repo, missing ref, missing file at ref, timeout)
+    so callers can degrade gracefully rather than crash.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "show", f"{ref}:{rel_path}"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def _compute_backlog_stats(
+    project_dir: Path,
+    improvements_path: Path,
+    pending: int,
+    done: int,
+    blocked: int,
+) -> dict:
+    """Compute the ``backlog`` block exposed in state.json.
+
+    Implements SPEC.md § "Growth monitoring": the five fields are
+    ``pending``, ``done``, ``blocked`` (taken from the caller, which has
+    already counted them for the ``improvements`` block) plus
+    ``added_this_round`` and ``growth_rate_last_5_rounds`` derived from
+    git history of ``improvements.md``.
+
+    - ``added_this_round`` = ``len(current_unchecked − prior_unchecked)``
+      where the prior is improvements.md at ``HEAD`` (the previous
+      committed state). Uses a line-set diff so that checking off one
+      item and adding another does not falsely register as +1 — only
+      genuinely new ``- [ ]`` lines count.
+    - ``growth_rate_last_5_rounds`` = ``(pending − pending_at_HEAD~5) / 5``,
+      rounded to 2 decimals. Negative values mean the queue is draining
+      (the healthy direction); positive means it is growing.
+
+    All git lookups degrade gracefully — a missing repo, missing ref, or
+    missing file at the ref returns 0 / 0.0 instead of crashing. This
+    keeps the helper safe for fresh projects (no commits yet), test
+    fixtures (tmp_path with no git), and corrupted repos.
+    """
+    added_this_round = 0
+    growth_rate = 0.0
+
+    if improvements_path.is_file():
+        try:
+            rel_path = improvements_path.relative_to(project_dir).as_posix()
+        except ValueError:
+            rel_path = None
+
+        if rel_path:
+            current_text = improvements_path.read_text(errors="replace")
+            current_unchecked = _extract_unchecked_set(current_text)
+
+            prev_text = _git_show_at(project_dir, "HEAD", rel_path)
+            if prev_text is not None:
+                prev_unchecked = _extract_unchecked_set(prev_text)
+                added_this_round = len(current_unchecked - prev_unchecked)
+
+            five_back_text = _git_show_at(project_dir, "HEAD~5", rel_path)
+            if five_back_text is not None:
+                five_back_pending = len(_extract_unchecked_set(five_back_text))
+                growth_rate = round((pending - five_back_pending) / 5.0, 2)
+
+    return {
+        "pending": pending,
+        "done": done,
+        "blocked": blocked,
+        "added_this_round": added_this_round,
+        "growth_rate_last_5_rounds": growth_rate,
+    }
+
+
 def _write_state_json(
     run_dir: Path,
     project_dir: Path,
@@ -684,6 +789,10 @@ def _write_state_json(
     if check_duration_s is not None:
         last_check["duration_s"] = round(check_duration_s, 1)
 
+    backlog = _compute_backlog_stats(
+        project_dir, improvements_path, remaining, done, blocked
+    )
+
     state: dict = {
         "version": 1,
         "session": run_dir.name,
@@ -693,6 +802,7 @@ def _write_state_json(
         "phase": phase,
         "status": status,
         "improvements": {"done": done, "remaining": remaining, "blocked": blocked},
+        "backlog": backlog,
         "last_check": last_check if last_check else {},
         "started_at": started_at,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

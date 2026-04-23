@@ -76,3 +76,6 @@ mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). A
 
 ### Backlog rule 1: detect via line-set diff, NOT count diff — round 14 of 20260423_142834
 `_detect_backlog_violation` compares verbatim `- [ ]` line sets pre/post — counts alone false-positive when one item is checked off and another added (legit empty-queue add: pre={A}, post={B} → no violation). New = post − pre, violation iff `new` ≠ ∅ AND `len(post) > len(new)`. Diagnostic prefix `BACKLOG VIOLATION` chosen so agent.py's `elif` chain (memory > backlog > no-progress) renders dedicated header without grep-collision with the system-prompt's own "Backlog discipline" prose.
+
+### state.json: `backlog` added BESIDE `improvements`, not replacing — round 15 of 20260423_142834
+SPEC § "Growth monitoring" documents `state.backlog.{pending,done,blocked,added_this_round,growth_rate_last_5_rounds}`. Kept legacy `state.improvements.{done,remaining,blocked}` because 8+ existing tests assert its exact shape (`test_loop.py:523` etc.). `pending` ≡ `remaining` — same value, two keys for back-compat. Don't dedup until callers are migrated.

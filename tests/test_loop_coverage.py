@@ -2782,3 +2782,198 @@ class TestEvolveLoopResumeForeverCombined:
         assert args[0][4] == 1  # start_round (fresh)
         assert args[0][5] == 999999  # max_rounds
         assert args[1].get("forever") is True
+
+
+# ---------------------------------------------------------------------------
+# Backlog growth monitoring (SPEC.md § "Growth monitoring")
+# ---------------------------------------------------------------------------
+
+
+class TestBacklogStateJsonSchema:
+    """Tests for the ``backlog`` block exposed in state.json.
+
+    Verifies the field shape documented in SPEC.md § "Growth monitoring":
+    ``backlog: { pending, done, blocked, added_this_round,
+    growth_rate_last_5_rounds }``.
+    """
+
+    @staticmethod
+    def _git(project_dir: Path, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=project_dir, check=True,
+                       capture_output=True)
+
+    def _init_repo(self, project_dir: Path) -> None:
+        project_dir.mkdir(parents=True, exist_ok=True)
+        self._git(project_dir, "init", "-q", "-b", "main")
+        self._git(project_dir, "config", "user.email", "test@example.com")
+        self._git(project_dir, "config", "user.name", "Test")
+        self._git(project_dir, "config", "commit.gpgsign", "false")
+
+    def test_schema_field_names_and_types(self, tmp_path: Path):
+        """state.json.backlog has the exact 5 keys and types documented in SPEC."""
+        from loop import _write_state_json
+        import json as _json
+
+        project_dir = tmp_path / "proj"
+        self._init_repo(project_dir)
+        run_dir = project_dir / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        improvements = project_dir / "runs" / "improvements.md"
+        improvements.write_text(
+            "# Improvements\n"
+            "- [x] [functional] done one\n"
+            "- [ ] [functional] pending one\n"
+            "- [ ] [performance] [needs-package] pending two needing pkg\n"
+        )
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-04-23T15:00:00Z",
+        )
+
+        state = _json.loads((run_dir / "state.json").read_text())
+        backlog = state["backlog"]
+        # Exact 5 keys, no more, no less.
+        assert set(backlog.keys()) == {
+            "pending",
+            "done",
+            "blocked",
+            "added_this_round",
+            "growth_rate_last_5_rounds",
+        }
+        # Documented types from SPEC.md § "Growth monitoring".
+        assert isinstance(backlog["pending"], int)
+        assert isinstance(backlog["done"], int)
+        assert isinstance(backlog["blocked"], int)
+        assert isinstance(backlog["added_this_round"], int)
+        assert isinstance(backlog["growth_rate_last_5_rounds"], (int, float))
+        # Counts must agree with the raw improvements.md state.
+        assert backlog["pending"] == 2
+        assert backlog["done"] == 1
+        assert backlog["blocked"] == 1
+
+    def test_added_this_round_and_growth_from_git_history(self, tmp_path: Path):
+        """added_this_round = new ``- [ ]`` lines vs HEAD; growth = delta vs HEAD~5."""
+        from loop import _write_state_json
+        import json as _json
+
+        project_dir = tmp_path / "proj"
+        self._init_repo(project_dir)
+        run_dir = project_dir / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        rel_imp = project_dir / "runs" / "improvements.md"
+
+        # Round 0 baseline: 1 pending item, then 5 commits each adding +1
+        # pending. By the end, HEAD has 6 pending and HEAD~5 has 1 pending,
+        # so growth_rate = (6 - 1) / 5 = 1.0.
+        rel_imp.write_text("# Improvements\n- [ ] [functional] item 0\n")
+        self._git(project_dir, "add", "-A")
+        self._git(project_dir, "commit", "-q", "-m", "round 0")
+        for i in range(1, 6):
+            text = "# Improvements\n" + "".join(
+                f"- [ ] [functional] item {j}\n" for j in range(i + 1)
+            )
+            rel_imp.write_text(text)
+            self._git(project_dir, "add", "-A")
+            self._git(project_dir, "commit", "-q", "-m", f"round {i}")
+
+        # Now stage a NEW unchecked item without committing — this should
+        # show up as added_this_round=1 (HEAD has 6, working tree has 7).
+        text = rel_imp.read_text() + "- [ ] [functional] freshly added\n"
+        rel_imp.write_text(text)
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=6,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=rel_imp,
+            started_at="2026-04-23T15:00:00Z",
+        )
+
+        state = _json.loads((run_dir / "state.json").read_text())
+        backlog = state["backlog"]
+        assert backlog["pending"] == 7
+        assert backlog["added_this_round"] == 1
+        # (7 - 1) / 5 = 1.2 — pending grew by 6 over 5 rounds of history
+        assert backlog["growth_rate_last_5_rounds"] == 1.2
+
+    def test_growth_zero_without_git_history(self, tmp_path: Path):
+        """No git repo → added_this_round=0, growth_rate=0.0 (graceful degrade)."""
+        from loop import _write_state_json
+        import json as _json
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()  # no git init
+        run_dir = project_dir / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        improvements = project_dir / "runs" / "improvements.md"
+        improvements.write_text(
+            "# Improvements\n- [ ] [functional] only one\n"
+        )
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-04-23T15:00:00Z",
+        )
+
+        state = _json.loads((run_dir / "state.json").read_text())
+        backlog = state["backlog"]
+        assert backlog["pending"] == 1
+        assert backlog["added_this_round"] == 0
+        assert backlog["growth_rate_last_5_rounds"] == 0.0
+
+    def test_added_this_round_uses_line_set_diff_not_count_diff(self, tmp_path: Path):
+        """Checking off A and adding B → added_this_round=1, NOT 0 (count is unchanged)."""
+        from loop import _write_state_json
+        import json as _json
+
+        project_dir = tmp_path / "proj"
+        self._init_repo(project_dir)
+        run_dir = project_dir / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        improvements = project_dir / "runs" / "improvements.md"
+        improvements.write_text(
+            "# Improvements\n- [ ] [functional] item A\n"
+        )
+        self._git(project_dir, "add", "-A")
+        self._git(project_dir, "commit", "-q", "-m", "init")
+
+        # Check off A, add B — count of unchecked stays at 1, but the
+        # set diff reveals 1 new item was added.
+        improvements.write_text(
+            "# Improvements\n"
+            "- [x] [functional] item A\n"
+            "- [ ] [functional] item B\n"
+        )
+
+        _write_state_json(
+            run_dir=run_dir,
+            project_dir=project_dir,
+            round_num=1,
+            max_rounds=10,
+            phase="improvement",
+            status="running",
+            improvements_path=improvements,
+            started_at="2026-04-23T15:00:00Z",
+        )
+
+        state = _json.loads((run_dir / "state.json").read_text())
+        backlog = state["backlog"]
+        assert backlog["pending"] == 1
+        assert backlog["done"] == 1
+        assert backlog["added_this_round"] == 1  # B is new
