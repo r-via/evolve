@@ -73,3 +73,6 @@ mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). A
 
 ### `_run_rounds` UI stub: MagicMock > hand-rolled — round 13 of 20260423_142834
 `_run_rounds` calls `round_header`, `progress_summary`, `warn`, `capture_frame`, … — surface keeps growing. Hand-rolled `_StubTUI` breaks on new method. `MagicMock()` swallows all — simpler, survives future TUIProtocol additions.
+
+### Backlog rule 1: detect via line-set diff, NOT count diff — round 14 of 20260423_142834
+`_detect_backlog_violation` compares verbatim `- [ ]` line sets pre/post — counts alone false-positive when one item is checked off and another added (legit empty-queue add: pre={A}, post={B} → no violation). New = post − pre, violation iff `new` ≠ ∅ AND `len(post) > len(new)`. Diagnostic prefix `BACKLOG VIOLATION` chosen so agent.py's `elif` chain (memory > backlog > no-progress) renders dedicated header without grep-collision with the system-prompt's own "Backlog discipline" prose.

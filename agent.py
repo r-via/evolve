@@ -234,6 +234,26 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
                 f"append, do not rewrite or wipe sections.\n"
                 f"```\n{prev_crash}\n```\n"
             )
+        elif "BACKLOG VIOLATION" in prev_crash:
+            # Backlog discipline rule 1 (empty-queue gate) — see SPEC.md §
+            # "Backlog discipline".  The previous attempt added a new `- [ ]`
+            # item to improvements.md while at least one other `- [ ]` item
+            # was still pending.  Tell the agent to remove the freshly added
+            # item(s) and let the queue drain before adding anything new.
+            prev_crash_section = (
+                f"\n## CRITICAL — Backlog discipline violation: "
+                f"new item added while queue non-empty\n"
+                f"The previous attempt added one or more new `- [ ]` items "
+                f"to runs/improvements.md while at least one other `- [ ]` "
+                f"item was still pending.  Per SPEC.md § 'Backlog discipline' "
+                f"rule 1 (empty-queue gate), new items may ONLY be added when "
+                f"the queue is genuinely empty.  This attempt MUST: (1) "
+                f"remove the freshly added unchecked item(s) from "
+                f"runs/improvements.md, (2) keep working the existing "
+                f"current target, and (3) NOT add any replacement item until "
+                f"every other `- [ ]` line is checked off.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
         elif "NO PROGRESS" in prev_crash:
             prev_crash_section = (
                 f"\n## CRITICAL — Previous round made NO PROGRESS\n"

@@ -1066,6 +1066,70 @@ WATCHDOG_TIMEOUT = 120
 _MEMORY_COMPACTION_MARKER = "memory: compaction"
 _MEMORY_WIPE_THRESHOLD = 0.5
 
+# Backlog discipline rule 1 (empty-queue gate) constants — keep the runtime
+# check aligned with SPEC.md § "Backlog discipline".  The agent is forbidden
+# from adding a new `- [ ]` item while any other `- [ ]` item already exists
+# in improvements.md.  When detected, the orchestrator triggers a debug retry
+# whose diagnostic prefix carries the documented header so agent.py's prompt
+# builder can render the dedicated section.
+_BACKLOG_VIOLATION_PREFIX = "BACKLOG VIOLATION"
+_BACKLOG_VIOLATION_HEADER = (
+    "CRITICAL \u2014 Backlog discipline violation: "
+    "new item added while queue non-empty"
+)
+
+
+def _extract_unchecked_lines(text: str) -> list[str]:
+    """Extract the verbatim ``- [ ]`` lines from an improvements.md text blob.
+
+    Used by the backlog-discipline rule 1 check to compare pre-round and
+    post-round improvements.md state and identify newly added pending items.
+
+    Args:
+        text: Raw text content of improvements.md (may be empty).
+
+    Returns:
+        List of stripped ``- [ ]`` lines in document order.
+    """
+    out: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- [ ]"):
+            out.append(stripped)
+    return out
+
+
+def _detect_backlog_violation(
+    pre_text: str, post_text: str
+) -> tuple[bool, list[str]]:
+    """Detect a backlog discipline rule 1 (empty-queue gate) violation.
+
+    Compares pre-round and post-round improvements.md state.  A violation
+    occurs when the agent added one or more new ``- [ ]`` lines to
+    improvements.md while at least one *other* ``- [ ]`` line still exists
+    in the post-round file.  Adding a new item to a genuinely empty queue
+    is the only legitimate add case and is NOT a violation.
+
+    Args:
+        pre_text: improvements.md content snapshotted before the round.
+        post_text: improvements.md content after the round committed.
+
+    Returns:
+        ``(violated, new_items)`` where ``violated`` is True when rule 1
+        was broken and ``new_items`` is the list of newly added unchecked
+        lines (empty when ``violated`` is False).
+    """
+    pre_lines = _extract_unchecked_lines(pre_text)
+    post_lines = _extract_unchecked_lines(post_text)
+    pre_set = set(pre_lines)
+    new_items = [ln for ln in post_lines if ln not in pre_set]
+    if not new_items:
+        return False, []
+    # Other unchecked items in post that are NOT among the freshly added ones.
+    # If any such item exists, the queue was non-empty at add time → violation.
+    other_count = len(post_lines) - len(new_items)
+    return (other_count > 0), (new_items if other_count > 0 else [])
+
 
 def _run_monitored_subprocess(
     cmd: list[str],
@@ -1391,8 +1455,32 @@ def _run_rounds(
                         if _MEMORY_COMPACTION_MARKER not in commit_body:
                             memory_wiped = True
 
-                    # Any condition alone triggers zero-progress / memory-wipe retry
-                    if no_commit_msg or imp_unchanged or memory_wiped:
+                    # 4. Backlog discipline rule 1: detect "new [ ] item added
+                    #    while queue non-empty".  See SPEC.md § "Backlog
+                    #    discipline" rule 1.  We only check when improvements.md
+                    #    actually changed (otherwise imp_unchanged path takes
+                    #    over) and run the comparison on the snapshotted
+                    #    pre-round bytes vs the current file.
+                    backlog_violated = False
+                    backlog_new_items: list[str] = []
+                    if not imp_unchanged:
+                        try:
+                            pre_text = imp_snapshot_before.decode(
+                                "utf-8", errors="replace"
+                            )
+                            post_text = imp_after.decode(
+                                "utf-8", errors="replace"
+                            )
+                            backlog_violated, backlog_new_items = (
+                                _detect_backlog_violation(pre_text, post_text)
+                            )
+                        except Exception as e:  # pragma: no cover — defensive
+                            print(
+                                f"[probe] backlog-violation check skipped: {e}"
+                            )
+
+                    # Any condition alone triggers zero-progress / memory-wipe / backlog retry
+                    if no_commit_msg or imp_unchanged or memory_wiped or backlog_violated:
                         no_progress_reasons: list[str] = []
                         if no_commit_msg:
                             no_progress_reasons.append(
@@ -1409,11 +1497,26 @@ def _run_rounds(
                                 f"({mem_size_before}\u2192{mem_size_after} bytes) "
                                 f"without '{_MEMORY_COMPACTION_MARKER}' in commit message"
                             )
+                        if backlog_violated:
+                            new_summary = "; ".join(
+                                ln[:160] for ln in backlog_new_items[:3]
+                            )
+                            no_progress_reasons.append(
+                                f"backlog discipline rule 1 violated: "
+                                f"{len(backlog_new_items)} new `- [ ]` item(s) "
+                                f"added while queue non-empty "
+                                f"(new: {new_summary})"
+                            )
                         reason_str = " AND ".join(no_progress_reasons)
-                        # Memory-wipe takes priority in the diagnostic
-                        # prefix so the agent's prompt builder can render
-                        # the dedicated "silently wiped memory.md" header.
-                        prefix = "MEMORY WIPED" if memory_wiped else "NO PROGRESS"
+                        # Diagnostic prefix priority: memory-wipe > backlog >
+                        # no-progress, so agent.py's prompt builder picks the
+                        # most specific dedicated header.
+                        if memory_wiped:
+                            prefix = "MEMORY WIPED"
+                        elif backlog_violated:
+                            prefix = _BACKLOG_VIOLATION_PREFIX
+                        else:
+                            prefix = "NO PROGRESS"
                         _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
                             reason=f"{prefix}: {reason_str}",
