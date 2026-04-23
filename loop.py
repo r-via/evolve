@@ -74,6 +74,91 @@ def _auto_detect_check(project_dir: Path) -> str | None:
     return None
 
 
+# Stale-README advisory constants — keep the runtime advisory aligned with
+# SPEC.md § "Stale-README pre-flight check".  The advisory is emitted once
+# at the start of `evolve start` when --spec points at a file other than
+# README.md and the spec file was modified more than the configured
+# threshold days ago relative to README.md.  Pure observability: never
+# blocks anything, never modifies any file, never runs during rounds.
+_README_STALE_ADVISORY_FMT = (
+    "\u2139\ufe0f  README has not been updated in {days} days \u2014 "
+    "consider `evolve sync-readme`"
+)
+_DEFAULT_README_STALE_THRESHOLD_DAYS = 30
+
+
+def _emit_stale_readme_advisory(
+    project_dir: Path,
+    spec: str | None,
+    ui: TUIProtocol,
+) -> None:
+    """Emit the startup-time stale-README advisory (SPEC § "Stale-README pre-flight check").
+
+    When ``--spec`` points at a file other than ``README.md``, compares
+    ``mtime(spec_file) - mtime(README.md)``.  If the spec is newer by more
+    than the configured threshold (days), emits a single-line
+    ``ui.info`` advisory.  Threshold resolution order (first wins):
+
+    1. ``EVOLVE_README_STALE_THRESHOLD_DAYS`` environment variable
+    2. ``[tool.evolve] readme_stale_threshold_days`` in evolve.toml /
+       ``pyproject.toml``
+    3. Built-in default (30)
+
+    A threshold of ``0`` disables the advisory entirely.  The advisory is
+    pure observability: it never blocks the run, never modifies any file,
+    and is never emitted during rounds.  When ``spec`` is ``None`` or
+    equals ``"README.md"``, README IS the spec and the advisory is a
+    no-op.
+
+    Args:
+        project_dir: Root directory of the project.
+        spec: Path to the spec file relative to ``project_dir``, or
+            ``None`` when README.md is the spec.
+        ui: The TUI to emit the advisory through.
+    """
+    # No-op when README IS the spec.
+    if not spec or spec == "README.md":
+        return
+
+    spec_path = project_dir / spec
+    readme_path = project_dir / "README.md"
+    if not spec_path.is_file() or not readme_path.is_file():
+        return
+
+    # Resolve threshold: env > config > default.  Invalid values are
+    # silently ignored so a typo never breaks the evolution loop.
+    import os as _os
+
+    threshold_days: int | None = None
+    env_val = _os.environ.get("EVOLVE_README_STALE_THRESHOLD_DAYS", "").strip()
+    if env_val:
+        try:
+            threshold_days = int(env_val)
+        except ValueError:
+            threshold_days = None
+    if threshold_days is None:
+        try:
+            from evolve import _load_config as _load_cfg
+            cfg = _load_cfg(project_dir)
+            if "readme_stale_threshold_days" in cfg:
+                threshold_days = int(cfg["readme_stale_threshold_days"])
+        except Exception:
+            threshold_days = None
+    if threshold_days is None:
+        threshold_days = _DEFAULT_README_STALE_THRESHOLD_DAYS
+
+    # 0 (or negative) disables the advisory entirely per SPEC.
+    if threshold_days <= 0:
+        return
+
+    drift_seconds = spec_path.stat().st_mtime - readme_path.stat().st_mtime
+    if drift_seconds <= 0:
+        return  # README is newer than spec — nothing to warn about
+    drift_days = int(drift_seconds // 86400)
+    if drift_days > threshold_days:
+        ui.info(_README_STALE_ADVISORY_FMT.format(days=drift_days))
+
+
 def _check_spec_freshness(
     project_dir: Path,
     improvements_path: Path,
@@ -807,6 +892,10 @@ def evolve_loop(
     hooks = load_hooks(project_dir)
     if hooks:
         print(f"[probe] loaded {len(hooks)} hook(s): {', '.join(hooks.keys())}")
+
+    # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
+    # check") — pure observability, runs once before the first round.
+    _emit_stale_readme_advisory(project_dir, spec, get_tui())
 
     # Auto-detect check command if not provided
     if check_cmd is None:
@@ -1757,6 +1846,10 @@ def run_dry_run(
 
     print(f"[probe] dry-run starting — project={project_dir.name}")
 
+    # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
+    # check") — pure observability, runs once at startup.
+    _emit_stale_readme_advisory(project_dir, spec, ui)
+
     # Auto-detect check command if not provided
     if check_cmd is None:
         detected = _auto_detect_check(project_dir)
@@ -1842,6 +1935,10 @@ def run_validate(
     ui = get_tui()
 
     print(f"[probe] validate starting — project={project_dir.name}")
+
+    # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
+    # check") — pure observability, runs once at startup.
+    _emit_stale_readme_advisory(project_dir, spec, ui)
 
     # Auto-detect check command if not provided
     if check_cmd is None:

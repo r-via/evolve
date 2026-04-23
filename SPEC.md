@@ -274,6 +274,42 @@ set via the `EVOLVE_MODEL` environment variable (CLI flag takes precedence).
 --model claude-sonnet-4-20250514    # Faster, lower cost
 ```
 
+### The --effort flag
+
+Reasoning effort level passed to the Claude Agent SDK. Controls how much
+extended-thinking budget the agent is allowed per turn. One of `low`,
+`medium`, `high`, `max`, or unset (SDK default).
+
+```bash
+--effort max      # Default — maximum reasoning, highest quality
+--effort high     # deeper reasoning with a smaller budget than max
+--effort medium   # balanced
+--effort low      # quick iteration on simple targets
+```
+
+Also configurable via `evolve.toml`:
+
+```toml
+[tool.evolve]
+effort = "max"
+```
+
+And `EVOLVE_EFFORT` environment variable. Resolution order is standard:
+CLI → env → `evolve.toml` → `pyproject.toml` → default.
+
+**Default is `"max"`.** Evolve's targets are typically non-trivial
+(architectural changes, test coverage, multi-file refactors), and the
+quality gain of `max` over `medium` tends to dominate the cost/latency
+delta on a per-round basis. Operators who prioritize speed or cost over
+quality can opt down explicitly via `--effort low` or `--effort medium`.
+
+**Scope note.** The `--effort` flag applies to evolve's own SDK sessions
+(every round's agent invocation, dry-run, validate, and party-mode agents).
+It does **not** propagate from the operator's Claude Code `/effort` setting
+— Claude Code and evolve are separate processes with separate SDK
+contexts. If you want evolve to run at high effort, pass `--effort high`
+to evolve explicitly; your Claude Code session's effort is unrelated.
+
 ### The --spec flag
 
 By default, evolve treats `README.md` as the project specification. Use

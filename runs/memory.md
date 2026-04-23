@@ -103,3 +103,6 @@ Dropping `[wontfix-sync:]` from `_detect_premature_converged` requires sync edit
 
 ### Mechanism C revert: bookkeeping-only attempt 2 — round 3 of 20260423_171103
 attempt 1 landed the code/test deletions (commit 8ce882f) but ran out of 40-turn budget before ticking box + writing COMMIT_MSG → orchestrator flagged NO-PROGRESS. attempt 2 = pure bookkeeping close-out. Rule: on retry, check working tree / last commit BEFORE re-reading source — work may already be done, only the two bookkeeping signals (checkbox + COMMIT_MSG) missing.
+
+### Stale-README advisory: integer-floor drift at day boundary — round 4 of 20260423_171103
+`drift_days = int(drift_seconds // 86400)` + strict `>` → drift == threshold is silent (30 days drift + threshold 30 → int=30, 30>30 False). Matches SPEC "default threshold 30 days" wording — fires at 31+. Config resolution: env > evolve.toml > default, invalid env silently falls through to config (not default) — checked via `threshold_days is None` sentinel, not empty string.
