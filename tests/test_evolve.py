@@ -215,6 +215,45 @@ class TestInitConfig:
         _init_config(target)
         assert (target / "evolve.toml").is_file()
 
+    def test_creates_memory_md_with_four_sections(self, tmp_path: Path):
+        """_init_config pre-seeds runs/memory.md with the four typed section
+        headers from SPEC.md § 'memory.md' so new projects start with the
+        expected structure."""
+        from evolve import _init_config
+        _init_config(tmp_path)
+        memory = tmp_path / "runs" / "memory.md"
+        assert memory.is_file()
+        content = memory.read_text()
+        # Header
+        assert content.startswith("# Agent Memory\n")
+        # All four typed sections (SPEC.md § memory.md)
+        assert "\n## Errors\n" in content
+        assert "\n## Decisions\n" in content
+        assert "\n## Patterns\n" in content
+        assert "\n## Insights\n" in content
+
+    def test_memory_md_not_overwritten_when_present(self, tmp_path: Path):
+        """Existing memory.md is left untouched — the scaffold is a cold-
+        start helper, not an every-run reset."""
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        existing = runs / "memory.md"
+        existing.write_text("# Pre-existing memory\n\n### Important entry\n")
+        from evolve import _init_config
+        _init_config(tmp_path)
+        assert existing.read_text() == "# Pre-existing memory\n\n### Important entry\n"
+
+    def test_default_memory_md_constant_shape(self):
+        """_DEFAULT_MEMORY_MD is the template source of truth — future edits
+        to the four-section scaffold must update this one string."""
+        from evolve import _DEFAULT_MEMORY_MD
+        # Typed headers appear in the documented order
+        errors_idx = _DEFAULT_MEMORY_MD.index("## Errors")
+        decisions_idx = _DEFAULT_MEMORY_MD.index("## Decisions")
+        patterns_idx = _DEFAULT_MEMORY_MD.index("## Patterns")
+        insights_idx = _DEFAULT_MEMORY_MD.index("## Insights")
+        assert errors_idx < decisions_idx < patterns_idx < insights_idx
+
 
 class TestLoadConfig:
     """Test _load_config reads evolve.toml and pyproject.toml correctly."""

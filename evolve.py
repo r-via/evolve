@@ -402,19 +402,62 @@ spec = "README.md"
 """
 
 
+# SPEC.md § "memory.md — cumulative learning log" — the four typed section
+# headers the agent is expected to append into (`## Errors`, `## Decisions`,
+# `## Patterns`, `## Insights`).  Pre-seeding the file with this scaffold
+# gives new projects a concrete shape to append into from round 1 instead
+# of starting with a bare `# Agent Memory` header and hoping the agent
+# picks the right structure.  Empty sections are explicitly fine per SPEC
+# ("The section shape is a scaffold, not a form to fill in.").
+_DEFAULT_MEMORY_MD = """\
+# Agent Memory
+
+Cumulative learning log across evolution rounds. Append-only. See
+SPEC.md § `memory.md` for the discipline (length cap ≤ 5 lines / 400
+chars, telegraphic style, non-obvious gate). Compact only when the
+file exceeds ~500 lines; archive entries older than 20 rounds under
+a `## Archive` section rather than deleting them.
+
+## Errors
+
+## Decisions
+
+## Patterns
+
+## Insights
+"""
+
+
 def _init_config(project_dir: Path) -> None:
     """Scaffold an evolve.toml with default settings.
+
+    Also pre-seeds ``runs/memory.md`` with the four typed section headers
+    (``## Errors``, ``## Decisions``, ``## Patterns``, ``## Insights``) so
+    new projects start with the structure SPEC.md § "memory.md" expects.
+    Existing files are never overwritten — the scaffold only runs on a
+    cold start.
 
     Args:
         project_dir: Root directory where evolve.toml will be created.
     """
     config_path = project_dir / "evolve.toml"
+    config_created = False
     if config_path.is_file():
         print(f"evolve.toml already exists at {config_path}")
-        return
-    project_dir.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(_DEFAULT_EVOLVE_TOML)
-    print(f"Created {config_path}")
+    else:
+        project_dir.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(_DEFAULT_EVOLVE_TOML)
+        print(f"Created {config_path}")
+        config_created = True
+
+    memory_path = project_dir / "runs" / "memory.md"
+    if memory_path.is_file():
+        if config_created:
+            print(f"runs/memory.md already exists at {memory_path} — left untouched")
+    else:
+        memory_path.parent.mkdir(parents=True, exist_ok=True)
+        memory_path.write_text(_DEFAULT_MEMORY_MD)
+        print(f"Created {memory_path}")
 
 
 def _clean_sessions(project_dir: Path, keep: int = 5) -> None:

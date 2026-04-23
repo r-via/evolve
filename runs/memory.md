@@ -67,3 +67,6 @@ mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). A
 
 ### Memory-wipe sanity gate: snapshot-timing trap — round 10 of 20260423_142834
 `mem_size_before` captured BEFORE `_run_monitored_subprocess` → mock writes inside mock don't affect it. On retry-attempt 2, pre-snapshot = already-wiped state → shrink not re-detected. Test asserts only that `MEMORY WIPED:` appears in diagnostics list, not exit code — retry may recover via `unchecked != prev_unchecked`. Use `MEMORY WIPED` prefix (not `NO PROGRESS`) so `agent.py` picks correct header branch.
+
+### memory.md scaffold lives in `_init_config`, not first-round agent — round 12 of 20260423_142834
+`_init_config` in evolve.py now writes `runs/memory.md` with 4 typed sections. No code path creates memory.md otherwise — previously stayed "(none)" until agent first wrote. Scaffold hard-references `SPEC.md` in the pointer text → drifts for `--spec CLAIMS.md` projects (tracked as follow-up).
