@@ -20,6 +20,27 @@ from datetime import datetime
 from pathlib import Path
 
 
+#: Accepted values for the ``--effort`` flag / ``effort`` config key /
+#: ``EVOLVE_EFFORT`` env var — SPEC.md § "The --effort flag".
+EFFORT_LEVELS = ("low", "medium", "high", "max")
+
+
+def _validate_effort(value: str) -> str:
+    """Argparse ``type=`` validator for the ``--effort`` flag.
+
+    Accepts only the four documented literals: ``low``, ``medium``,
+    ``high``, ``max``.  Raises :class:`argparse.ArgumentTypeError` on any
+    other value so the CLI exits with a clear message rather than
+    failing opaquely inside ``ClaudeAgentOptions``.
+    """
+    if value not in EFFORT_LEVELS:
+        raise argparse.ArgumentTypeError(
+            f"invalid effort level: {value!r} "
+            f"(must be one of: {', '.join(EFFORT_LEVELS)})"
+        )
+    return value
+
+
 def _load_config(project_dir: Path) -> dict:
     """Load configuration from evolve.toml or pyproject.toml [tool.evolve].
 
@@ -100,6 +121,7 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         ("allow_installs", "EVOLVE_ALLOW_INSTALLS", False, "bool"),
         ("spec", "EVOLVE_SPEC", None, "str"),
         ("capture_frames", "EVOLVE_CAPTURE_FRAMES", False, "bool"),
+        ("effort", "EVOLVE_EFFORT", "max", "str"),
     ]
 
     # Deprecated fallback: check old yolo config/env if new name not found

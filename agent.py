@@ -47,6 +47,16 @@ def _detect_current_attempt(run_dir: Path | None, round_num: int) -> int:
 #: Default Claude model used by the agent for code analysis and fixes.
 MODEL = "claude-opus-4-6"
 
+#: Reasoning effort level passed to ``ClaudeAgentOptions(effort=...)``.
+#: Accepted values: ``"low" | "medium" | "high" | "max"`` (or ``None`` to
+#: fall back to the SDK default).  Default is ``"max"`` per SPEC.md §
+#: "The --effort flag" — evolve's targets are typically non-trivial and
+#: the quality gain of ``max`` dominates the cost/latency delta on a
+#: per-round basis.  The value is overwritten by ``loop.py`` (and the
+#: sync-readme / dry-run / validate entry points) at the start of each
+#: session based on the resolved CLI → env → config → default chain.
+EFFORT: str | None = "max"
+
 
 # Prompt section emitted on a debug retry to hand the agent the previous
 # attempt's full conversation log — SPEC.md § "Retry continuity" rule (2).
@@ -467,6 +477,7 @@ async def run_claude_agent(
         cwd=str(project_dir),
         disallowed_tools=["Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
+        effort=EFFORT,
     )
 
     # Log file
@@ -873,6 +884,7 @@ async def _run_readonly_claude_agent(
         cwd=str(project_dir),
         disallowed_tools=disallowed_tools,
         include_partial_messages=True,
+        effort=EFFORT,
     )
 
     log_path = run_dir / log_filename
@@ -1198,6 +1210,7 @@ async def _run_sync_readme_claude_agent(
         cwd=str(project_dir),
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
+        effort=EFFORT,
     )
 
     log_path = run_dir / "sync_readme_conversation.md"
