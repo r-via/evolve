@@ -2386,14 +2386,14 @@ def _forever_restart(
 def _setup_forever_branch(project_dir: Path) -> None:
     """Create and switch to a dedicated branch for forever mode.
 
-    Creates a branch named ``evolve/forever-<timestamp>`` from the current HEAD
+    Creates a branch named ``evolve/<timestamp>`` from the current HEAD
     so that forever-mode changes are isolated from the main branch.
 
     Args:
         project_dir: Root directory of the project (must be a git repo).
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    branch_name = f"evolve/forever-{timestamp}"
+    branch_name = f"evolve/{timestamp}"
     ui = get_tui()
 
     result = subprocess.run(

@@ -377,7 +377,7 @@ class TestGitCommit:
             if "diff" in cmd:
                 return MagicMock(returncode=1)
             if "branch" in cmd and "--show-current" in cmd:
-                return MagicMock(returncode=0, stdout="evolve/forever-123\n")
+                return MagicMock(returncode=0, stdout="evolve/123\n")
             if "push" in cmd and "-u" in cmd:
                 return MagicMock(returncode=0, stderr="")
             if "push" in cmd:

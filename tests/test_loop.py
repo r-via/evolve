@@ -417,7 +417,7 @@ class TestSetupForeverBranch:
             cwd=str(tmp_path), capture_output=True, text=True,
         )
         branch = result.stdout.strip()
-        assert branch.startswith("evolve/forever-")
+        assert branch.startswith("evolve/")
 
     def test_exits_on_failure(self, tmp_path: Path):
         """Exits with code 2 if git checkout -b fails (not a git repo)."""
@@ -1050,7 +1050,7 @@ class TestSetupForeverBranchEdgeCases:
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(path), capture_output=True)
 
     def test_branch_name_uses_timestamp_format(self, tmp_path: Path):
-        """Branch name follows evolve/forever-YYYYMMDD_HHMMSS pattern."""
+        """Branch name follows evolve/YYYYMMDD_HHMMSS pattern."""
         self._init_git(tmp_path)
         with patch("loop.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = "20260325_120000"
@@ -1060,7 +1060,7 @@ class TestSetupForeverBranchEdgeCases:
             ["git", "branch", "--show-current"],
             cwd=str(tmp_path), capture_output=True, text=True,
         )
-        assert result.stdout.strip() == "evolve/forever-20260325_120000"
+        assert result.stdout.strip() == "evolve/20260325_120000"
 
     def test_exits_code_2_on_git_failure(self, tmp_path: Path):
         """sys.exit(2) when git checkout -b fails (no git repo)."""
