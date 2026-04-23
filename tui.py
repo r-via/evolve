@@ -474,7 +474,7 @@ class RichTUI:
         codes emitted by the subprocess (when ``force_terminal=True``) are
         passed through to the terminal verbatim.
         """
-        self.console.out(line, end="", highlight=False, markup=False)
+        self.console.out(line, end="", highlight=False)
 
     def capture_frame(self, label: str) -> Path | None:
         """Snapshot the recorded Rich buffer as a PNG frame.
