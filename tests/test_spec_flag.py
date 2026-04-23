@@ -410,7 +410,7 @@ class TestResolveConfigSpec:
 
         args = argparse.Namespace(
             check=None, rounds=10, timeout=300,
-            model=None, yolo=False, spec=None,
+            model=None, allow_installs=False, spec=None,
         )
         with patch("sys.argv", ["evolve", "start", str(tmp_path)]):
             result = _resolve_config(args, tmp_path)
@@ -425,7 +425,7 @@ class TestResolveConfigSpec:
 
         args = argparse.Namespace(
             check=None, rounds=10, timeout=300,
-            model=None, yolo=False, spec=None,
+            model=None, allow_installs=False, spec=None,
         )
         with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
              patch.dict(os.environ, {"EVOLVE_SPEC": "docs/spec.md"}):
@@ -442,7 +442,7 @@ class TestResolveConfigSpec:
 
         args = argparse.Namespace(
             check=None, rounds=10, timeout=300,
-            model=None, yolo=False, spec="CLI_SPEC.md",
+            model=None, allow_installs=False, spec="CLI_SPEC.md",
         )
         with patch("sys.argv", ["evolve", "start", str(tmp_path), "--spec", "CLI_SPEC.md"]):
             result = _resolve_config(args, tmp_path)

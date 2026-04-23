@@ -24,7 +24,7 @@ class TestParseRoundArgs:
             assert args.check is None
             assert args.timeout == 300
             assert args.run_dir is None
-            assert args.yolo is False
+            assert args.allow_installs is False
             assert args.model == "claude-opus-4-6"
 
     def test_all_flags(self):
@@ -34,7 +34,7 @@ class TestParseRoundArgs:
             "--check", "pytest",
             "--timeout", "600",
             "--run-dir", "/tmp/runs/session",
-            "--yolo",
+            "--allow-installs",
             "--model", "claude-sonnet-4-20250514",
         ]):
             args = _parse_round_args()
@@ -42,7 +42,7 @@ class TestParseRoundArgs:
             assert args.check == "pytest"
             assert args.timeout == 600
             assert args.run_dir == "/tmp/runs/session"
-            assert args.yolo is True
+            assert args.allow_installs is True
             assert args.model == "claude-sonnet-4-20250514"
 
 

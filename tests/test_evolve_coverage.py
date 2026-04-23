@@ -20,7 +20,7 @@ class TestResolveConfigEnvVars:
     def _make_args(self, **overrides):
         args = argparse.Namespace(
             check=None, rounds=None, timeout=None,
-            model=None, yolo=None, resume=False,
+            model=None, allow_installs=None, resume=False,
         )
         for k, v in overrides.items():
             setattr(args, k, v)
@@ -82,7 +82,7 @@ class TestResolveConfigEnvVars:
         with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
              patch.dict("os.environ", {"EVOLVE_YOLO": "1"}, clear=True):
             result = _resolve_config(args, tmp_path)
-        assert result.yolo is True
+        assert result.allow_installs is True
 
     def test_evolve_yolo_env_yes(self, tmp_path: Path):
         """EVOLVE_YOLO=yes enables yolo."""
@@ -90,7 +90,7 @@ class TestResolveConfigEnvVars:
         with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
              patch.dict("os.environ", {"EVOLVE_YOLO": "yes"}, clear=True):
             result = _resolve_config(args, tmp_path)
-        assert result.yolo is True
+        assert result.allow_installs is True
 
     def test_evolve_yolo_env_TRUE(self, tmp_path: Path):
         """EVOLVE_YOLO=TRUE (uppercase) enables yolo."""
@@ -98,7 +98,7 @@ class TestResolveConfigEnvVars:
         with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
              patch.dict("os.environ", {"EVOLVE_YOLO": "TRUE"}, clear=True):
             result = _resolve_config(args, tmp_path)
-        assert result.yolo is True
+        assert result.allow_installs is True
 
     def test_cli_rounds_flag_wins(self, tmp_path: Path):
         """CLI --rounds flag wins over env and file config."""
@@ -142,7 +142,7 @@ class TestResolveConfigEnvVars:
         with patch("sys.argv", ["evolve", "start", str(tmp_path)]), \
              patch.dict("os.environ", {}, clear=True):
             result = _resolve_config(args, tmp_path)
-        assert result.yolo is True
+        assert result.allow_installs is True
 
     def test_all_env_vars_together(self, tmp_path: Path):
         """All env vars set simultaneously."""
@@ -161,7 +161,7 @@ class TestResolveConfigEnvVars:
         assert result.rounds == 15
         assert result.timeout == 120
         assert result.model == "claude-sonnet-4-20250514"
-        assert result.yolo is True
+        assert result.allow_installs is True
 
 
 # ---------------------------------------------------------------------------

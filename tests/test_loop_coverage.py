@@ -344,7 +344,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=10, check_cmd="pytest",
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 0
 
@@ -367,7 +367,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=2, check_cmd="pytest",
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 1
 
@@ -386,7 +386,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 2
 
@@ -413,7 +413,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
 
     def test_no_progress_triggers_retry(self, tmp_path: Path):
@@ -431,7 +431,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 2
 
@@ -457,7 +457,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 2
         # All retries should report improvements.md unchanged
@@ -499,7 +499,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 2
         # Should detect fallback commit message
@@ -539,7 +539,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 2
         # Both conditions should be present in the diagnostic
@@ -576,7 +576,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         # Verify the exact format: "NO PROGRESS: <reason1> AND <reason2>"
         combined = [d for d in diagnostics if " AND " in d]
@@ -607,7 +607,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 2
         # Should have MAX_DEBUG_RETRIES + 1 attempts (1 original + 2 retries)
@@ -637,7 +637,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 2
         # Should still detect byte-identical even without git
@@ -680,7 +680,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         # Only COMMIT_MSG reason, no " AND " join
         commit_msg_only = [d for d in diagnostics if "no COMMIT_MSG written" in d and " AND " not in d]
@@ -706,7 +706,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=10, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         # Should converge (exit 0), not trigger zero-progress
         assert exc.value.code == 0
@@ -734,7 +734,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=2, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
                 forever=True,
             )
 
@@ -750,7 +750,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=10, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
         assert exc.value.code == 1
         ui.blocked_message.assert_called_once()
@@ -775,13 +775,13 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
 
         assert not error_log.is_file()
 
-    def test_yolo_flag_passed_to_subprocess(self, tmp_path: Path):
-        """--yolo flag is included in subprocess command."""
+    def test_allow_installs_flag_passed_to_subprocess(self, tmp_path: Path):
+        """--allow-installs flag is included in subprocess command."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
 
         captured_cmd = None
@@ -799,10 +799,10 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
-                yolo=True, timeout=300, model="claude-opus-4-6",
+                allow_installs=True, timeout=300, model="claude-opus-4-6",
             )
 
-        assert "--yolo" in captured_cmd
+        assert "--allow-installs" in captured_cmd
         assert "--check" in captured_cmd
 
     def test_no_current_improvement_initial_analysis(self, tmp_path: Path):
@@ -821,7 +821,7 @@ class TestRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
 
         self.ui.round_header.assert_called()
@@ -1149,7 +1149,7 @@ class TestForeverRestartInRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
                 forever=True,
             )
 
@@ -1193,7 +1193,7 @@ class TestForeverRestartInRunRounds:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd=None,
-                yolo=False, timeout=300, model="claude-opus-4-6",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
                 forever=True,
             )
 

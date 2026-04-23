@@ -102,16 +102,16 @@ class TestBuildPrompt:
         prompt = build_prompt(tmp_path)
         assert "Add feature X" in prompt
 
-    def test_yolo_note_when_not_yolo(self, tmp_path: Path):
+    def test_constraint_when_not_allow_installs(self, tmp_path: Path):
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
-        prompt = build_prompt(tmp_path, yolo=False)
+        prompt = build_prompt(tmp_path, allow_installs=False)
         assert "Do NOT add new binaries" in prompt
 
-    def test_no_yolo_note_when_yolo(self, tmp_path: Path):
+    def test_no_constraint_when_allow_installs(self, tmp_path: Path):
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
-        prompt = build_prompt(tmp_path, yolo=True)
+        prompt = build_prompt(tmp_path, allow_installs=True)
         assert "Do NOT add new binaries" not in prompt
 
     def test_check_output_included(self, tmp_path: Path):
@@ -151,7 +151,7 @@ class TestBuildPrompt:
             - [ ] [functional] [needs-package] blocked
             - [ ] [functional] real target
         """))
-        prompt = build_prompt(tmp_path, yolo=False)
+        prompt = build_prompt(tmp_path, allow_installs=False)
         assert "Current target improvement: [functional] real target" in prompt
 
 

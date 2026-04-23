@@ -108,7 +108,7 @@ class TestGetCurrentImprovementExtended:
             - [ ] [functional] [needs-package] blocked one
             - [ ] [performance] [needs-package] blocked two
         """))
-        assert _get_current_improvement(f, yolo=False) is None
+        assert _get_current_improvement(f, allow_installs=False) is None
 
     def test_all_needs_package_with_yolo(self, tmp_path: Path):
         f = tmp_path / "imp.md"
@@ -116,7 +116,7 @@ class TestGetCurrentImprovementExtended:
             - [ ] [functional] [needs-package] blocked one
             - [ ] [performance] [needs-package] blocked two
         """))
-        result = _get_current_improvement(f, yolo=True)
+        result = _get_current_improvement(f, allow_installs=True)
         assert result == "[functional] [needs-package] blocked one"
 
 

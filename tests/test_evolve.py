@@ -43,7 +43,7 @@ class TestCLIParsing:
         start_p.add_argument("project_dir")
         start_p.add_argument("--rounds", type=int, default=10)
         start_p.add_argument("--check", default=None)
-        start_p.add_argument("--yolo", action="store_true")
+        start_p.add_argument("--allow-installs", action="store_true", dest="allow_installs")
         start_p.add_argument("--timeout", type=int, default=300)
         start_p.add_argument("--model", default=None)
         start_p.add_argument("--resume", action="store_true")
@@ -55,7 +55,7 @@ class TestCLIParsing:
             "start", "/tmp/project",
             "--rounds", "20",
             "--check", "pytest",
-            "--yolo",
+            "--allow-installs",
             "--timeout", "600",
             "--model", "claude-sonnet-4-20250514",
             "--resume",
@@ -66,7 +66,7 @@ class TestCLIParsing:
         ])
         assert args.rounds == 20
         assert args.check == "pytest"
-        assert args.yolo is True
+        assert args.allow_installs is True
         assert args.timeout == 600
         assert args.model == "claude-sonnet-4-20250514"
         assert args.resume is True
@@ -200,7 +200,7 @@ class TestInitConfig:
         assert "rounds = 10" in content
         assert "timeout = 300" in content
         assert 'model = "claude-opus-4-6"' in content
-        assert "yolo = false" in content
+        assert "allow_installs = false" in content
 
     def test_does_not_overwrite_existing(self, tmp_path: Path):
         config = tmp_path / "evolve.toml"
@@ -272,7 +272,7 @@ class TestResolveConfig:
         import argparse
         args = argparse.Namespace(
             check=None, rounds=None, timeout=None,
-            model=None, yolo=None, resume=False,
+            model=None, allow_installs=None, resume=False,
         )
         for k, v in overrides.items():
             setattr(args, k, v)
@@ -302,7 +302,7 @@ class TestResolveConfig:
         assert result.rounds == 25
         assert result.timeout == 600
         assert result.model == "claude-sonnet-4-20250514"
-        assert result.yolo is True
+        assert result.allow_installs is True
 
     def test_env_wins_over_file(self, tmp_path: Path):
         (tmp_path / "evolve.toml").write_text('model = "claude-sonnet-4-20250514"\n')
@@ -323,7 +323,7 @@ class TestResolveConfig:
         assert result.rounds == 10
         assert result.timeout == 300
         assert result.model == "claude-opus-4-6"
-        assert result.yolo is False
+        assert result.allow_installs is False
 
 
 class TestCleanSessions:

@@ -110,7 +110,7 @@ class TestGetCurrentImprovement:
             - [ ] [functional] [needs-package] blocked
             - [ ] [functional] normal
         """))
-        assert _get_current_improvement(f, yolo=False) == "[functional] normal"
+        assert _get_current_improvement(f, allow_installs=False) == "[functional] normal"
 
     def test_returns_needs_package_with_yolo(self, tmp_path: Path):
         f = tmp_path / "improvements.md"
@@ -118,7 +118,7 @@ class TestGetCurrentImprovement:
             - [ ] [functional] [needs-package] blocked
             - [ ] [functional] normal
         """))
-        result = _get_current_improvement(f, yolo=True)
+        result = _get_current_improvement(f, allow_installs=True)
         assert result == "[functional] [needs-package] blocked"
 
     def test_returns_none_when_all_done(self, tmp_path: Path):
@@ -132,7 +132,7 @@ class TestGetCurrentImprovement:
     def test_returns_none_all_blocked(self, tmp_path: Path):
         f = tmp_path / "improvements.md"
         f.write_text("- [ ] [functional] [needs-package] blocked\n")
-        assert _get_current_improvement(f, yolo=False) is None
+        assert _get_current_improvement(f, allow_installs=False) is None
 
 
 # ---------------------------------------------------------------------------
@@ -297,9 +297,9 @@ class TestImprovementsParsingEdgeCases:
             - [ ] [performance] [needs-package] blocked 2
             - [ ] [functional] first available
         """))
-        assert _get_current_improvement(f, yolo=False) == "[functional] first available"
+        assert _get_current_improvement(f, allow_installs=False) == "[functional] first available"
         # With yolo, the first blocked item is returned
-        assert _get_current_improvement(f, yolo=True) == "[functional] [needs-package] blocked 1"
+        assert _get_current_improvement(f, allow_installs=True) == "[functional] [needs-package] blocked 1"
 
     # -- Whitespace-only and newline-only files --
 
