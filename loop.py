@@ -1343,10 +1343,11 @@ def _run_rounds(
             session_name = run_dir.name
             fire_hook(hooks, "on_round_start", session=session_name, round_num=round_num, status="running")
 
-            # Launch round as subprocess — picks up code changes from previous round
-            evolve_script = Path(__file__).parent / "evolve.py"
+            # Launch round as subprocess — picks up code changes from previous round.
+            # Use ``python -m evolve`` so this works regardless of whether the
+            # project is laid out as a flat module (legacy) or a package (current).
             cmd = [
-                sys.executable, str(evolve_script),
+                sys.executable, "-m", "evolve",
                 "_round",
                 str(project_dir),
                 "--round-num", str(round_num),

@@ -1225,9 +1225,11 @@ class TestRunRounds:
             )
 
         # Step 2: feed the captured argv through _parse_round_args
-        # The captured_cmd is [sys.executable, evolve.py, _round, proj, ...flags...]
-        # _parse_round_args reads sys.argv[2:], so we simulate that
-        simulated_argv = ["evolve", "_round"] + captured_cmd[3:]
+        # The captured_cmd is [sys.executable, -m, evolve, _round, proj, ...flags...]
+        # _parse_round_args reads sys.argv[2:], so we simulate that by taking
+        # everything after the `_round` marker and prepending ["evolve", "_round"].
+        round_idx = captured_cmd.index("_round")
+        simulated_argv = ["evolve", "_round"] + captured_cmd[round_idx + 1:]
         with patch("sys.argv", simulated_argv):
             args = _parse_round_args()
         assert args.effort == "medium"
