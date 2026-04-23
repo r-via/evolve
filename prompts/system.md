@@ -169,6 +169,46 @@ IMPORTANT: Only ONE improvement per turn. Do not batch multiple improvements.
 
 {allow_installs_note}
 
+**Phase 3.5 — STRUCTURAL CHANGE SELF-DETECTION (mandatory before commit)**:
+
+Before writing `COMMIT_MSG`, check whether your edit touched any of the
+following — these are **structural** changes that could break the
+orchestrator's subprocess launcher or test collection, and the pytest suite
+does NOT catch them (subprocess is mocked):
+
+- File rename (`git diff --diff-filter=R` reports entries)
+- File creation or deletion that is imported by another tracked file in the
+  project (`grep -l "from <name>" .` or `grep -l "import <name>" .` finds hits)
+- Changes to `pyproject.toml` under `[project.scripts]`, `[tool.setuptools]`,
+  or dependency lists
+- Changes to `evolve/__init__.py`, `evolve/__main__.py`, or any `__init__.py`
+  that alters module re-exports
+- Creation or deletion of a `__main__.py` anywhere
+- Changes to `conftest.py` or `tests/conftest.py` that affect test collection
+
+**If ANY of the above is true**, your commit is structural. You MUST:
+
+1. Prefix the first line of `COMMIT_MSG` with `STRUCTURAL: ` —
+   e.g. `STRUCTURAL: feat(git): extract git operations from loop.py`
+2. Write `{run_dir}/RESTART_REQUIRED` with:
+   ```
+   # RESTART_REQUIRED
+   reason: <one-line why the process must restart>
+   verify: <shell command(s) the operator should run to check the new state>
+   resume: <shell command to continue evolution, typically `python -m evolve start <project> --resume`>
+   round: <current round number>
+   timestamp: <ISO-8601 UTC>
+   ```
+3. **Skip Phase 4 for this round.** Do NOT write `CONVERGED` even if the
+   backlog is empty. The next run after operator restart handles convergence.
+4. Return cleanly — the orchestrator will honor the marker, commit, show a
+   review panel, and exit with code 3.
+
+The pytest suite passes the mocked-subprocess tests, so **relying on tests
+alone is insufficient for structural changes**. This self-detection is the
+primary guard; the orchestrator's entry-point smoke test and zero-progress
+retry are backups.
+
 **Phase 4 — CONVERGENCE (only when everything is truly done)**:
 You MUST only declare convergence when ALL of the following are true:
 - Zero errors
