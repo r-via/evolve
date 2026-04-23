@@ -57,6 +57,7 @@ def build_prompt(
     yolo: bool = False,
     run_dir: Path | None = None,
     spec: str | None = None,
+    round_num: int = 1,
 ) -> str:
     """Build the system prompt for the opus agent from project context.
 
@@ -70,6 +71,7 @@ def build_prompt(
         yolo: If True, allow improvements tagged [needs-package].
         run_dir: Session run directory containing round artifacts.
         spec: Path to the spec file relative to project_dir (default: README.md).
+        round_num: Current evolution round number (used for stuck-loop detection).
 
     Returns:
         The fully interpolated prompt string.
@@ -134,6 +136,9 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
     system_prompt = system_prompt.replace("{run_dir}", rdir)
     system_prompt = system_prompt.replace("{yolo_note}", yolo_note)
     system_prompt = system_prompt.replace("{watchdog_timeout}", str(WATCHDOG_TIMEOUT))
+    system_prompt = system_prompt.replace("{round_num}", str(round_num))
+    system_prompt = system_prompt.replace("{prev_round_1}", str(round_num - 1))
+    system_prompt = system_prompt.replace("{prev_round_2}", str(round_num - 2))
 
     # Build sections
     readme_section = f"## README (specification)\n{readme}" if readme else "## README\n(no README found)"
@@ -403,7 +408,7 @@ def analyze_and_fix(
         run_dir: Session run directory for conversation logs.
         spec: Path to the spec file relative to project_dir (default: README.md).
     """
-    prompt = build_prompt(project_dir, check_output, check_cmd, yolo, run_dir, spec=spec)
+    prompt = build_prompt(project_dir, check_output, check_cmd, yolo, run_dir, spec=spec, round_num=round_num)
 
     # Track attempt number for retry log filenames via a mutable closure.
     attempt_counter = [0]

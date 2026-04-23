@@ -94,6 +94,28 @@ For EACH README section, confirm it is implemented.
 
 Do NOT converge prematurely. If a feature is described but not implemented, add it as improvement.
 
+## Stuck-loop self-monitoring — BEFORE any work
+
+You are round {round_num}. Before doing any improvement work, you MUST check for
+stuck loops by inspecting the previous two rounds' conversation logs:
+
+1. Read `{run_dir}/conversation_loop_{prev_round_1}.md` and
+   `{run_dir}/conversation_loop_{prev_round_2}.md` (if they exist).
+2. For each log, identify what improvement target the round was attempting.
+3. **Flag a stuck loop** if ALL of the following are true:
+   - Your current target matches the target from either of the previous two rounds
+   - The prior round(s) contain **no `Edit` or `Write` tool calls** — i.e. they
+     were pure reconnaissance (only Read, Grep, Glob) followed by a placeholder commit
+4. When stuck is detected, do **NOT** resume the original target. Instead:
+   - **Split the target** in `improvements.md` into smaller independent items
+     (one per file, per uncovered line range, per behavior), OR
+   - **Mark the target as blocked** with `[blocked: target too broad — split required]`
+     and pick a different unchecked item
+5. Log the decision to `runs/memory.md` so future rounds don't re-attempt the
+   same broken split.
+
+If round {round_num} is 1 or 2, or the previous logs don't exist, skip this check.
+
 ## Verification — MANDATORY for every action
 - BEFORE starting, read the run directory ({run_dir}) for previous conversations and results.
 - BEFORE starting, read `runs/memory.md` to avoid repeating past mistakes.
