@@ -1215,8 +1215,12 @@ def _run_monitored_subprocess(
             with lock:
                 output_lines.append(line)
                 last_activity = time.monotonic()
-            sys.stdout.write(line)
-            sys.stdout.flush()
+            # Route through the TUI so (a) subprocess output lands in the
+            # Rich record buffer for frame capture, and (b) JsonTUI emits
+            # a structured event per line. RichTUI preserves ANSI codes via
+            # console.out(markup=False, highlight=False); PlainTUI falls
+            # back to sys.stdout.write for parity with the old behavior.
+            ui.subprocess_output(line)
 
     reader_thread = threading.Thread(target=_reader, daemon=True)
     reader_thread.start()

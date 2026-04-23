@@ -117,6 +117,8 @@ class TUIProtocol(Protocol):
 
     def structural_change_required(self, marker: dict) -> None: ...
 
+    def subprocess_output(self, line: str) -> None: ...
+
     def capture_frame(self, label: str) -> Path | None: ...
 
 
@@ -148,7 +150,15 @@ class RichTUI:
         self._run_dir = Path(run_dir) if run_dir else None
         # record=True accumulates rendered output in an internal buffer
         # for later export via save_svg() — no extra overhead when unused.
-        self.console = Console(record=capture_frames)
+        # force_terminal=True makes Rich emit ANSI codes even when stdout is
+        # piped (as it is for evolve's round subprocesses), so styling reaches
+        # both the user's terminal (via the orchestrator's stdout pipe) and
+        # the record buffer for frame capture.
+        self.console = Console(
+            record=capture_frames,
+            force_terminal=True,
+            color_system="truecolor",
+        )
         self._status_grid = None
         self._cairosvg_warned = False
         # Startup-time availability check: when capture_frames is enabled but
@@ -454,6 +464,18 @@ class RichTUI:
         self.console.print()
         self.console.print(panel)
 
+    def subprocess_output(self, line: str) -> None:
+        """Forward a line of subprocess stdout through the Rich console.
+
+        Routing through ``console.out()`` (instead of raw ``sys.stdout``)
+        is what makes subprocess output land in the record buffer so
+        frame capture includes it. ``highlight=False, markup=False`` keep
+        Rich from re-interpreting the subprocess's own styling — ANSI
+        codes emitted by the subprocess (when ``force_terminal=True``) are
+        passed through to the terminal verbatim.
+        """
+        self.console.out(line, end="", highlight=False, markup=False)
+
     def capture_frame(self, label: str) -> Path | None:
         """Snapshot the recorded Rich buffer as a PNG frame.
 
@@ -699,6 +721,13 @@ class PlainTUI:
         print(f"    $ git reset --hard HEAD~1")
         print(f"{'─' * 56}")
 
+    def subprocess_output(self, line: str) -> None:
+        """Forward raw subprocess stdout. PlainTUI has no record buffer, so
+        this is a direct ``sys.stdout`` write with an explicit flush to
+        preserve real-time streaming behavior."""
+        sys.stdout.write(line)
+        sys.stdout.flush()
+
     def capture_frame(self, label: str) -> Path | None:
         """Plain text TUI has no visual to capture — always returns None."""
         return None
@@ -867,6 +896,12 @@ class JsonTUI:
                     resume=marker.get("resume", ""),
                     round=marker.get("round", ""),
                     timestamp=marker.get("timestamp", ""))
+
+    def subprocess_output(self, line: str) -> None:
+        """Emit a structured JSON event per subprocess output line. The event
+        ``type`` is ``subprocess_output`` with the raw line as ``line``
+        (ANSI codes preserved — downstream consumers can strip if needed)."""
+        self._emit("subprocess_output", line=line.rstrip("\n"))
 
     def capture_frame(self, label: str) -> Path | None:
         """JSON TUI has no visual to capture — always returns None."""

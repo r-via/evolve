@@ -533,8 +533,14 @@ class TestCompletionSummaryEdgeCases:
             report_path="report.md",
         )
         out = capsys.readouterr().out
-        assert "42s" in out
-        assert "0m" not in out
+        # Strip ANSI escape codes before substring checks — with
+        # force_terminal=True, Rich emits sequences like \x1b[0m which
+        # contain the literal substring "0m" and would false-match the
+        # "no minutes" assertion below.
+        import re
+        stripped = re.sub(r"\x1b\[[0-9;]*m", "", out)
+        assert "42s" in stripped
+        assert "0m" not in stripped
 
     def test_rich_zero_duration(self, capsys):
         if not _has_rich():
