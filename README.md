@@ -114,6 +114,9 @@ evolve start ~/projects/my-tool --check "pytest" --resume
 # Autonomous forever mode — evolves indefinitely on a separate branch
 evolve start ~/projects/my-tool --check "pytest" --forever
 
+# Fully autonomous forever mode — also allows installing new dependencies
+evolve start ~/projects/my-tool --check "pytest" --forever --allow-installs
+
 # JSON output for CI/CD pipelines
 evolve start ~/projects/my-tool --check "pytest" --json
 
