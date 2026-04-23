@@ -567,33 +567,57 @@ broader — the agent appends entries for **any** of:
 
 **Structured sections.** `memory.md` uses typed headers so the agent (and
 humans) can scan it quickly and the compaction pass doesn't accidentally
-merge unrelated entries:
+merge unrelated entries. **Entries are telegraphic, not narrative** —
+sentence fragments, no articles, no ceremonial prose. The section shape
+is a scaffold, not a form to fill in:
 
 ```markdown
 # Agent Memory
 
 ## Errors
 ### <title> — <round ref>
-- What happened: ...
-- Root cause: ...
-- Fix: ...
+<what happened + root cause + fix, telegraphic, 1-3 lines>
 
 ## Decisions
 ### <title> — <round ref>
-- Context: ...
-- Choice: ...
-- Rationale: ...
+<choice + why (non-obvious part only), 1-3 lines>
 
 ## Patterns
 ### <title>
-- Observed in rounds: ...
-- Signature: ...
+<signature + rounds observed, 1-2 lines>
 
 ## Insights
 ### <title>
-- Observation: ...
-- Implication: ...
+<observation + implication, 1-2 lines>
 ```
+
+**Length discipline.** Entries MUST satisfy **all three**:
+
+1. **Hard cap.** ≤ 5 lines *or* ≤ 400 characters, whichever is stricter.
+   If it doesn't fit, it's not a memory entry — resynthesize, or don't log.
+2. **Telegraphic style.** Drop articles ("a", "the"), drop ceremonial
+   verbs ("implemented", "decided to", "chose to"), use `→` / `:` / `—`
+   as connectors, prefer fragments over full sentences. Code identifiers
+   stay verbatim. Example:
+   - ❌ verbose: *"Context: SPEC.md § 'Phase 1 escape hatch' required
+     teaching the agent the bypass rules AND letting it know at runtime
+     which attempt it was on. Choice: parse `(attempt K)` from the existing
+     `subprocess_error_round_N.txt` diagnostic file in `build_prompt`,
+     guarded on the filename matching the current round_num. Rationale:
+     keeps the orchestrator → subprocess contract unchanged..."* (19 lines)
+   - ✅ telegraphic: *"attempt counter → `{attempt_marker}` placeholder,
+     parsed from `subprocess_error_round_N.txt`. No new CLI flag. Three
+     redundant attempt-3 signals on purpose."* (2 lines)
+3. **Non-obvious gate.** Before logging, ask: *"Would a future agent
+   reading this in 10 rounds care, or could they rediscover the info
+   by re-reading SPEC.md / the code / the commit?"* If rediscoverable,
+   **do not log**. Memory is not a code diary.
+
+No entry restating what SPEC.md or code already documents. No entry
+describing a straightforward implementation that a reader of the
+resulting commit could infer. Memory is for the non-obvious: surprising
+interactions, explicit trade-offs rejected, lessons that survive the
+file-level context.
 
 **Compaction discipline.** Aggressive per-turn compaction is what used to
 produce the "always empty" fixed point. The current contract:

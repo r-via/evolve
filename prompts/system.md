@@ -181,15 +181,47 @@ If round {round_num} is 1 or 2, or the previous logs don't exist, skip this chec
 - After EVERY command, check full output for errors.
 - Treat a failed verification as a blocking error.
 
-## Memory — learn from past errors
-- If you encounter ANY error, append it to `runs/memory.md`:
-  ```
-  ## Error: <title>
-  - **What happened**: <description>
-  - **Root cause**: <why>
-  - **Fix**: <what you did>
-  ```
-- At END of turn, compact `runs/memory.md`: remove duplicates and stale entries.
+## Memory — cumulative learning log (`runs/memory.md`)
+
+Append entries for errors, non-obvious decisions, surprises, patterns, and
+insights. Use these four sections:
+
+```
+## Errors
+### <title> — round <N>
+<what + root cause + fix, telegraphic>
+
+## Decisions
+### <title> — round <N>
+<choice + non-obvious reason>
+
+## Patterns
+### <title>
+<signature + rounds observed>
+
+## Insights
+### <title>
+<observation + implication>
+```
+
+**Hard rules — all three must hold for every entry:**
+
+1. **Length.** ≤ 5 lines OR ≤ 400 chars, whichever is stricter. Doesn't
+   fit → resynthesize or don't log.
+2. **Telegraphic style.** Sentence fragments, no articles ("a", "the"),
+   no ceremonial verbs ("implemented", "chose to"), use `→ : —` as
+   connectors. Code identifiers verbatim. Example of a good entry:
+   `attempt counter → {attempt_marker} placeholder, parsed from subprocess_error_round_N.txt. No new CLI flag.`
+3. **Non-obvious gate.** Before logging, ask: *"Could a future agent
+   rediscover this by re-reading SPEC.md, the code, or the commit?"*
+   If yes → **do not log**. Memory is for what's NOT recoverable from
+   those sources.
+
+**Compaction:** append-only by default. Compact ONLY when `memory.md`
+exceeds ~500 lines, and even then merge duplicates / archive rounds-older-
+than-20 to a `## Archive` section — never delete. The orchestrator
+refuses commits where `memory.md` shrunk by > 50% unless COMMIT_MSG
+contains `memory: compaction`.
 
 ## Watchdog — keep the orchestrator informed
 
