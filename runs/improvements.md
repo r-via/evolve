@@ -78,6 +78,6 @@
 - [x] [functional] README sync: mention `EVOLVE_ROUND` in Configuration (documented in SPEC.md § Hook execution but absent from README.md)
 - [x] [functional] README sync: mention `EVOLVE_STATUS` in Configuration (documented in SPEC.md § Hook execution but absent from README.md)
 - [x] [functional] README sync: mention `evolve start ~/projects/my-tool --check "pytest" --forever --allow-installs` in Examples (documented in SPEC.md § The --forever flag but absent from README.md)
-- [ ] [functional] README sync: mention `EVOLVE_CAPTURE_FRAMES` in Configuration (documented in SPEC.md § Frame capture (visual context for party mode) but absent from README.md)
+- [x] [functional] README sync: mention `EVOLVE_CAPTURE_FRAMES` in Configuration (documented in SPEC.md § Frame capture (visual context for party mode) but absent from README.md)
 - [ ] [functional] README sync: mention `evolve start . --check "pytest" --rounds 20` in Examples (documented in SPEC.md § Exit codes but absent from README.md)
 - [ ] [functional] README sync: mention `evolve start . --check "pytest" --rounds 20 --json > evolve-output.jsonl` in Examples (documented in SPEC.md § Exit codes but absent from README.md)

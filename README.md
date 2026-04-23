@@ -193,6 +193,16 @@ effect as the `--allow-installs` flag; unlocks `[needs-package]` items):
 EVOLVE_ALLOW_INSTALLS=1 evolve start ~/projects/my-tool --check "pytest"
 ```
 
+Opt into TUI frame capture via `EVOLVE_CAPTURE_FRAMES` (same effect as
+`capture_frames = true` in `evolve.toml` or `--capture-frames`; snapshots
+the rendered TUI as PNGs into `runs/<session>/frames/` for party-mode
+visual context — see
+[SPEC.md § Frame capture](SPEC.md#frame-capture-visual-context-for-party-mode)):
+
+```bash
+EVOLVE_CAPTURE_FRAMES=1 evolve start ~/projects/my-tool --check "pytest"
+```
+
 Hook commands (configured under `[hooks]` in `evolve.toml`, see example
 above) receive runtime context via three environment variables that
 evolve sets automatically before executing each hook: `EVOLVE_SESSION`
