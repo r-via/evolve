@@ -14,26 +14,34 @@ from tui import get_tui
 MODEL = "claude-opus-4-6"
 
 
-def _load_project_context(project_dir: Path) -> dict[str, str]:
-    """Load shared project context: README and improvements.
+def _load_project_context(project_dir: Path, spec: str | None = None) -> dict[str, str]:
+    """Load shared project context: spec file (README) and improvements.
 
     Centralises the file-loading logic used by all prompt builders so that
     adding a new file or changing search order only needs to happen once.
 
     Args:
         project_dir: Root directory of the project.
+        spec: Path to the spec file relative to project_dir (e.g. ``"SPEC.md"``
+              or ``"docs/specification.md"``).  Defaults to ``README.md``.
 
     Returns:
         Dictionary with ``readme`` (may be empty) and ``improvements``
         (``None`` when the file does not exist, otherwise its text content).
     """
-    # Load README — try common filenames in order
+    # Load spec file
     readme = ""
-    for name in ("README.md", "README.rst", "README.txt", "README"):
-        p = project_dir / name
+    if spec:
+        p = project_dir / spec
         if p.is_file():
             readme = p.read_text()
-            break
+    else:
+        # Default: try common filenames in order
+        for name in ("README.md", "README.rst", "README.txt", "README"):
+            p = project_dir / name
+            if p.is_file():
+                readme = p.read_text()
+                break
 
     # Load improvements
     improvements_path = project_dir / "runs" / "improvements.md"
@@ -48,6 +56,7 @@ def build_prompt(
     check_cmd: str | None = None,
     yolo: bool = False,
     run_dir: Path | None = None,
+    spec: str | None = None,
 ) -> str:
     """Build the system prompt for the opus agent from project context.
 
@@ -60,6 +69,7 @@ def build_prompt(
         check_cmd: Shell command used to verify the project (e.g. 'pytest').
         yolo: If True, allow improvements tagged [needs-package].
         run_dir: Session run directory containing round artifacts.
+        spec: Path to the spec file relative to project_dir (default: README.md).
 
     Returns:
         The fully interpolated prompt string.
@@ -73,7 +83,7 @@ def build_prompt(
 
     system_prompt = prompt_path.read_text() if prompt_path.is_file() else ""
 
-    ctx = _load_project_context(project_dir)
+    ctx = _load_project_context(project_dir, spec=spec)
     readme = ctx["readme"]
     improvements = ctx["improvements"]
 
@@ -366,6 +376,7 @@ def analyze_and_fix(
     max_retries: int = 5,
     round_num: int = 1,
     run_dir: Path | None = None,
+    spec: str | None = None,
 ) -> None:
     """Run Claude opus agent to analyze and fix code.
 
@@ -380,8 +391,9 @@ def analyze_and_fix(
         max_retries: Maximum SDK call attempts on rate-limit errors.
         round_num: Current evolution round number.
         run_dir: Session run directory for conversation logs.
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
-    prompt = build_prompt(project_dir, check_output, check_cmd, yolo, run_dir)
+    prompt = build_prompt(project_dir, check_output, check_cmd, yolo, run_dir, spec=spec)
 
     # Track attempt number for retry log filenames via a mutable closure.
     attempt_counter = [0]
@@ -428,6 +440,7 @@ def build_validate_prompt(
     check_output: str = "",
     check_cmd: str | None = None,
     run_dir: Path | None = None,
+    spec: str | None = None,
 ) -> str:
     """Build the prompt for validation (spec compliance) mode.
 
@@ -440,11 +453,12 @@ def build_validate_prompt(
         check_output: Output from the most recent check command run.
         check_cmd: Shell command used to verify the project.
         run_dir: Session run directory where the report will be written.
+        spec: Path to the spec file relative to project_dir (default: README.md).
 
     Returns:
         The fully assembled prompt string.
     """
-    ctx = _load_project_context(project_dir)
+    ctx = _load_project_context(project_dir, spec=spec)
     readme = ctx["readme"]
     improvements = ctx["improvements"] or "(none)"
 
@@ -500,6 +514,7 @@ def build_dry_run_prompt(
     check_output: str = "",
     check_cmd: str | None = None,
     run_dir: Path | None = None,
+    spec: str | None = None,
 ) -> str:
     """Build the prompt for dry-run (read-only) analysis mode.
 
@@ -512,11 +527,12 @@ def build_dry_run_prompt(
         check_output: Output from the most recent check command run.
         check_cmd: Shell command used to verify the project.
         run_dir: Session run directory where the report will be written.
+        spec: Path to the spec file relative to project_dir (default: README.md).
 
     Returns:
         The fully assembled prompt string.
     """
-    ctx = _load_project_context(project_dir)
+    ctx = _load_project_context(project_dir, spec=spec)
     readme = ctx["readme"]
     improvements = ctx["improvements"] or "(none)"
 
@@ -716,6 +732,7 @@ def run_dry_run_agent(
     check_cmd: str | None = None,
     run_dir: Path | None = None,
     max_retries: int = 5,
+    spec: str | None = None,
 ) -> None:
     """Run the agent in dry-run (read-only) analysis mode.
 
@@ -728,11 +745,12 @@ def run_dry_run_agent(
         check_cmd: Shell command used to verify the project.
         run_dir: Session run directory for conversation logs and report.
         max_retries: Maximum SDK call attempts on rate-limit errors.
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
     rdir = run_dir or (project_dir / "runs")
     rdir.mkdir(parents=True, exist_ok=True)
 
-    prompt = build_dry_run_prompt(project_dir, check_output, check_cmd, rdir)
+    prompt = build_dry_run_prompt(project_dir, check_output, check_cmd, rdir, spec=spec)
 
     _run_agent_with_retries(
         lambda: _run_dry_run_claude_agent(prompt, project_dir, rdir),
@@ -769,6 +787,7 @@ def run_validate_agent(
     check_cmd: str | None = None,
     run_dir: Path | None = None,
     max_retries: int = 5,
+    spec: str | None = None,
 ) -> None:
     """Run the agent in validation (spec compliance) mode.
 
@@ -781,11 +800,12 @@ def run_validate_agent(
         check_cmd: Shell command used to verify the project.
         run_dir: Session run directory for conversation logs and report.
         max_retries: Maximum SDK call attempts on rate-limit errors.
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
     rdir = run_dir or (project_dir / "runs")
     rdir.mkdir(parents=True, exist_ok=True)
 
-    prompt = build_validate_prompt(project_dir, check_output, check_cmd, rdir)
+    prompt = build_validate_prompt(project_dir, check_output, check_cmd, rdir, spec=spec)
 
     _run_agent_with_retries(
         lambda: _run_validate_claude_agent(prompt, project_dir, rdir),

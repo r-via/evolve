@@ -461,6 +461,7 @@ def evolve_loop(
     model: str = "claude-opus-4-6",
     resume: bool = False,
     forever: bool = False,
+    spec: str | None = None,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess.
 
@@ -477,6 +478,7 @@ def evolve_loop(
         model: Claude model identifier to use.
         resume: If True, resume the most recent interrupted session.
         forever: If True, run indefinitely on a dedicated branch.
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
     improvements_path = project_dir / "runs" / "improvements.md"
 
@@ -540,7 +542,7 @@ def evolve_loop(
                 return _run_rounds(
                     project_dir, run_dir, improvements_path, ui,
                     start_round, max_rounds, check_cmd, yolo, timeout, model,
-                    forever=forever, hooks=hooks,
+                    forever=forever, hooks=hooks, spec=spec,
                 )
 
     # Create timestamped run directory
@@ -556,7 +558,7 @@ def evolve_loop(
     _run_rounds(
         project_dir, run_dir, improvements_path, ui,
         1, max_rounds, check_cmd, yolo, timeout, model,
-        forever=forever, hooks=hooks,
+        forever=forever, hooks=hooks, spec=spec,
     )
 
 
@@ -683,6 +685,7 @@ def _run_rounds(
     model: str,
     forever: bool = False,
     hooks: dict[str, str] | None = None,
+    spec: str | None = None,
 ) -> None:
     """Run evolution rounds from start_round to max_rounds.
 
@@ -703,6 +706,7 @@ def _run_rounds(
         model: Claude model identifier.
         forever: If True, restart after convergence instead of exiting.
         hooks: Event hook configuration dict (from ``load_hooks``).
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
     if hooks is None:
         hooks = {}
@@ -749,6 +753,8 @@ def _run_rounds(
                 cmd += ["--check", check_cmd]
             if yolo:
                 cmd += ["--yolo"]
+            if spec:
+                cmd += ["--spec", spec]
 
             # --- Debug retry loop: run the round, diagnose failures, retry ---
             print(f"[probe] launching subprocess for round {round_num}")
@@ -969,6 +975,7 @@ def run_single_round(
     timeout: int = 300,
     run_dir: Path | None = None,
     model: str = "claude-opus-4-6",
+    spec: str | None = None,
 ) -> None:
     """Execute a single evolution round (called as subprocess).
 
@@ -984,6 +991,7 @@ def run_single_round(
         timeout: Timeout for the check command in seconds.
         run_dir: Session directory for round artifacts.
         model: Claude model identifier to use.
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
     from agent import analyze_and_fix
     import agent as _agent_mod
@@ -1033,6 +1041,7 @@ def run_single_round(
         yolo=yolo,
         round_num=round_num,
         run_dir=rdir,
+        spec=spec,
     )
     print("[probe] agent finished")
 
@@ -1084,6 +1093,7 @@ def run_dry_run(
     check_cmd: str | None = None,
     timeout: int = 300,
     model: str = "claude-opus-4-6",
+    spec: str | None = None,
 ) -> None:
     """Run a read-only analysis of the project without modifying files.
 
@@ -1099,6 +1109,7 @@ def run_dry_run(
         check_cmd: Shell command to verify the project (run read-only).
         timeout: Timeout in seconds for the check command.
         model: Claude model identifier to use.
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
     ui = get_tui()
 
@@ -1152,6 +1163,7 @@ def run_dry_run(
         check_output=check_output,
         check_cmd=check_cmd,
         run_dir=run_dir,
+        spec=spec,
     )
 
     # 3. Report location
@@ -1167,6 +1179,7 @@ def run_validate(
     check_cmd: str | None = None,
     timeout: int = 300,
     model: str = "claude-opus-4-6",
+    spec: str | None = None,
 ) -> int:
     """Run spec compliance validation without modifying project files.
 
@@ -1179,6 +1192,7 @@ def run_validate(
         check_cmd: Shell command to verify the project (run read-only).
         timeout: Timeout in seconds for the check command.
         model: Claude model identifier to use.
+        spec: Path to the spec file relative to project_dir (default: README.md).
 
     Returns:
         Exit code: 0 if all claims pass, 1 if any fail, 2 on error.
