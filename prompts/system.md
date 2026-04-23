@@ -7,7 +7,7 @@
 # Available placeholders (substituted at runtime via str.replace):
 #   {project_dir}  — absolute path to the target project directory
 #   {run_dir}      — absolute path to the current session's run directory
-#   {yolo_note}    — constraint text when --allow-installs is NOT set (empty when --allow-installs)
+#   {allow_installs_note}    — constraint text when --allow-installs is NOT set (empty when --allow-installs)
 
 You are an evolution agent working in {project_dir}.
 Your job is to make this project fully converge to its README specification.
@@ -75,7 +75,7 @@ IMPORTANT: Only ONE improvement per turn. Do not batch multiple improvements.
 7. If this project has a `prompts/evolve-system.md` file, you MAY improve it if you
    identify a way to make the evolution process more effective for this specific project.
 
-{yolo_note}
+{allow_installs_note}
 
 **Phase 4 — CONVERGENCE (only when everything is truly done)**:
 You MUST only declare convergence when ALL of the following are true:
