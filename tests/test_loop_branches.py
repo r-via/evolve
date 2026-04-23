@@ -16,9 +16,7 @@ import pytest
 
 import loop
 from loop import (
-    _audit_readme_sync,
     _auto_detect_check,
-    _extract_spec_claims,
     _generate_evolution_report,
     _get_current_improvement,
     _git_show_at,
@@ -51,54 +49,6 @@ class TestAutoDetectMakefileOSError:
 
         # OSError swallowed — no pytest/npm/cargo/go available in test env, falls through to None
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# _extract_spec_claims — `$` without space prefix (line 325)
-# ---------------------------------------------------------------------------
-
-class TestExtractSpecClaimsDollarNoSpace:
-    def test_dollar_without_space_prefix_is_stripped(self):
-        """Shell examples with `$cmd` (no space) are normalized and parsed."""
-        spec = (
-            "# Title\n"
-            "\n"
-            "```bash\n"
-            "$evolve start\n"
-            "```\n"
-        )
-        claims = _extract_spec_claims(spec)
-        # `$evolve start` → stripped to `evolve start` via line 325 branch
-        shell_claims = [c for c in claims if c[1] == "shell_example"]
-        assert any(c[0].startswith("evolve start") for c in shell_claims)
-
-
-# ---------------------------------------------------------------------------
-# _audit_readme_sync — OSError reading spec/readme (lines 409-410)
-# ---------------------------------------------------------------------------
-
-class TestAuditReadmeSyncOSError:
-    def test_oserror_returns_zero_items(self, tmp_path: Path):
-        """OSError during read returns 0 — audit is a no-op, not a crash."""
-        spec = tmp_path / "SPEC.md"
-        spec.write_text("# Spec\n\n### The --foo flag\n")
-        readme = tmp_path / "README.md"
-        readme.write_text("# Readme\n")
-        improvements = tmp_path / "improvements.md"
-        improvements.write_text("# Improvements\n")
-
-        # Make both files raise OSError on read by patching Path.read_text.
-        original_read_text = Path.read_text
-
-        def _mock_read(self: Path, *args, **kwargs):
-            if self.name in ("SPEC.md", "README.md"):
-                raise OSError("permission denied")
-            return original_read_text(self, *args, **kwargs)
-
-        with patch.object(Path, "read_text", _mock_read):
-            result = _audit_readme_sync(tmp_path, improvements, spec="SPEC.md")
-
-        assert result == 0
 
 
 # ---------------------------------------------------------------------------

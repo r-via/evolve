@@ -306,8 +306,8 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
                 f"until the listed gate violation(s) below are resolved: "
                 f"rebuild any ``[stale: spec changed]`` items from the "
                 f"current spec, and close every unchecked ``- [ ]`` item "
-                f"(or tag it with ``[needs-package]``, ``[blocked: ...]``, "
-                f"or ``[wontfix-sync: ...]``).\n"
+                f"(or tag it with ``[needs-package]`` or "
+                f"``[blocked: ...]``).\n"
                 f"```\n{prev_crash}\n```\n"
             )
         else:
