@@ -30,6 +30,18 @@ field — SPEC schema shows only 4 documented keys but persistence needs 5th.
 threshold `> 3` strict — drift-starts-at-R1 → first warn R5 (rss=4), not R4
 (rss=3). Round N since=1 → rss = N-1. Easy test misread.
 
+### Retry continuity: attempt-log naming driven by orchestrator diagnostic — round 5 of 20260423_142834
+`analyze_and_fix` names log via `_detect_current_attempt(run_dir, round_num)` parsing
+`subprocess_error_round_N.txt` header `(attempt K)` → next is K+1. SDK rate-limit
+retries share one attempt log; only subprocess-level attempts bump K. Canonical
+`conversation_loop_N.md` is `shutil.copyfile` (cross-fs safe), not symlink.
+
+### Bookkeeping: commit-message + improvements.md both required for progress — round 5 of 20260423_142834
+zero-progress detector trips on EITHER missing COMMIT_MSG OR byte-identical
+improvements.md. Real code edits + passing tests aren't enough — must also
+check off item and write COMMIT_MSG, else round is flagged no-progress and
+retried.
+
 ## Patterns
 
 ### Party-mode prompt capture: patch target is `agent.run_claude_agent`
