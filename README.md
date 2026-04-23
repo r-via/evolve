@@ -170,6 +170,13 @@ variables → `evolve.toml` → `pyproject.toml [tool.evolve]` → defaults.** F
 field list and semantics in
 [SPEC.md § Config resolution](SPEC.md#config-resolution).
 
+Every config field also has an environment-variable form (useful for CI
+secrets and sandboxed shells). The most common one is `EVOLVE_MODEL`:
+
+```bash
+EVOLVE_MODEL=claude-sonnet-4-20250514 evolve start ~/projects/my-tool --check "pytest"
+```
+
 Scaffold a config file quickly:
 
 ```bash
