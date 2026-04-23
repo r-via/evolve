@@ -938,8 +938,15 @@ class TestRunRounds:
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             convo = run_dir / f"conversation_loop_{round_num}.md"
             convo.write_text("# Round conversation")
-            # Check off the improvement — real progress
-            imp_path.write_text("- [x] [functional] do something\n- [ ] [functional] next\n")
+            # Check off the improvement — real progress.  The remaining
+            # `- [ ]` item carries a ``[blocked: ...]`` tag so the
+            # convergence-gate orchestrator backstop recognizes it as a
+            # resolved-for-convergence blocker (rather than an unresolved
+            # item) — see SPEC.md § "Convergence".
+            imp_path.write_text(
+                "- [x] [functional] do something\n"
+                "- [ ] [functional] [blocked: upstream dep missing] next\n"
+            )
             (run_dir / "CONVERGED").write_text("All done")
             return 0, "output", False
 

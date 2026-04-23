@@ -543,6 +543,142 @@ def _enforce_readme_sync_gate(
     return False
 
 
+def _detect_premature_converged(
+    improvements_path: Path,
+    spec_path: Path,
+) -> tuple[bool, str]:
+    """Re-verify the two convergence gates after the agent wrote ``CONVERGED``.
+
+    This is the **orchestrator-side backstop** for SPEC.md § "Convergence":
+    Phase 4 criteria are 100% agent-judged today, so we independently
+    re-verify the two documented gates before firing ``on_converged`` and
+    party mode.
+
+    The gates are:
+
+    1. **Spec freshness gate** —
+       ``mtime(improvements.md) >= mtime(spec_file)`` AND no
+       ``[stale: spec changed]`` items remain in ``improvements.md``.
+    2. **Backlog gate** — every ``- [ ]`` line in ``improvements.md`` is
+       tagged with ``[needs-package]``, ``[blocked:``, or
+       ``[wontfix-sync:`` (any other unchecked item is an unresolved
+       blocker).
+
+    Args:
+        improvements_path: Path to ``improvements.md``.
+        spec_path: Path to the spec file (``README.md`` or ``--spec`` target).
+
+    Returns:
+        Tuple ``(is_premature, reason)`` — ``is_premature`` is True when
+        at least one gate failed; ``reason`` is a human-readable
+        concatenation of every failing gate (joined by `` AND ``), or
+        empty when no gate failed.
+    """
+    reasons: list[str] = []
+
+    # Gate 1 — spec freshness
+    if spec_path.is_file() and improvements_path.is_file():
+        if spec_path.stat().st_mtime > improvements_path.stat().st_mtime:
+            reasons.append(
+                f"spec freshness gate: mtime({spec_path.name}) > "
+                f"mtime(improvements.md) — backlog must be rebuilt"
+            )
+    if improvements_path.is_file():
+        imp_text = improvements_path.read_text()
+        if "[stale: spec changed]" in imp_text:
+            reasons.append(
+                "spec freshness gate: [stale: spec changed] items still "
+                "present in improvements.md — backlog must be rebuilt"
+            )
+
+    # Gate 2 — backlog: every `- [ ]` must carry an allowed blocker tag
+    if improvements_path.is_file():
+        unresolved: list[str] = []
+        for line in improvements_path.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("- [ ]"):
+                continue
+            if (
+                "[needs-package]" in stripped
+                or "[blocked:" in stripped
+                or "[wontfix-sync:" in stripped
+            ):
+                continue
+            unresolved.append(stripped[:120])
+        if unresolved:
+            sample = "; ".join(unresolved[:3])
+            reasons.append(
+                f"backlog gate: {len(unresolved)} unresolved `- [ ]` "
+                f"item(s) without [needs-package]/[blocked:]/"
+                f"[wontfix-sync:] tags (sample: {sample})"
+            )
+
+    if reasons:
+        return True, " AND ".join(reasons)
+    return False, ""
+
+
+def _enforce_convergence_backstop(
+    converged_path: Path,
+    improvements_path: Path,
+    spec_path: Path,
+    run_dir: Path,
+    round_num: int,
+    cmd: list[str],
+    output: str,
+    attempt: int,
+    ui,
+) -> bool:
+    """Independently re-verify convergence gates after the agent wrote ``CONVERGED``.
+
+    When either documented gate in SPEC.md § "Convergence" is violated,
+    this function unlinks the ``CONVERGED`` marker, saves a
+    ``subprocess_error_round_N.txt`` diagnostic with a ``PREMATURE
+    CONVERGED: <reason>`` prefix, and emits ``ui.error``. The next round
+    will pick up the diagnostic via ``agent.py``'s ``build_prompt`` and
+    surface a dedicated ``CRITICAL — Premature CONVERGED`` header so the
+    agent addresses the violated gate before attempting convergence
+    again.
+
+    This is the orchestrator-side trust boundary — without it, Phase 4
+    criteria remain 100% agent-judged.
+
+    Args:
+        converged_path: Path to the ``CONVERGED`` marker file.
+        improvements_path: Path to ``improvements.md``.
+        spec_path: Path to the spec file.
+        run_dir: Session directory (used to write the diagnostic).
+        round_num: Current round number.
+        cmd: Original subprocess command (echoed into the diagnostic).
+        output: Subprocess output (echoed into the diagnostic).
+        attempt: Current attempt number (echoed into the diagnostic).
+        ui: TUI instance for ``ui.error`` emission.
+
+    Returns:
+        True iff the backstop rejected convergence (marker unlinked,
+        diagnostic saved); False when both gates pass.
+    """
+    if not converged_path.is_file():
+        return False
+    is_premature, reason = _detect_premature_converged(
+        improvements_path, spec_path
+    )
+    if not is_premature:
+        return False
+    ui.error(f"Premature CONVERGED rejected: {reason}")
+    print(f"[probe] convergence-gate backstop rejected: {reason}")
+    converged_path.unlink()
+    _save_subprocess_diagnostic(
+        run_dir,
+        round_num,
+        cmd,
+        output,
+        reason=f"PREMATURE CONVERGED: {reason}",
+        attempt=attempt,
+    )
+    return True
+
+
 def _count_checked(path: Path) -> int:
     """Count the number of completed improvements in an improvements.md file.
 
@@ -1868,6 +2004,26 @@ def _run_rounds(
                     if spec_path.stat().st_mtime > improvements_path.stat().st_mtime:
                         print("[probe] convergence rejected: spec is newer than improvements.md — removing CONVERGED marker")
                         converged_path.unlink()
+
+                # Convergence-gate orchestrator backstop — re-verify the
+                # two documented gates (SPEC.md § "Convergence")
+                # independently of the agent's judgment.  Closes the trust
+                # gap where Phase 4 criteria are 100% agent-judged today.
+                # If either gate fails, CONVERGED is unlinked, a
+                # diagnostic is saved with a ``PREMATURE CONVERGED``
+                # prefix, and the next round picks it up via
+                # ``build_prompt`` → dedicated CRITICAL header.
+                _enforce_convergence_backstop(
+                    converged_path,
+                    improvements_path,
+                    spec_path,
+                    run_dir,
+                    round_num,
+                    cmd,
+                    output,
+                    attempt,
+                    ui,
+                )
             if converged_path.is_file():
                 reason = converged_path.read_text().strip()
                 print(f"[probe] CONVERGED at round {round_num}: {reason[:80]}")

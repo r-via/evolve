@@ -291,6 +291,25 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
                 f"Start with Edit/Write immediately and defer exploration.\n"
                 f"```\n{prev_crash}\n```\n"
             )
+        elif "PREMATURE CONVERGED" in prev_crash:
+            # Convergence-gate orchestrator backstop (SPEC.md § "Convergence").
+            # The previous round wrote CONVERGED but the orchestrator's
+            # independent re-verification of the two documented gates
+            # rejected it. The agent MUST address the listed gate
+            # violations (rebuild stale backlog, or resolve unresolved
+            # `- [ ]` items) before attempting to write CONVERGED again.
+            prev_crash_section = (
+                f"\n## CRITICAL — Premature CONVERGED\n"
+                f"The previous round wrote CONVERGED but the orchestrator's "
+                f"convergence-gate backstop found unresolved gates "
+                f"(SPEC.md § 'Convergence'). Do NOT write CONVERGED again "
+                f"until the listed gate violation(s) below are resolved: "
+                f"rebuild any ``[stale: spec changed]`` items from the "
+                f"current spec, and close every unchecked ``- [ ]`` item "
+                f"(or tag it with ``[needs-package]``, ``[blocked: ...]``, "
+                f"or ``[wontfix-sync: ...]``).\n"
+                f"```\n{prev_crash}\n```\n"
+            )
         else:
             prev_crash_section = f"\n## CRITICAL — Previous round CRASHED (fix this first!)\n```\n{prev_crash}\n```\n"
     else:
