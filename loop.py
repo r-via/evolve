@@ -517,6 +517,7 @@ def evolve_loop(
     forever: bool = False,
     spec: str | None = None,
     yolo: bool | None = None,
+    capture_frames: bool = False,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess.
 
@@ -535,6 +536,7 @@ def evolve_loop(
         forever: If True, run indefinitely on a dedicated branch.
         spec: Path to the spec file relative to project_dir (default: README.md).
         yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
+        capture_frames: If True, capture TUI frames as PNG at key moments.
     """
     if yolo is not None:
         allow_installs = yolo
@@ -590,7 +592,7 @@ def evolve_loop(
                         start_round = last_round + 1
                     except (ValueError, IndexError):
                         pass
-                ui = get_tui()
+                ui = get_tui(run_dir=run_dir, capture_frames=capture_frames)
                 ui.run_dir_info(f"{run_dir} (resumed from round {start_round})")
 
                 # Ensure git
@@ -601,13 +603,14 @@ def evolve_loop(
                     project_dir, run_dir, improvements_path, ui,
                     start_round, max_rounds, check_cmd, allow_installs, timeout, model,
                     forever=forever, hooks=hooks, spec=spec,
+                    capture_frames=capture_frames,
                 )
 
     # Create timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = project_dir / "runs" / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
-    ui = get_tui()
+    ui = get_tui(run_dir=run_dir, capture_frames=capture_frames)
     ui.run_dir_info(str(run_dir))
 
     # Ensure git
@@ -617,6 +620,7 @@ def evolve_loop(
         project_dir, run_dir, improvements_path, ui,
         1, max_rounds, check_cmd, allow_installs, timeout, model,
         forever=forever, hooks=hooks, spec=spec,
+        capture_frames=capture_frames,
     )
 
 
@@ -744,6 +748,7 @@ def _run_rounds(
     forever: bool = False,
     hooks: dict[str, str] | None = None,
     spec: str | None = None,
+    capture_frames: bool = False,
 ) -> None:
     """Run evolution rounds from start_round to max_rounds.
 
@@ -765,6 +770,7 @@ def _run_rounds(
         forever: If True, restart after convergence instead of exiting.
         hooks: Event hook configuration dict (from ``load_hooks``).
         spec: Path to the spec file relative to project_dir (default: README.md).
+        capture_frames: If True, capture TUI frames as PNG at key moments.
     """
     if hooks is None:
         hooks = {}
@@ -912,6 +918,9 @@ def _run_rounds(
                             attempt=attempt,
                         )
 
+                # Capture error frame before retry
+                ui.capture_frame(f"error_round_{round_num}")
+
                 # Fire on_error hook for failed round
                 fire_hook(hooks, "on_error", session=session_name, round_num=round_num, status="error")
 
@@ -938,6 +947,9 @@ def _run_rounds(
 
             # Fire on_round_end hook for successful round
             fire_hook(hooks, "on_round_end", session=session_name, round_num=round_num, status="success")
+
+            # Capture round-end frame
+            ui.capture_frame(f"round_{round_num}_end")
 
             # Parse last check results for state.json
             _check_passed: bool | None = None
@@ -985,6 +997,9 @@ def _run_rounds(
                 print(f"[probe] CONVERGED at round {round_num}: {reason[:80]}")
                 ui.converged(round_num, reason)
 
+                # Capture convergence frame
+                ui.capture_frame("converged")
+
                 # Fire on_converged hook
                 fire_hook(hooks, "on_converged", session=session_name, round_num=round_num, status="converged")
 
@@ -1030,6 +1045,9 @@ def _run_rounds(
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     run_dir = project_dir / "runs" / timestamp
                     run_dir.mkdir(parents=True, exist_ok=True)
+                    # Update TUI with new run_dir for frame capture
+                    if capture_frames:
+                        ui = get_tui(run_dir=run_dir, capture_frames=capture_frames)
                     ui.run_dir_info(str(run_dir))
 
                     # Git commit the README update + reset

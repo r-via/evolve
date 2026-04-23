@@ -749,10 +749,19 @@ class JsonTUI:
 _use_json: bool = False
 
 
-def get_tui() -> TUIProtocol:
-    """Return a TUI instance — JsonTUI if --json, RichTUI if rich available, else PlainTUI."""
+def get_tui(
+    *,
+    run_dir: str | Path | None = None,
+    capture_frames: bool = False,
+) -> TUIProtocol:
+    """Return a TUI instance — JsonTUI if --json, RichTUI if rich available, else PlainTUI.
+
+    Args:
+        run_dir: Session directory for frame capture output (only used by RichTUI).
+        capture_frames: If True and RichTUI is active, enable TUI frame capture.
+    """
     if _use_json:
         return JsonTUI()
     if _has_rich():
-        return RichTUI()
+        return RichTUI(run_dir=run_dir, capture_frames=capture_frames)
     return PlainTUI()

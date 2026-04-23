@@ -99,6 +99,7 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         ("model", "EVOLVE_MODEL", "claude-opus-4-6", "str"),
         ("allow_installs", "EVOLVE_ALLOW_INSTALLS", False, "bool"),
         ("spec", "EVOLVE_SPEC", None, "str"),
+        ("capture_frames", "EVOLVE_CAPTURE_FRAMES", False, "bool"),
     ]
 
     # Deprecated fallback: check old yolo config/env if new name not found
@@ -256,6 +257,7 @@ def main():
     start_p.add_argument("--validate", action="store_true", help="Validate spec compliance — pass/fail per README claim (exit 0=pass, 1=fail)")
     start_p.add_argument("--json", action="store_true", help="Emit structured JSON events to stdout (for CI/CD)")
     start_p.add_argument("--spec", default=None, help="Path to spec file relative to project dir (default: README.md, or EVOLVE_SPEC env var)")
+    start_p.add_argument("--capture-frames", action="store_true", dest="capture_frames", help="Capture TUI frames as PNG at round end / convergence / errors")
 
     # --- status ---
     status_p = sub.add_parser("status", help="Show evolution status for a project")
@@ -333,6 +335,7 @@ def main():
                 resume=args.resume,
                 forever=args.forever,
                 spec=spec,
+                capture_frames=getattr(args, "capture_frames", False),
             )
 
     elif args.command == "status":
