@@ -358,88 +358,6 @@ def _parse_check_output(text: str) -> tuple[bool | None, int | None, float | Non
     return (passed, tests, duration)
 
 
-def _compute_readme_sync(
-    project_dir: Path,
-    run_dir: Path,
-    round_num: int,
-    spec: str | None,
-) -> dict | None:
-    """Compute README drift status for Mechanism C.
-
-    Implements SPEC.md § "README sync discipline" Mechanism C. Compares
-    ``mtime(spec_file)`` vs ``mtime(README.md)`` and tracks how many
-    rounds the README has been stale via a persistent
-    ``readme_stale_since_round`` counter read from the prior
-    ``state.json``. Returns a ``readme_sync`` dict suitable for embedding
-    in ``state.json``, or ``None`` when Mechanism C is inactive
-    (``--spec`` unset or equal to ``README.md``).
-
-    Args:
-        project_dir: Root directory of the project.
-        run_dir: Session directory — used to read prior state.json.
-        round_num: Current round number.
-        spec: Spec filename (relative to project_dir). ``None`` or
-              ``"README.md"`` means Mechanism C is a no-op.
-
-    Returns:
-        A dict with keys ``stale``, ``spec_mtime``, ``readme_mtime``,
-        ``rounds_since_stale`` when drift tracking is active, or
-        ``None`` when inactive (README is the spec or spec unset).
-    """
-    if not spec or spec == "README.md":
-        return None
-
-    spec_path = project_dir / spec
-    readme_path = project_dir / "README.md"
-    if not spec_path.is_file() or not readme_path.is_file():
-        return None
-
-    spec_mtime = spec_path.stat().st_mtime
-    readme_mtime = readme_path.stat().st_mtime
-
-    spec_iso = datetime.fromtimestamp(spec_mtime, tz=timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-    readme_iso = datetime.fromtimestamp(readme_mtime, tz=timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-
-    stale = spec_mtime > readme_mtime
-
-    # Load prior readme_stale_since_round counter from previous state.json
-    # so the counter survives across rounds. Cleared whenever stale is False
-    # (README was touched since the last stale round).
-    prior_since: int | None = None
-    existing = run_dir / "state.json"
-    if existing.is_file():
-        try:
-            prev = json.loads(existing.read_text())
-            prev_sync = prev.get("readme_sync") or {}
-            prior_since = prev_sync.get("readme_stale_since_round")
-        except (json.JSONDecodeError, OSError):
-            prior_since = None
-
-    if stale:
-        since = prior_since if prior_since is not None else round_num
-        rounds_since_stale = max(0, round_num - since)
-    else:
-        since = None
-        rounds_since_stale = 0
-
-    result: dict = {
-        "stale": stale,
-        "spec_mtime": spec_iso,
-        "readme_mtime": readme_iso,
-        "rounds_since_stale": rounds_since_stale,
-    }
-    # Persist the round the drift started so the next round can compute
-    # rounds_since_stale correctly. Not in the SPEC's documented schema
-    # but read back by this function on the next round — internal-only.
-    if since is not None:
-        result["readme_stale_since_round"] = since
-    return result
-
-
 def _extract_unchecked_set(text: str) -> set[str]:
     """Return the set of verbatim ``- [ ]`` lines in an improvements.md text.
 
@@ -557,7 +475,6 @@ def _write_state_json(
     check_tests: int | None = None,
     check_duration_s: float | None = None,
     started_at: str | None = None,
-    readme_sync: dict | None = None,
 ) -> None:
     """Write or update the real-time state.json file in the session directory.
 
@@ -621,9 +538,6 @@ def _write_state_json(
         "started_at": started_at,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    if readme_sync is not None:
-        state["readme_sync"] = readme_sync
-
     state_path = run_dir / "state.json"
     state_path.write_text(json.dumps(state, indent=2) + "\n")
 
@@ -989,17 +903,6 @@ WATCHDOG_TIMEOUT = 120
 #       smaller than half of its pre-round size" → retry.
 _MEMORY_COMPACTION_MARKER = "memory: compaction"
 _MEMORY_WIPE_THRESHOLD = 0.5
-
-# README drift warning template — Mechanism C.  SPEC.md § "README sync
-# discipline" § "Mechanism C" documents the exact prose the TUI must emit.
-# Kept as a module-level constant so the single call site in _run_rounds
-# and any future test / integration helper reference the same literal.
-# Format placeholders: ``{spec}`` (spec-file label, e.g. ``SPEC.md``) and
-# ``{rounds}`` (int, rounds since the spec was touched without a
-# corresponding README update).
-_README_DRIFT_WARN_FMT = (
-    "README drift: {spec} touched {rounds} rounds ago, README.md unchanged"
-)
 
 # Backlog discipline rule 1 (empty-queue gate) constants — keep the runtime
 # check aligned with SPEC.md § "Backlog discipline".  The agent is forbidden
@@ -1516,16 +1419,6 @@ def _run_rounds(
                 _ct = check_file.read_text(errors="replace")
                 _check_passed, _check_tests, _check_duration = _parse_check_output(_ct)
 
-            # Mechanism C — README drift warning (observability only, never blocks).
-            # Computed before writing state.json so the drift status lands in state.
-            readme_sync = _compute_readme_sync(project_dir, run_dir, round_num, spec)
-            if readme_sync and readme_sync.get("stale") and readme_sync.get("rounds_since_stale", 0) > 3:
-                spec_label = spec or "SPEC.md"
-                ui.warn(_README_DRIFT_WARN_FMT.format(
-                    spec=spec_label,
-                    rounds=readme_sync["rounds_since_stale"],
-                ))
-
             # Update state.json after every round
             _write_state_json(
                 run_dir=run_dir,
@@ -1539,7 +1432,6 @@ def _run_rounds(
                 check_tests=_check_tests,
                 check_duration_s=_check_duration,
                 started_at=_started_at,
-                readme_sync=readme_sync,
             )
 
             # Clean up diagnostic file on success (no longer relevant)
@@ -1603,7 +1495,6 @@ def _run_rounds(
                     check_tests=_check_tests,
                     check_duration_s=_check_duration,
                     started_at=_started_at,
-                    readme_sync=readme_sync,
                 )
 
                 # Generate evolution report
@@ -1692,7 +1583,6 @@ def _run_rounds(
                 status="max_rounds",
                 improvements_path=improvements_path,
                 started_at=_started_at,
-                readme_sync=_compute_readme_sync(project_dir, run_dir, max_rounds, spec),
             )
 
             # Generate evolution report

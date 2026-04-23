@@ -35,59 +35,10 @@ import pytest
 
 import agent as agent_mod
 import evolve as evolve_mod
-import loop as loop_mod
 import tui as tui_mod
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-
-# ---------------------------------------------------------------------------
-# (a) loop._README_DRIFT_WARN_FMT — Mechanism C warning
-# ---------------------------------------------------------------------------
-
-
-class TestReadmeDriftWarnFmt:
-    def test_constant_exists_and_has_required_placeholders(self):
-        """Constant must be importable and carry ``{spec}`` / ``{rounds}``."""
-        fmt = loop_mod._README_DRIFT_WARN_FMT
-        assert isinstance(fmt, str)
-        assert "{spec}" in fmt
-        assert "{rounds}" in fmt
-        # Fixed wording required by SPEC § "Mechanism C".
-        assert "README drift" in fmt
-        assert "README.md unchanged" in fmt
-
-    def test_format_matches_documented_example(self):
-        """Rendered form matches SPEC § Mechanism C example exactly."""
-        rendered = loop_mod._README_DRIFT_WARN_FMT.format(
-            spec="SPEC.md", rounds=5
-        )
-        assert rendered == (
-            "README drift: SPEC.md touched 5 rounds ago, README.md unchanged"
-        )
-
-    def test_call_site_no_longer_holds_duplicate_literal(self):
-        """loop.py must reference the constant, not re-inline the wording.
-
-        The literal ``"README drift: "`` must appear in loop.py ONLY inside
-        the constant definition block — never a second time as an f-string
-        at the Mechanism C call site in ``_run_rounds``.
-        """
-        src = (REPO_ROOT / "loop.py").read_text()
-        # The assignment line + one-line format docstring reference may each
-        # carry the literal once — count how many times the exact wording
-        # ``README drift: `` appears and require it to be <= 1 (the
-        # constant definition itself).  Anything greater means a duplicate
-        # literal slipped back in.
-        count = src.count('"README drift:')
-        assert count <= 1, (
-            f"loop.py contains {count} literal 'README drift:' strings — "
-            "the Mechanism C warning should be referenced via "
-            "_README_DRIFT_WARN_FMT.format(...), not re-inlined."
-        )
-        # Constant must be invoked at least once (the call site uses it).
-        assert "_README_DRIFT_WARN_FMT.format(" in src
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +221,6 @@ class TestMemorySectionRuntimeHeader:
 @pytest.mark.parametrize(
     "module, attr",
     [
-        (loop_mod, "_README_DRIFT_WARN_FMT"),
         (agent_mod, "_PREV_ATTEMPT_LOG_FMT"),
         (tui_mod, "_CAIROSVG_MISSING_WARN"),
         (agent_mod, "_MEMORY_WIPED_HEADER_FMT"),

@@ -401,28 +401,7 @@ class TestEvolveLoopHooksPrint:
 
 
 # ---------------------------------------------------------------------------
-# _compute_readme_sync — spec missing / readme missing / spec same as README
-# ---------------------------------------------------------------------------
-
-class TestComputeReadmeSyncEdges:
-    def test_spec_none_returns_none(self, tmp_path: Path):
-        """When spec is None, readme_sync is None (no tracking)."""
-        result = loop._compute_readme_sync(tmp_path, tmp_path, 1, spec=None)
-        assert result is None
-
-    def test_spec_equals_readme_returns_none(self, tmp_path: Path):
-        """When spec is README.md, readme_sync is None."""
-        result = loop._compute_readme_sync(tmp_path, tmp_path, 1, spec="README.md")
-        assert result is None
-
-    def test_missing_spec_file_returns_none(self, tmp_path: Path):
-        """Spec file not on disk → no drift tracking."""
-        result = loop._compute_readme_sync(tmp_path, tmp_path, 1, spec="SPEC.md")
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
-# _run_rounds — check_file parsing + README drift warning + README audit
+# _run_rounds — check_file parsing + README audit
 # at CONVERGED + CONVERGED rejected when spec is newer than improvements.md
 # (covers lines 1538-1539, 1561-1564, 1691-1692, 1698-1699, 1736-1742,
 # 1754-1755, 1646)
@@ -575,55 +554,6 @@ class TestRunRoundsIntegrationBranches:
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
                 spec="SPEC.md",
             )
-
-    def test_readme_drift_warning_after_threshold(self, tmp_path: Path):
-        """ui.warn fires when rounds_since_stale > 3 (1698-1699)."""
-        project_dir, run_dir, imp_path = self._setup(tmp_path)
-        ui = MagicMock()
-
-        # Set up spec newer than README, persisted across rounds
-        spec_path = project_dir / "SPEC.md"
-        spec_path.write_text("# Spec\n")
-        readme = project_dir / "README.md"
-        readme.write_text("# Readme\n")
-
-        import os, time as _time
-        old = _time.time() - 10000
-        new = _time.time()
-        os.utime(readme, (old, old))
-        os.utime(spec_path, (new, new))
-
-        round_counter = {"n": 0}
-
-        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
-            round_counter["n"] += 1
-            convo = run_dir / f"conversation_loop_{round_num}.md"
-            convo.write_text(f"# Round {round_num}")
-            # Mark existing item done and add a new one so progress is detected
-            imp_path.write_text(
-                f"- [x] [functional] old item {round_num}\n"
-                f"- [ ] [functional] new item {round_num}\n"
-            )
-            # Keep improvements.md mtime OLDER than spec so drift persists
-            os.utime(imp_path, (old, old))
-            return 0, "out", False
-
-        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("loop._generate_evolution_report"), \
-             patch("loop._check_spec_freshness", return_value=True), \
-             pytest.raises(SystemExit):
-            loop._run_rounds(
-                project_dir, run_dir, imp_path, ui,
-                start_round=1, max_rounds=5, check_cmd="pytest",
-                allow_installs=False, timeout=300, model="claude-opus-4-6",
-                spec="SPEC.md",
-            )
-
-        # ui.warn should have been called with the drift message at round 5
-        # (rounds_since_stale > 3)
-        warn_calls = [str(c) for c in ui.warn.call_args_list]
-        drift_warnings = [c for c in warn_calls if "README drift" in c]
-        assert len(drift_warnings) > 0
 
     def test_no_progress_diagnostic_written(self, tmp_path: Path):
         """No-progress round (line 1646) triggers _save_subprocess_diagnostic."""
