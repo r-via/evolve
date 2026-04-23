@@ -97,3 +97,6 @@ Drift-catch via `src.count("literal") <= 1` — allow 1 (the constant definition
 
 ### Mechanism A revert: backlog gate tag list — round 1 of 20260423_171103
 Dropping `[wontfix-sync:]` from `_detect_premature_converged` requires sync edits in the gate docstring AND two test fixtures (`test_convergence_gate.py` gate-docstring + `test_only_tagged_blockers` fixture + `test_premature_converged_renders_dedicated_header` diagnostic). Forgotten `wontfix-sync` in any of the three causes late test failure on attempt 2.
+
+### Mechanism B revert: preserve tuple return shape — round 2 of 20260423_171103
+`_forever_restart` still returns `tuple[bool, bool]` (2nd always `False`) — caller in `evolve_loop` unpacks as tuple + legacy path used `isinstance(_, tuple)` guard. Changing to bare `bool` → unpacking break. Also kept `test_legacy_commit_message_when_spec_is_readme` untouched — its `startswith("chore(evolve): forever mode")` assertion survives new "adopt proposal" tail.
