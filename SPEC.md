@@ -741,6 +741,69 @@ Treating each round as a continuum of attempts — not a fresh start each
 time — is the difference between 3 wasted retries and 3 retries that each
 progress further.
 
+### Phase 1 escape hatch for unrelated pre-existing failures
+
+Phase 1 is mandatory by contract: *fix any failure from the check command
+before touching the current improvement target*. In practice this is the
+right default — broken tests or lint errors usually point at regressions
+introduced by the previous round and must be cleared first. But it produces
+a specific lockup when:
+
+- The failures are **pre-existing and unrelated** to the current target
+  (e.g. flaky environment-specific issues, test-isolation bugs, third-party
+  regressions that are genuinely someone else's problem)
+- They resist two debug retries
+- The agent has spent its turn budget on diagnosis without producing any
+  fix
+
+In that situation the round cannot make *any* progress — not on Phase 1,
+not on the target — and keeps consuming retries and rounds until
+`max_rounds`. Rounds 1-5 of session `20260423_134609` are the canonical
+example: 50+ cumulative tool calls across attempts investigating a Rich
+`Style.parse` LRU cache issue, zero code edits, same target re-picked
+every round.
+
+**The escape hatch.** When **all** of the following hold:
+
+- The round is on its **second debug retry** (attempt 3, the final one
+  before exhaustion)
+- Phase 1 errors are still present
+- The failing tests / check output touch **none** of the files the current
+  improvement target names (verified by scanning the target text for file
+  references and cross-checking against the failing output)
+
+…the agent is permitted to:
+
+1. Log the failing tests to `memory.md` under a new `## Blocked Errors`
+   section with the full check output excerpt, timestamps, and a note
+   explaining the Phase 1 bypass
+2. Append a dedicated high-priority item to `improvements.md`:
+   `[ ] [functional] Phase 1 bypass: fix pre-existing failures (<short
+   summary>) that blocked round N — see memory.md § Blocked Errors`
+3. **Proceed with the original Phase 3 target** for this attempt, treating
+   the pre-existing failures as known-broken state to work around (e.g.
+   run tests with `-k 'not broken_test'` or equivalent while building and
+   verifying the target's changes)
+4. At commit time, include in `COMMIT_MSG` a top-level line
+   `Phase 1 bypass: <short summary>` so the escape hatch is visible in
+   git history and the report
+
+The bypass does **not** apply when:
+
+- The failures reference files in the target's scope (those MUST be fixed
+  first — they're the target's responsibility)
+- The round has retries remaining (the retry might yet resolve the issue)
+- The failures are the regression introduced by the current target (those
+  mean the target was implemented incorrectly, not that Phase 1 is
+  unrelated)
+
+This is a **deliberate hole in the "fix errors first" rule**, narrow enough
+that it only triggers on genuinely unresolvable pre-existing state, and
+loud enough (via memory.md + improvements.md + commit message) that the
+bypass never goes unnoticed. The orphaned errors become the top-priority
+item for the next cycle and get dedicated attention instead of starving
+every round.
+
 ---
 
 ## Event hooks
