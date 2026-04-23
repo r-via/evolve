@@ -1421,14 +1421,22 @@ def _run_rounds(
                                 f"[probe] backlog-violation check skipped: {e}"
                             )
 
+                    # Convergence rounds legitimately leave improvements.md
+                    # unchanged (all items already checked).  When the agent
+                    # wrote CONVERGED, skip the imp_unchanged signal — the
+                    # convergence-gate backstop (below) handles premature
+                    # convergence independently.
+                    converged_written = (run_dir / "CONVERGED").is_file()
+                    effective_imp_unchanged = imp_unchanged and not converged_written
+
                     # Any condition alone triggers zero-progress / memory-wipe / backlog retry
-                    if no_commit_msg or imp_unchanged or memory_wiped or backlog_violated:
+                    if no_commit_msg or effective_imp_unchanged or memory_wiped or backlog_violated:
                         no_progress_reasons: list[str] = []
                         if no_commit_msg:
                             no_progress_reasons.append(
                                 "no COMMIT_MSG written (fallback commit message)"
                             )
-                        if imp_unchanged:
+                        if effective_imp_unchanged:
                             no_progress_reasons.append(
                                 "improvements.md byte-identical to pre-round state"
                             )

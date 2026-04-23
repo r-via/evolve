@@ -962,6 +962,38 @@ class TestRunRounds:
         # Should converge (exit 0), not trigger zero-progress
         assert exc.value.code == 0
 
+    def test_convergence_overrides_imp_unchanged(self, tmp_path: Path):
+        """CONVERGED suppresses imp_unchanged zero-progress signal.
+
+        When all items are already checked and the agent writes CONVERGED
+        without modifying improvements.md, the round should converge — not
+        be flagged as zero-progress.  Regression test for the case where
+        a convergence round legitimately leaves improvements.md unchanged.
+        """
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+        # Start with all items already checked — nothing to change
+        imp_path.write_text("- [x] [functional] do something\n")
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Convergence verification round")
+            # Write CONVERGED but do NOT touch improvements.md
+            (run_dir / "CONVERGED").write_text("All spec claims verified")
+            return 0, "output", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=10, check_cmd=None,
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+            )
+        # Must converge (exit 0), NOT trigger zero-progress retry
+        assert exc.value.code == 0
+
     def test_forever_mode_skips_failed_round(self, tmp_path: Path):
         """In forever mode, exhausted retries skip to next round."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)

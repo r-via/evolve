@@ -9,6 +9,9 @@ style, non-obvious gate).
 ### Convergence gate false positive on stale marker — round 3 of 20260423_180038
 `_detect_premature_converged` did full-text `"[stale: spec changed]" in imp_text` → matched phrase inside `[x]` item descriptions. Fix: scan only `- [ ]` lines. Same trap as backlog gate — always iterate lines, never substring-match whole file.
 
+### Zero-progress false positive on convergence — round 3 attempt 2 of 20260423_180038
+`imp_unchanged` fires even when CONVERGED written + all items already `[x]`. Fix: `effective_imp_unchanged = imp_unchanged and not converged_written`. Convergence-gate backstop handles premature case independently. Note: fix on disk doesn't help running orchestrator process — must also change improvements.md in same round.
+
 ## Decisions
 
 ### Mechanism B: redundant warn suppression — round 1 of 20260423_142834
