@@ -565,6 +565,48 @@ class TestGenerateEvolutionReport:
         else:
             raise AssertionError("Timeline row for round 1 not found")  # pragma: no cover
 
+    def test_report_cost_summary_table(self, tmp_path: Path):
+        """Report includes Cost Summary table when usage_round_N.json exists."""
+        project_dir, run_dir = self._setup_project(tmp_path)
+        import json
+        (run_dir / "usage_round_1.json").write_text(json.dumps({
+            "input_tokens": 45230, "output_tokens": 12400,
+            "cache_creation_tokens": 8200, "cache_read_tokens": 38100,
+            "model": "claude-opus-4-6", "round": 1,
+        }))
+        (run_dir / "usage_round_2.json").write_text(json.dumps({
+            "input_tokens": 52100, "output_tokens": 15800,
+            "cache_creation_tokens": 9000, "cache_read_tokens": 41200,
+            "model": "claude-opus-4-6", "round": 2,
+        }))
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "## Cost Summary" in report
+        assert "Input Tokens" in report
+        assert "Output Tokens" in report
+        assert "Cache Hits" in report
+        assert "Est. Cost" in report
+        # Verify per-round rows exist
+        assert "45,230" in report
+        assert "12,400" in report
+        assert "52,100" in report
+        assert "15,800" in report
+        # Verify total line with model
+        assert "**Total:" in report
+        assert "claude-opus-4-6" in report
+        # Verify cost in Summary section
+        assert "estimated API cost" in report
+
+    def test_report_no_cost_summary_without_usage(self, tmp_path: Path):
+        """Report omits Cost Summary when no usage_round_N.json files exist."""
+        project_dir, run_dir = self._setup_project(tmp_path)
+        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+            _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
+        report = (run_dir / "evolution_report.md").read_text()
+        assert "## Cost Summary" not in report
+        assert "estimated API cost" not in report
+
     def test_detect_last_round_malformed_name(self, tmp_path: Path):
         """Malformed conversation file name doesn't crash."""
         runs = tmp_path / "runs"

@@ -37,7 +37,8 @@ class TUIProtocol(Protocol):
 
     def round_header(self, round_num: int, max_rounds: int,
                      target: str | None = ..., checked: int = ...,
-                     total: int = ...) -> None: ...
+                     total: int = ...,
+                     estimated_cost_usd: float | None = ...) -> None: ...
 
     def blocked_message(self, blocked: int) -> None: ...
 
@@ -108,7 +109,8 @@ class TUIProtocol(Protocol):
     def completion_summary(self, status: str, round_num: int,
                            duration_s: float, improvements: int,
                            bugs_fixed: int, tests_passing: int | None,
-                           report_path: str) -> None: ...
+                           report_path: str,
+                           estimated_cost_usd: float | None = ...) -> None: ...
 
     def budget_reached(self, round_num: int, budget_usd: float,
                        spent_usd: float) -> None: ...
@@ -160,20 +162,26 @@ class RichTUI:
 
     def round_header(self, round_num: int, max_rounds: int,
                      target: str | None = None, checked: int = 0,
-                     total: int = 0) -> None:
+                     total: int = 0,
+                     estimated_cost_usd: float | None = None) -> None:
         """Display a colored panel header for the current round."""
         from rich.panel import Panel
         from rich.progress_bar import ProgressBar
         from rich.text import Text
         from rich.table import Table
 
-        grid = Table.grid(padding=(0, 1))
-        grid.add_column()
+        grid = Table.grid(padding=(0, 1), expand=True)
+        grid.add_column(ratio=1)
+        grid.add_column(justify="right")
 
-        grid.add_row(Text(f"EVOLUTION ROUND {round_num}/{max_rounds}", style="bold white"))
+        cost_str = f"~${estimated_cost_usd:.2f}" if estimated_cost_usd is not None else ""
+        grid.add_row(
+            Text(f"EVOLUTION ROUND {round_num}/{max_rounds}", style="bold white"),
+            Text(cost_str, style="dim"),
+        )
 
         if target:
-            grid.add_row(Text(f"TARGET: {target}", style="cyan"))
+            grid.add_row(Text(f"TARGET: {target}", style="cyan"), Text(""))
 
         if total > 0:
             bar = ProgressBar(total=total, completed=checked, width=30)
@@ -182,8 +190,8 @@ class RichTUI:
             progress_table.add_column()
             progress_table.add_column()
             progress_table.add_row(bar, progress_text)
-            grid.add_row(Text("PROGRESS: ", style="bold") )
-            grid.add_row(progress_table)
+            grid.add_row(Text("PROGRESS: ", style="bold"), Text(""))
+            grid.add_row(progress_table, Text(""))
 
         panel = Panel(grid, title="[bold blue]evolve[/bold blue]", border_style="blue",
                       width=min(self.console.width, 60))
@@ -368,7 +376,8 @@ class RichTUI:
     def completion_summary(self, status: str, round_num: int,
                            duration_s: float, improvements: int,
                            bugs_fixed: int, tests_passing: int | None,
-                           report_path: str) -> None:
+                           report_path: str,
+                           estimated_cost_usd: float | None = None) -> None:
         """Display a rich panel summarising the completed evolution session."""
         from rich.panel import Panel
         from rich.table import Table
@@ -386,6 +395,8 @@ class RichTUI:
         grid.add_row(f"{bugs_fixed} bugs fixed")
         if tests_passing is not None:
             grid.add_row(f"{tests_passing} tests passing")
+        if estimated_cost_usd is not None:
+            grid.add_row(f"~${estimated_cost_usd:.2f} estimated cost")
         grid.add_row("")
         grid.add_row(f"Report: {report_path}")
 
@@ -467,9 +478,13 @@ class PlainTUI:
 
     def round_header(self, round_num: int, max_rounds: int,
                      target: str | None = None, checked: int = 0,
-                     total: int = 0) -> None:
+                     total: int = 0,
+                     estimated_cost_usd: float | None = None) -> None:
         print(f"\n{'#' * 60}")
-        print(f"  EVOLUTION ROUND {round_num}/{max_rounds}")
+        title = f"  EVOLUTION ROUND {round_num}/{max_rounds}"
+        if estimated_cost_usd is not None:
+            title += f"  ~${estimated_cost_usd:.2f}"
+        print(title)
         if target:
             print(f"  TARGET: {target}")
         if total > 0:
@@ -608,7 +623,8 @@ class PlainTUI:
     def completion_summary(self, status: str, round_num: int,
                            duration_s: float, improvements: int,
                            bugs_fixed: int, tests_passing: int | None,
-                           report_path: str) -> None:
+                           report_path: str,
+                           estimated_cost_usd: float | None = None) -> None:
         """Display a plain text completion summary."""
         mins, secs = divmod(int(duration_s), 60)
         dur = f"{mins}m {secs:02d}s" if mins else f"{secs}s"
@@ -620,6 +636,8 @@ class PlainTUI:
         print(f"  {bugs_fixed} bugs fixed")
         if tests_passing is not None:
             print(f"  {tests_passing} tests passing")
+        if estimated_cost_usd is not None:
+            print(f"  ~${estimated_cost_usd:.2f} estimated cost")
         print()
         print(f"  Report: {report_path}")
         print(f"{'─' * 46}")
@@ -666,9 +684,11 @@ class JsonTUI:
 
     def round_header(self, round_num: int, max_rounds: int,
                      target: str | None = None, checked: int = 0,
-                     total: int = 0) -> None:
+                     total: int = 0,
+                     estimated_cost_usd: float | None = None) -> None:
         self._emit("round_start", round=round_num, max_rounds=max_rounds,
-                    target=target, checked=checked, total=total)
+                    target=target, checked=checked, total=total,
+                    estimated_cost_usd=estimated_cost_usd)
 
     def blocked_message(self, blocked: int) -> None:
         self._emit("blocked", blocked=blocked,
@@ -779,11 +799,13 @@ class JsonTUI:
     def completion_summary(self, status: str, round_num: int,
                            duration_s: float, improvements: int,
                            bugs_fixed: int, tests_passing: int | None,
-                           report_path: str) -> None:
+                           report_path: str,
+                           estimated_cost_usd: float | None = None) -> None:
         self._emit("completion_summary", status=status, round=round_num,
                     duration_s=duration_s, improvements=improvements,
                     bugs_fixed=bugs_fixed, tests_passing=tests_passing,
-                    report_path=report_path)
+                    report_path=report_path,
+                    estimated_cost_usd=estimated_cost_usd)
 
     def budget_reached(self, round_num: int, budget_usd: float,
                        spent_usd: float) -> None:

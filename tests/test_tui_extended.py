@@ -681,3 +681,138 @@ class TestCompletionSummaryEdgeCases:
         )
         obj = self._parse_json(capsys)
         assert obj["report_path"] == path
+
+
+# ---------------------------------------------------------------------------
+# Cost display in round_header and completion_summary — all TUI variants
+# ---------------------------------------------------------------------------
+
+class TestCostDisplayPlain:
+    """PlainTUI cost display in round_header and completion_summary."""
+
+    def test_round_header_with_cost(self, capsys):
+        ui = PlainTUI()
+        ui.round_header(3, 10, target="test", checked=1, total=3,
+                        estimated_cost_usd=3.80)
+        out = capsys.readouterr().out
+        assert "ROUND 3/10" in out
+        assert "~$3.80" in out
+
+    def test_round_header_no_cost(self, capsys):
+        ui = PlainTUI()
+        ui.round_header(1, 10)
+        out = capsys.readouterr().out
+        assert "ROUND 1/10" in out
+        assert "$" not in out
+
+    def test_completion_summary_with_cost(self, capsys):
+        ui = PlainTUI()
+        ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="report.md", estimated_cost_usd=12.40,
+        )
+        out = capsys.readouterr().out
+        assert "~$12.40 estimated cost" in out
+
+    def test_completion_summary_no_cost(self, capsys):
+        ui = PlainTUI()
+        ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="report.md",
+        )
+        out = capsys.readouterr().out
+        assert "estimated cost" not in out
+
+
+class TestCostDisplayRich:
+    """RichTUI cost display in round_header and completion_summary."""
+
+    def test_round_header_with_cost(self, capsys):
+        if not _has_rich():
+            return
+        ui = RichTUI()
+        ui.round_header(3, 10, target="test", checked=1, total=3,
+                        estimated_cost_usd=3.80)
+        out = capsys.readouterr().out
+        assert "ROUND 3/10" in out
+        assert "~$3.80" in out
+
+    def test_round_header_no_cost(self, capsys):
+        if not _has_rich():
+            return
+        ui = RichTUI()
+        ui.round_header(1, 10)
+        out = capsys.readouterr().out
+        assert "ROUND 1/10" in out
+
+    def test_completion_summary_with_cost(self, capsys):
+        if not _has_rich():
+            return
+        ui = RichTUI()
+        ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="report.md", estimated_cost_usd=12.40,
+        )
+        out = capsys.readouterr().out
+        assert "~$12.40 estimated cost" in out
+
+    def test_completion_summary_no_cost(self, capsys):
+        if not _has_rich():
+            return
+        ui = RichTUI()
+        ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="report.md",
+        )
+        out = capsys.readouterr().out
+        assert "estimated cost" not in out
+
+
+class TestCostDisplayJson:
+    """JsonTUI cost display in round_header and completion_summary."""
+
+    def _parse_json(self, capsys) -> dict:
+        import json
+        out = capsys.readouterr().out.strip()
+        lines = [l for l in out.splitlines() if l.strip()]
+        assert len(lines) >= 1
+        return json.loads(lines[-1])
+
+    def test_round_header_with_cost(self, capsys):
+        ui = JsonTUI()
+        ui.round_header(3, 10, target="test", checked=1, total=3,
+                        estimated_cost_usd=3.80)
+        obj = self._parse_json(capsys)
+        assert obj["type"] == "round_start"
+        assert obj["estimated_cost_usd"] == 3.80
+
+    def test_round_header_no_cost(self, capsys):
+        ui = JsonTUI()
+        ui.round_header(1, 10)
+        obj = self._parse_json(capsys)
+        assert obj["estimated_cost_usd"] is None
+
+    def test_completion_summary_with_cost(self, capsys):
+        ui = JsonTUI()
+        ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="report.md", estimated_cost_usd=12.40,
+        )
+        obj = self._parse_json(capsys)
+        assert obj["type"] == "completion_summary"
+        assert obj["estimated_cost_usd"] == 12.40
+
+    def test_completion_summary_no_cost(self, capsys):
+        ui = JsonTUI()
+        ui.completion_summary(
+            status="CONVERGED", round_num=8, duration_s=754.0,
+            improvements=6, bugs_fixed=2, tests_passing=47,
+            report_path="report.md",
+        )
+        obj = self._parse_json(capsys)
+        assert obj["estimated_cost_usd"] is None

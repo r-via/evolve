@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from costs import aggregate_usage, build_usage_state, format_cost
+from costs import TokenUsage, aggregate_usage, build_usage_state, estimate_cost, format_cost
 from hooks import fire_hook, load_hooks
 from tui import TUIProtocol, get_tui
 
@@ -838,12 +838,50 @@ def _generate_evolution_report(
     ]
     report_lines.extend(timeline_rows)
     report_lines.append("")
+
+    # Cost Summary table — per-round token usage from usage_round_N.json
+    cost_rows: list[str] = []
+    total_usage = TokenUsage()
+    report_model: str | None = None
+    for r in range(1, final_round + 1):
+        usage_path = run_dir / f"usage_round_{r}.json"
+        if usage_path.exists():
+            try:
+                ru = TokenUsage.from_file(usage_path)
+                total_usage += ru
+                if ru.model:
+                    report_model = ru.model
+                per_cost = estimate_cost(ru, ru.model or "") if ru.model else None
+                cost_str = f"${per_cost:.2f}" if per_cost is not None else "unknown"
+                cost_rows.append(
+                    f"| {r} | {ru.input_tokens:,} | {ru.output_tokens:,} "
+                    f"| {ru.cache_read_tokens:,} | {cost_str} |"
+                )
+            except (json.JSONDecodeError, KeyError, OSError):
+                continue
+
+    if cost_rows:
+        total_cost = estimate_cost(total_usage, report_model or "") if report_model else None
+        total_cost_str = f"~${total_cost:.2f}" if total_cost is not None else "unknown"
+        model_label = f" ({report_model})" if report_model else ""
+
+        report_lines.append("## Cost Summary")
+        report_lines.append("| Round | Input Tokens | Output Tokens | Cache Hits | Est. Cost |")
+        report_lines.append("|-------|-------------|---------------|------------|-----------|")
+        report_lines.extend(cost_rows)
+        report_lines.append(f"**Total: {total_cost_str}**{model_label}")
+        report_lines.append("")
+
     report_lines.append("## Summary")
     report_lines.append(f"- {checked} improvements completed")
     report_lines.append(f"- {bugs_fixed} bugs fixed")
     report_lines.append(f"- {len(files_modified)} files modified")
     if unchecked > 0:
         report_lines.append(f"- {unchecked} improvements remaining")
+    if cost_rows:
+        total_cost_val = estimate_cost(total_usage, report_model or "") if report_model else None
+        if total_cost_val is not None:
+            report_lines.append(f"- ~${total_cost_val:.2f} estimated API cost")
     report_lines.append("")
 
     # Add visual timeline section if frame capture is enabled
@@ -1278,19 +1316,28 @@ def _run_rounds(
             unchecked = _count_unchecked(improvements_path)
             print(f"[probe] round {round_num}/{max_rounds} — checked={checked}, unchecked={unchecked}, target={current or '(none)'}")
 
+            # Compute session cost so far (from completed rounds) for TUI header
+            _header_cost: float | None = None
+            if round_num > 1:
+                _, _header_cost, _ = aggregate_usage(run_dir, round_num - 1)
+
             if current:
                 ui.round_header(round_num, max_rounds, target=current,
-                                checked=checked, total=checked + unchecked)
+                                checked=checked, total=checked + unchecked,
+                                estimated_cost_usd=_header_cost)
             elif unchecked > 0:
                 # All remaining unchecked items are blocked (needs-package without --allow-installs)
                 blocked = _count_blocked(improvements_path)
                 if blocked == unchecked:
-                    ui.round_header(round_num, max_rounds)
+                    ui.round_header(round_num, max_rounds,
+                                    estimated_cost_usd=_header_cost)
                     ui.blocked_message(blocked)
                     sys.exit(1)
-                ui.round_header(round_num, max_rounds, target="(initial analysis)")
+                ui.round_header(round_num, max_rounds, target="(initial analysis)",
+                                estimated_cost_usd=_header_cost)
             else:
-                ui.round_header(round_num, max_rounds, target="(initial analysis)")
+                ui.round_header(round_num, max_rounds, target="(initial analysis)",
+                                estimated_cost_usd=_header_cost)
 
             # Fire on_round_start hook
             session_name = run_dir.name
@@ -1679,6 +1726,7 @@ def _run_rounds(
                     bugs_fixed=summary_stats["bugs_fixed"],
                     tests_passing=summary_stats["tests_passing"],
                     report_path=str(run_dir / "evolution_report.md"),
+                    estimated_cost_usd=_usage_cost,
                 )
 
                 # Launch party mode
@@ -1774,6 +1822,7 @@ def _run_rounds(
                 bugs_fixed=summary_stats["bugs_fixed"],
                 tests_passing=summary_stats["tests_passing"],
                 report_path=str(run_dir / "evolution_report.md"),
+                estimated_cost_usd=_mr_cost,
             )
 
             ui.max_rounds(max_rounds, checked, unchecked)
