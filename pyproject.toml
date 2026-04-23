@@ -22,7 +22,7 @@ dev = ["rich", "pytest", "pytest-cov"]
 evolve = "evolve:main"
 
 [tool.setuptools]
-py-modules = ["evolve", "loop", "agent", "tui", "hooks"]
+py-modules = ["evolve", "loop", "agent", "tui", "hooks", "costs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
