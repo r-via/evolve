@@ -402,9 +402,9 @@ class TestAgentPromptPrematureConvergedHeader:
         assert "## CRITICAL — Previous round silently wiped memory.md" not in prompt
         assert "## CRITICAL — Backlog discipline violation:" not in prompt
         assert "## CRITICAL — Previous round made NO PROGRESS" not in prompt
-        # Core instruction present
-        assert "not write CONVERGED again" in prompt.lower() or \
-               "not write CONVERGED again" in prompt
+        # Core instruction present (case-insensitive — prompt phrasing is
+        # "Do NOT write CONVERGED again")
+        assert "not write converged again" in prompt.lower()
 
     def test_other_diagnostic_types_unaffected(self, tmp_path: Path):
         """NO PROGRESS diagnostic still routes to the NO PROGRESS branch."""

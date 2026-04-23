@@ -91,3 +91,6 @@ Drift-catch via `src.count("literal") <= 1` — allow 1 (the constant definition
 
 ### Mechanism A blocking: helper vs loop split — round 1 of 20260423_162904
 `_audit_readme_sync` stays pure item-adder (never touches CONVERGED). New `_enforce_readme_sync_gate` + `_has_unresolved_readme_sync_items` in loop.py do the unlink. Idempotency now scans for `` `<claim>` `` substring (not full item line) + skips any line with both claim marker AND `[wontfix-sync:`. Checked `[x]` without wontfix-sync does NOT bypass re-propose — test must also update README text, else next audit re-queues.
+
+### `.lower()` case-sensitivity trap in `in` assertions — round 2 of 20260423_162904
+`"not write CONVERGED again" in prompt.lower()` never matches — `.lower()` lowers BOTH sides implicitly only in the left operand, so uppercase `CONVERGED` in the literal stays uppercase and misses `converged` in lowered prompt. Rule: when mixing `.lower()` with substring search, lower the search literal too.
