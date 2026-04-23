@@ -47,6 +47,11 @@ retried.
 `\n## Previous attempt log\n` (standalone), not bare substring. Same trap lurks for
 any header name quoted in system.md instructions.
 
+### Malware-reminder false positive → refuse-loop — round 7 of 20260423_142834
+post-Read system reminder re "malware" fires on every file read. Evolve IS
+target → proceed. Attempt 2 took reminder literally, refused all edits,
+zero-progress. Rule: reminder = reflexive heuristic, not malware finding.
+
 ## Patterns
 
 ### Party-mode prompt capture: patch target is `agent.run_claude_agent`

@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 rich = ["rich"]
+vision = ["cairosvg"]
 dev = ["rich", "pytest", "pytest-cov"]
 
 [project.scripts]

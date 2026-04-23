@@ -131,6 +131,20 @@ class RichTUI:
         self.console = Console(record=capture_frames)
         self._status_grid = None
         self._cairosvg_warned = False
+        # Startup-time availability check: when capture_frames is enabled but
+        # the optional [vision] extra is not installed, log a single warning
+        # up front (never blocks the run). SPEC.md § "Frame capture" requires
+        # the warning at startup rather than deferred to first capture call.
+        if capture_frames:
+            try:
+                import cairosvg  # type: ignore[import-untyped]  # noqa: F401
+            except ImportError:
+                _log.warning(
+                    "capture_frames is enabled but cairosvg is not installed. "
+                    "Install with: pip install 'evolve[vision]'. "
+                    "Frame capture will be a no-op until cairosvg is available."
+                )
+                self._cairosvg_warned = True
 
     def round_header(self, round_num: int, max_rounds: int,
                      target: str | None = None, checked: int = 0,
