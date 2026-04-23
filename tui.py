@@ -6,7 +6,11 @@ Falls back gracefully to plain text when `rich` is not available.
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+_log = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -93,6 +97,8 @@ class TUIProtocol(Protocol):
                            bugs_fixed: int, tests_passing: int | None,
                            report_path: str) -> None: ...
 
+    def capture_frame(self, label: str) -> Path | None: ...
+
 
 def _has_rich() -> bool:
     """Check if rich is available."""
@@ -115,10 +121,16 @@ class RichTUI:
     Falls back to ``PlainTUI`` when rich is unavailable (see ``get_tui``).
     """
 
-    def __init__(self):
+    def __init__(self, *, run_dir: str | Path | None = None,
+                 capture_frames: bool = False):
         from rich.console import Console
-        self.console = Console()
+        self._capture_frames = capture_frames
+        self._run_dir = Path(run_dir) if run_dir else None
+        # record=True accumulates rendered output in an internal buffer
+        # for later export via save_svg() — no extra overhead when unused.
+        self.console = Console(record=capture_frames)
         self._status_grid = None
+        self._cairosvg_warned = False
 
     def round_header(self, round_num: int, max_rounds: int,
                      target: str | None = None, checked: int = 0,
@@ -357,6 +369,50 @@ class RichTUI:
         self.console.print()
         self.console.print(panel)
 
+    def capture_frame(self, label: str) -> Path | None:
+        """Snapshot the recorded Rich buffer as a PNG frame.
+
+        Returns the path to the PNG, or ``None`` when capture is disabled,
+        no run directory is set, or ``cairosvg`` is not installed.
+        """
+        if not self._capture_frames or not self._run_dir:
+            return None
+
+        frames_dir = self._run_dir / "frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+
+        svg_path = frames_dir / f"{label}.svg"
+        png_path = frames_dir / f"{label}.png"
+
+        # Export the Rich buffer to SVG (built-in, no extra dep)
+        self.console.save_svg(str(svg_path))
+
+        # Convert SVG → PNG via cairosvg (optional dependency)
+        try:
+            import cairosvg  # type: ignore[import-untyped]
+        except ImportError:
+            if not self._cairosvg_warned:
+                _log.warning(
+                    "capture_frames is enabled but cairosvg is not installed. "
+                    "Install with: pip install 'evolve[vision]'. "
+                    "Frame capture is a no-op without it."
+                )
+                self._cairosvg_warned = True
+            # Clean up the SVG since we can't convert it
+            svg_path.unlink(missing_ok=True)
+            return None
+
+        try:
+            cairosvg.svg2png(url=str(svg_path), write_to=str(png_path))
+        except Exception as exc:
+            _log.warning("Frame capture failed for %s: %s", label, exc)
+            svg_path.unlink(missing_ok=True)
+            return None
+
+        # Remove intermediate SVG
+        svg_path.unlink(missing_ok=True)
+        return png_path
+
 
 # ---------------------------------------------------------------------------
 # Plain text fallback
@@ -528,6 +584,10 @@ class PlainTUI:
         print(f"  Report: {report_path}")
         print(f"{'─' * 46}")
 
+    def capture_frame(self, label: str) -> Path | None:
+        """Plain text TUI has no visual to capture — always returns None."""
+        return None
+
 
 # ---------------------------------------------------------------------------
 # JSON TUI — structured JSON events for CI/CD
@@ -675,6 +735,10 @@ class JsonTUI:
                     duration_s=duration_s, improvements=improvements,
                     bugs_fixed=bugs_fixed, tests_passing=tests_passing,
                     report_path=report_path)
+
+    def capture_frame(self, label: str) -> Path | None:
+        """JSON TUI has no visual to capture — always returns None."""
+        return None
 
 
 # ---------------------------------------------------------------------------
