@@ -42,6 +42,11 @@ improvements.md. Real code edits + passing tests aren't enough — must also
 check off item and write COMMIT_MSG, else round is flagged no-progress and
 retried.
 
+### Retry continuity tests: section header appears twice in prompt — round 6 of 20260423_142834
+`## Previous attempt log` rendered AS section + referenced in Step 0 prose. Match
+`\n## Previous attempt log\n` (standalone), not bare substring. Same trap lurks for
+any header name quoted in system.md instructions.
+
 ## Patterns
 
 ### Party-mode prompt capture: patch target is `agent.run_claude_agent`
