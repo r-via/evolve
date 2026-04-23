@@ -862,6 +862,7 @@ def evolve_loop(
     spec: str | None = None,
     yolo: bool | None = None,
     capture_frames: bool = False,
+    effort: str | None = "max",
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess.
 
@@ -952,6 +953,7 @@ def evolve_loop(
                     start_round, max_rounds, check_cmd, allow_installs, timeout, model,
                     forever=forever, hooks=hooks, spec=spec,
                     capture_frames=capture_frames,
+                    effort=effort,
                 )
 
     # Create timestamped run directory
@@ -969,6 +971,7 @@ def evolve_loop(
         1, max_rounds, check_cmd, allow_installs, timeout, model,
         forever=forever, hooks=hooks, spec=spec,
         capture_frames=capture_frames,
+        effort=effort,
     )
 
 
@@ -1210,6 +1213,7 @@ def _run_rounds(
     hooks: dict[str, str] | None = None,
     spec: str | None = None,
     capture_frames: bool = False,
+    effort: str | None = "max",
 ) -> None:
     """Run evolution rounds from start_round to max_rounds.
 
@@ -1287,6 +1291,8 @@ def _run_rounds(
                 cmd += ["--allow-installs"]
             if spec:
                 cmd += ["--spec", spec]
+            if effort:
+                cmd += ["--effort", effort]
 
             # --- Debug retry loop: run the round, diagnose failures, retry ---
             print(f"[probe] launching subprocess for round {round_num}")
@@ -1704,6 +1710,7 @@ def run_single_round(
     model: str = "claude-opus-4-6",
     spec: str | None = None,
     yolo: bool | None = None,
+    effort: str | None = "max",
 ) -> None:
     """Execute a single evolution round (called as subprocess).
 
@@ -1727,6 +1734,7 @@ def run_single_round(
     from agent import analyze_and_fix
     import agent as _agent_mod
     _agent_mod.MODEL = model
+    _agent_mod.EFFORT = effort
 
     rdir = run_dir or (project_dir / "runs")
     rdir.mkdir(parents=True, exist_ok=True)
@@ -1825,6 +1833,7 @@ def run_dry_run(
     timeout: int = 300,
     model: str = "claude-opus-4-6",
     spec: str | None = None,
+    effort: str | None = "max",
 ) -> None:
     """Run a read-only analysis of the project without modifying files.
 
@@ -1891,6 +1900,7 @@ def run_dry_run(
     from agent import run_dry_run_agent
     import agent as _agent_mod
     _agent_mod.MODEL = model
+    _agent_mod.EFFORT = effort
 
     ui.agent_working()
     run_dry_run_agent(
@@ -1915,6 +1925,7 @@ def run_validate(
     timeout: int = 300,
     model: str = "claude-opus-4-6",
     spec: str | None = None,
+    effort: str | None = "max",
 ) -> int:
     """Run spec compliance validation without modifying project files.
 
@@ -1981,6 +1992,7 @@ def run_validate(
     from agent import run_validate_agent
     import agent as _agent_mod
     _agent_mod.MODEL = model
+    _agent_mod.EFFORT = effort
 
     ui.agent_working()
     run_validate_agent(
@@ -2023,6 +2035,7 @@ def run_sync_readme(
     spec: str | None = None,
     apply: bool = False,
     model: str = "claude-opus-4-6",
+    effort: str | None = "max",
 ) -> int:
     """Run the ``evolve sync-readme`` one-shot subcommand.
 
@@ -2089,6 +2102,7 @@ def run_sync_readme(
     from agent import run_sync_readme_agent, SYNC_README_NO_CHANGES_SENTINEL
     import agent as _agent_mod
     _agent_mod.MODEL = model
+    _agent_mod.EFFORT = effort
 
     ui.agent_working()
     try:

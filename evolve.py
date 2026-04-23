@@ -283,6 +283,12 @@ def main():
     start_p.add_argument("--json", action="store_true", help="Emit structured JSON events to stdout (for CI/CD)")
     start_p.add_argument("--spec", default=None, help="Path to spec file relative to project dir (default: README.md, or EVOLVE_SPEC env var)")
     start_p.add_argument("--capture-frames", action="store_true", dest="capture_frames", help="Capture TUI frames as PNG at round end / convergence / errors")
+    start_p.add_argument(
+        "--effort",
+        type=_validate_effort,
+        default=None,
+        help="Reasoning effort level passed to the Claude Agent SDK: low, medium, high, or max (default: max, or EVOLVE_EFFORT env var)",
+    )
 
     # --- status ---
     status_p = sub.add_parser("status", help="Show evolution status for a project")
@@ -309,6 +315,12 @@ def main():
                         help="Write directly to README.md and commit (default: write README_proposal.md only)")
     sync_p.add_argument("--model", default=None,
                         help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
+    sync_p.add_argument(
+        "--effort",
+        type=_validate_effort,
+        default=None,
+        help="Reasoning effort level passed to the Claude Agent SDK: low, medium, high, or max (default: max, or EVOLVE_EFFORT env var)",
+    )
 
     # --- _round (internal) ---
     if len(sys.argv) > 1 and sys.argv[1] == "_round":
@@ -357,6 +369,7 @@ def main():
                 timeout=args.timeout,
                 model=args.model,
                 spec=spec,
+                effort=getattr(args, "effort", "max"),
             ))
         elif args.dry_run:
             from loop import run_dry_run
@@ -366,6 +379,7 @@ def main():
                 timeout=args.timeout,
                 model=args.model,
                 spec=spec,
+                effort=getattr(args, "effort", "max"),
             )
         else:
             from loop import evolve_loop
@@ -380,6 +394,7 @@ def main():
                 forever=args.forever,
                 spec=spec,
                 capture_frames=getattr(args, "capture_frames", False),
+                effort=getattr(args, "effort", "max"),
             )
 
     elif args.command == "status":
@@ -403,6 +418,7 @@ def main():
             spec=getattr(args, "spec", None),
             apply=getattr(args, "apply", False),
             model=args.model or "claude-opus-4-6",
+            effort=getattr(args, "effort", "max"),
         ))
 
     elif args.command == "_round":
@@ -416,6 +432,7 @@ def main():
             run_dir=Path(args.run_dir) if args.run_dir else None,
             model=args.model,
             spec=args.spec,
+            effort=args.effort,
         )
 
 
@@ -442,6 +459,7 @@ def _parse_round_args():
     p.add_argument("--yolo", action="store_true", dest="allow_installs")  # deprecated alias
     p.add_argument("--model", default="claude-opus-4-6")
     p.add_argument("--spec", default=None)
+    p.add_argument("--effort", type=_validate_effort, default="max")
     args = p.parse_args(sys.argv[2:])
     args.command = "_round"
     return args
