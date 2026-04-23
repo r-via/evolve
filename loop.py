@@ -1412,8 +1412,17 @@ def _run_rounds(
                 _run_party_mode(project_dir, run_dir, ui, spec=spec)
 
                 if forever:
-                    # Auto-merge spec proposal into spec file and restart
-                    _forever_restart(project_dir, run_dir, improvements_path, ui, spec=spec)
+                    # Auto-merge spec proposal (and README_proposal when spec
+                    # differs from README.md) into their targets, then restart.
+                    adoption_result = _forever_restart(
+                        project_dir, run_dir, improvements_path, ui, spec=spec
+                    )
+                    # Backwards-compat: historical _forever_restart returned
+                    # None; new signature returns (spec_adopted, readme_adopted).
+                    if isinstance(adoption_result, tuple):
+                        spec_adopted, readme_adopted = adoption_result
+                    else:
+                        spec_adopted, readme_adopted = False, False
 
                     # Create a new session directory for the next cycle
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1424,12 +1433,35 @@ def _run_rounds(
                         ui = get_tui(run_dir=run_dir, capture_frames=capture_frames)
                     ui.run_dir_info(str(run_dir))
 
-                    # Git commit the README update + reset
-                    _git_commit(
-                        project_dir,
-                        "chore(evolve): forever mode — adopt README_proposal, reset improvements",
-                        ui,
-                    )
+                    # Git commit the proposal adoption + reset. When --spec
+                    # differs from README.md, use the documented atomic-adoption
+                    # template so both files move together in a single commit
+                    # (Mechanism B). Otherwise fall back to the legacy message.
+                    spec_file_for_msg = spec or "README.md"
+                    if spec_file_for_msg != "README.md" and (spec_adopted or readme_adopted):
+                        spec_stem_msg = Path(spec_file_for_msg).stem
+                        spec_suffix_msg = Path(spec_file_for_msg).suffix or ".md"
+                        proposal_name_msg = f"{spec_stem_msg}_proposal{spec_suffix_msg}"
+                        commit_lines = [
+                            f"feat(spec): adopt {proposal_name_msg}",
+                            "",
+                        ]
+                        if spec_adopted:
+                            commit_lines.append(
+                                f"- {spec_file_for_msg} updated from {proposal_name_msg}"
+                            )
+                        if readme_adopted:
+                            commit_lines.append(
+                                "- README.md updated from README_proposal.md"
+                            )
+                        commit_lines.append("- improvements.md reset")
+                        commit_msg = "\n".join(commit_lines)
+                    else:
+                        commit_msg = (
+                            "chore(evolve): forever mode — adopt README_proposal, "
+                            "reset improvements"
+                        )
+                    _git_commit(project_dir, commit_msg, ui)
 
                     # Restart from round 1 via the outer while loop
                     start_round = 1
@@ -1863,12 +1895,49 @@ def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = N
     spec_suffix = Path(spec_file).suffix or ".md"
     proposal_filename = f"{spec_stem}_proposal{spec_suffix}"
 
+    # Mechanism B — when --spec points at a file other than README.md, also
+    # produce a README_proposal.md so spec + README move together.
+    needs_readme_proposal = spec_file != "README.md"
+    readme_md_path = project_dir / "README.md"
+    current_readme_text = readme_md_path.read_text() if readme_md_path.is_file() else "(none)"
+
+    if needs_readme_proposal:
+        outputs_block = (
+            f"1. `{run_dir}/party_report.md` — full discussion with each agent's reasoning\n"
+            f"2. `{run_dir}/{proposal_filename}` — complete updated spec for the next evolution\n"
+            f"3. `{run_dir}/README_proposal.md` — user-facing README rewritten to reflect the "
+            f"claims of the new spec proposal. Preserve the README's tutorial voice "
+            f"(brevity, examples, links to {spec_file} for internals) rather than copying "
+            f"the spec verbatim."
+        )
+        readme_context_block = (
+            f"## Current Spec ({spec_file})\n{readme}\n\n"
+            f"## Current README.md\n{current_readme_text}"
+        )
+        closing_instruction = (
+            f"Simulate the discussion, then write all three files. Both "
+            f"{proposal_filename} and README_proposal.md must be complete documents "
+            f"(not diffs). The README_proposal.md must reflect the claims of the new "
+            f"{proposal_filename} while preserving the README's own voice — tutorial, "
+            f"examples, brevity, and links to {spec_file} for details rather than "
+            f"duplicating spec prose."
+        )
+    else:
+        outputs_block = (
+            f"1. `{run_dir}/party_report.md` — full discussion with each agent's reasoning\n"
+            f"2. `{run_dir}/{proposal_filename}` — complete updated spec for the next evolution"
+        )
+        readme_context_block = f"## Current README\n{readme}"
+        closing_instruction = (
+            f"Simulate the discussion, then write both files. "
+            f"The {proposal_filename} must be complete (not a diff)."
+        )
+
     prompt = f"""\
 You are a Party Mode facilitator. The project has CONVERGED — all improvements done.
 
 Your job: orchestrate a multi-agent brainstorming session, then produce:
-1. `{run_dir}/party_report.md` — full discussion with each agent's reasoning
-2. `{run_dir}/{proposal_filename}` — complete updated spec for the next evolution
+{outputs_block}
 
 ## Workflow
 {workflow}
@@ -1879,8 +1948,7 @@ Your job: orchestrate a multi-agent brainstorming session, then produce:
 ## Agent Personas
 {personas}
 
-## Current README
-{readme}
+{readme_context_block}
 
 ## Improvements History
 {improvements}
@@ -1891,7 +1959,7 @@ Your job: orchestrate a multi-agent brainstorming session, then produce:
 ## Convergence Reason
 {converged}
 
-Simulate the discussion, then write both files. The README_proposal.md must be complete (not a diff).
+{closing_instruction}
 """
 
     # Scan for captured TUI frames to attach as image blocks
@@ -1958,11 +2026,13 @@ def _forever_restart(
     improvements_path: Path,
     ui: TUIProtocol,
     spec: str | None = None,
-) -> None:
+) -> tuple[bool, bool]:
     """Post-convergence restart for forever mode.
 
     1. Merge the spec proposal into the spec file (if produced by party mode)
-    2. Reset improvements.md for the next evolution cycle
+    2. When ``spec`` differs from ``README.md``, also adopt
+       ``README_proposal.md`` (Mechanism B — the two move atomically)
+    3. Reset improvements.md for the next evolution cycle
 
     Args:
         project_dir: Root directory of the project.
@@ -1970,6 +2040,10 @@ def _forever_restart(
         improvements_path: Path to improvements.md to reset.
         ui: TUI instance for status messages.
         spec: Path to the spec file relative to project_dir (default: README.md).
+
+    Returns:
+        Tuple ``(spec_adopted, readme_adopted)`` indicating whether each
+        proposal was applied, so the caller can tailor the commit message.
     """
     spec_file = spec or "README.md"
     spec_stem = Path(spec_file).stem
@@ -1978,15 +2052,38 @@ def _forever_restart(
     proposal = run_dir / proposal_filename
     target = project_dir / spec_file
 
+    spec_adopted = False
     if proposal.is_file():
         ui.info(f"  Forever mode: adopting {proposal_filename} as new {spec_file}")
         target.write_text(proposal.read_text())
+        spec_adopted = True
     else:
         ui.warn(f"No {proposal_filename} produced — restarting with current {spec_file}")
+
+    # Mechanism B: when the spec is not README.md, adopt README_proposal.md
+    # alongside the spec proposal so user-facing docs stay in sync. We only
+    # emit a drift warning when the spec proposal *was* adopted — if party
+    # mode produced nothing at all, the earlier SPEC-level warning already
+    # tells the full story and a second warning would be noise.
+    readme_adopted = False
+    if spec_file != "README.md":
+        readme_proposal = run_dir / "README_proposal.md"
+        readme_target = project_dir / "README.md"
+        if readme_proposal.is_file():
+            ui.info("  Forever mode: adopting README_proposal.md as new README.md")
+            readme_target.write_text(readme_proposal.read_text())
+            readme_adopted = True
+        elif spec_adopted:
+            ui.warn(
+                "No README_proposal.md produced — README.md will drift from "
+                f"updated {spec_file} until the next cycle"
+            )
 
     # Reset improvements.md for the next cycle
     ui.info("  Forever mode: resetting improvements.md for next cycle")
     improvements_path.write_text("# Improvements\n")
+
+    return spec_adopted, readme_adopted
 
     # Remove the CONVERGED marker so the next cycle starts fresh
     converged_path = run_dir / "CONVERGED"

@@ -448,3 +448,271 @@ class TestResolveConfigSpec:
             result = _resolve_config(args, tmp_path)
 
         assert result.spec == "CLI_SPEC.md"
+
+
+# ---------------------------------------------------------------------------
+# Mechanism B — Party mode README proposal (SPEC.md § "README sync discipline")
+# ---------------------------------------------------------------------------
+
+class TestPartyModeReadmeProposal:
+    """Verify _run_party_mode produces README_proposal.md when spec != README.md."""
+
+    def _setup(self, tmp_path: Path):
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "architect.md").write_text("I am the architect.")
+        (tmp_path / "runs").mkdir()
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir()
+        return run_dir
+
+    def test_prompt_requests_readme_proposal_when_spec_differs(self, tmp_path: Path):
+        """With spec='SPEC.md', prompt instructs agents to produce README_proposal.md."""
+        run_dir = self._setup(tmp_path)
+        (tmp_path / "SPEC.md").write_text("# Dense spec\n- flag --foo\n")
+        (tmp_path / "README.md").write_text("# My Tool\n\nQuickstart tutorial.\n")
+
+        ui = MagicMock()
+        captured: list[str] = []
+
+        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None,
+                             log_filename=None, images=None):
+            captured.append(prompt)
+
+        with patch("agent.run_claude_agent", mock_agent), \
+             patch("agent._is_benign_runtime_error", return_value=False), \
+             patch("agent._should_retry_rate_limit", return_value=None):
+            _run_party_mode(tmp_path, run_dir, ui, spec="SPEC.md")
+
+        assert len(captured) == 1
+        prompt = captured[0]
+        assert "README_proposal.md" in prompt
+        assert "SPEC_proposal.md" in prompt
+        # Agents must be told to preserve README's tutorial voice, not copy spec verbatim
+        assert "tutorial voice" in prompt or "README's own voice" in prompt
+        # The current README content must be attached as context
+        assert "Quickstart tutorial" in prompt
+        assert "Current README.md" in prompt
+
+    def test_prompt_omits_readme_proposal_when_spec_is_readme(self, tmp_path: Path):
+        """With spec=None / 'README.md', prompt only requests SPEC-style proposal (no duplicate README_proposal output)."""
+        run_dir = self._setup(tmp_path)
+        (tmp_path / "README.md").write_text("# Tool\n")
+
+        ui = MagicMock()
+        captured: list[str] = []
+
+        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None,
+                             log_filename=None, images=None):
+            captured.append(prompt)
+
+        with patch("agent.run_claude_agent", mock_agent), \
+             patch("agent._is_benign_runtime_error", return_value=False), \
+             patch("agent._should_retry_rate_limit", return_value=None):
+            _run_party_mode(tmp_path, run_dir, ui, spec=None)
+
+        assert len(captured) == 1
+        prompt = captured[0]
+        # README_proposal.md IS requested (as the proposal for the spec itself,
+        # since the spec == README.md), but there must not be a distinct third
+        # artifact — the outputs block should list two files, not three.
+        outputs_section = prompt.split("## Workflow", 1)[0]
+        assert "3." not in outputs_section, outputs_section
+
+
+class TestForeverRestartMechanismB:
+    """Verify _forever_restart adopts both proposals atomically when spec != README."""
+
+    def setup_method(self):
+        self.ui = MagicMock()
+
+    def test_spec_and_readme_proposals_both_adopted(self, tmp_path: Path):
+        """When spec != README.md and both proposals exist, both are adopted."""
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir(parents=True)
+        improvements = tmp_path / "runs" / "improvements.md"
+        improvements.write_text("- [x] [functional] Done\n")
+
+        (tmp_path / "SPEC.md").write_text("# Old Spec\n")
+        (tmp_path / "README.md").write_text("# Old README\n")
+        (run_dir / "SPEC_proposal.md").write_text("# New Spec\n")
+        (run_dir / "README_proposal.md").write_text("# New README\n")
+
+        result = _forever_restart(tmp_path, run_dir, improvements, self.ui, spec="SPEC.md")
+
+        assert result == (True, True)
+        assert (tmp_path / "SPEC.md").read_text() == "# New Spec\n"
+        assert (tmp_path / "README.md").read_text() == "# New README\n"
+        assert improvements.read_text() == "# Improvements\n"
+
+    def test_readme_proposal_skipped_when_spec_is_readme(self, tmp_path: Path):
+        """When spec == README.md, the Mechanism B branch is a no-op."""
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir(parents=True)
+        improvements = tmp_path / "runs" / "improvements.md"
+        improvements.write_text("- [x] done\n")
+
+        (tmp_path / "README.md").write_text("# Old\n")
+        (run_dir / "README_proposal.md").write_text("# New\n")
+
+        result = _forever_restart(tmp_path, run_dir, improvements, self.ui, spec=None)
+
+        # Default spec path: the README_proposal counts AS the spec proposal,
+        # so spec_adopted=True, readme_adopted=False (no separate adoption).
+        assert result == (True, False)
+        assert (tmp_path / "README.md").read_text() == "# New\n"
+
+    def test_spec_adopted_but_readme_proposal_missing_warns(self, tmp_path: Path):
+        """When spec proposal adopted but README_proposal.md missing, drift warning fires."""
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir(parents=True)
+        improvements = tmp_path / "runs" / "improvements.md"
+        improvements.write_text("- [x] done\n")
+
+        (tmp_path / "SPEC.md").write_text("# Old Spec\n")
+        (tmp_path / "README.md").write_text("# README stays\n")
+        (run_dir / "SPEC_proposal.md").write_text("# New Spec\n")
+        # No README_proposal.md
+
+        result = _forever_restart(tmp_path, run_dir, improvements, self.ui, spec="SPEC.md")
+
+        assert result == (True, False)
+        assert (tmp_path / "SPEC.md").read_text() == "# New Spec\n"
+        assert (tmp_path / "README.md").read_text() == "# README stays\n"
+
+        # A drift warning should have fired
+        warn_msgs = [c.args[0] for c in self.ui.warn.call_args_list]
+        assert any("README_proposal.md" in m and "drift" in m for m in warn_msgs), warn_msgs
+
+    def test_no_redundant_readme_warning_when_spec_proposal_also_missing(self, tmp_path: Path):
+        """When spec_proposal is missing too, don't warn twice about the README."""
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir(parents=True)
+        improvements = tmp_path / "runs" / "improvements.md"
+        improvements.write_text("- [x] done\n")
+
+        (tmp_path / "SPEC.md").write_text("# Old Spec\n")
+        (tmp_path / "README.md").write_text("# README\n")
+
+        result = _forever_restart(tmp_path, run_dir, improvements, self.ui, spec="SPEC.md")
+
+        assert result == (False, False)
+        warn_msgs = [c.args[0] for c in self.ui.warn.call_args_list]
+        # Exactly one warning, and it's about SPEC_proposal.md (the fundamental issue)
+        assert len(warn_msgs) == 1
+        assert "SPEC_proposal.md" in warn_msgs[0]
+
+
+class TestForeverAtomicAdoptionCommit:
+    """Verify --forever mode's commit message follows the documented template."""
+
+    def _setup_project(self, tmp_path: Path):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "SPEC.md").write_text("# Old Spec\n")
+        (project_dir / "README.md").write_text("# Old README\n")
+        (project_dir / "runs").mkdir()
+        imp_path = project_dir / "runs" / "improvements.md"
+        imp_path.write_text("- [ ] initial\n")
+        return project_dir, imp_path
+
+    def _extract_run_dir(self, cmd):
+        for i, arg in enumerate(cmd):
+            if arg == "--run-dir" and i + 1 < len(cmd):
+                return Path(cmd[i + 1])
+        return None
+
+    def test_atomic_commit_message_template_when_spec_differs(self, tmp_path: Path):
+        """Commit message matches documented `feat(spec): adopt <proposal>` template."""
+        from loop import evolve_loop
+
+        project_dir, imp_path = self._setup_project(tmp_path)
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            run_dir = self._extract_run_dir(cmd)
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+            if call_count == 1:
+                (run_dir / f"conversation_loop_{round_num}.md").write_text("# Converged")
+                (run_dir / "CONVERGED").write_text("Done")
+                (run_dir / "SPEC_proposal.md").write_text("# New Spec\n")
+                (run_dir / "README_proposal.md").write_text("# New README\n")
+                imp_path.write_text("- [x] initial\n")
+                return 0, "converged", False
+            raise SystemExit(42)
+
+        captured_commits: list[str] = []
+
+        def capture_commit(project_dir_, message, ui_=None):
+            captured_commits.append(message)
+
+        with patch("loop._setup_forever_branch"), \
+             patch("loop._ensure_git"), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._git_commit", side_effect=capture_commit), \
+             pytest.raises(SystemExit):
+            evolve_loop(project_dir, max_rounds=1, forever=True, spec="SPEC.md")
+
+        # Find the adoption commit (the one fired by the forever restart path)
+        adoption_msgs = [m for m in captured_commits if "adopt" in m.lower()]
+        assert adoption_msgs, f"no adoption commit found in: {captured_commits}"
+        msg = adoption_msgs[0]
+        # Documented template from SPEC.md § "Mechanism B"
+        assert msg.startswith("feat(spec): adopt SPEC_proposal")
+        assert "SPEC.md updated from SPEC_proposal.md" in msg
+        assert "README.md updated from README_proposal.md" in msg
+        assert "improvements.md reset" in msg
+        # Both proposals were adopted atomically
+        assert (project_dir / "SPEC.md").read_text() == "# New Spec\n"
+        assert (project_dir / "README.md").read_text() == "# New README\n"
+
+    def test_legacy_commit_message_when_spec_is_readme(self, tmp_path: Path):
+        """With no --spec (README.md IS the spec), legacy chore commit is used."""
+        from loop import evolve_loop
+
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (project_dir / "README.md").write_text("# Old\n")
+        (project_dir / "runs").mkdir()
+        imp_path = project_dir / "runs" / "improvements.md"
+        imp_path.write_text("- [ ] initial\n")
+
+        call_count = 0
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            run_dir = self._extract_run_dir(cmd)
+            if run_dir:
+                run_dir.mkdir(parents=True, exist_ok=True)
+            if call_count == 1:
+                (run_dir / f"conversation_loop_{round_num}.md").write_text("# Converged")
+                (run_dir / "CONVERGED").write_text("Done")
+                (run_dir / "README_proposal.md").write_text("# New\n")
+                imp_path.write_text("- [x] initial\n")
+                return 0, "converged", False
+            raise SystemExit(42)
+
+        captured_commits: list[str] = []
+
+        def capture_commit(project_dir_, message, ui_=None):
+            captured_commits.append(message)
+
+        with patch("loop._setup_forever_branch"), \
+             patch("loop._ensure_git"), \
+             patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             patch("loop._git_commit", side_effect=capture_commit), \
+             pytest.raises(SystemExit):
+            evolve_loop(project_dir, max_rounds=1, forever=True)
+
+        adoption_msgs = [m for m in captured_commits if "adopt" in m.lower()]
+        assert adoption_msgs
+        msg = adoption_msgs[0]
+        assert msg.startswith("chore(evolve): forever mode")

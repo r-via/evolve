@@ -8,6 +8,9 @@ style, non-obvious gate).
 
 ## Decisions
 
+### Mechanism B: redundant warn suppression — round 1 of 20260423_142834
+`_forever_restart` → warn on missing README_proposal.md ONLY when spec_proposal adopted. Party-mode total failure → single SPEC-level warn; test asserts `ui.warn.call_args[0][0]` = last call, extra warn would break it.
+
 ### Phase 1 escape hatch: attempt counter plumbing — round 1 of 20260423_140637
 attempt K → `{attempt_marker}` placeholder in system prompt, parsed from
 `subprocess_error_round_N.txt` filename. Guarded on matching round_num so
