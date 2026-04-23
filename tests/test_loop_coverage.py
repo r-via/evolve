@@ -545,6 +545,147 @@ class TestRunRounds:
         # Both conditions should be present in the diagnostic
         assert any("no COMMIT_MSG written" in d and "improvements.md byte-identical" in d for d in diagnostics)
 
+    def test_zero_progress_both_conditions_reason_string_format(self, tmp_path: Path):
+        """Zero-progress reason string uses ' AND ' to join both conditions."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+        diagnostics = []
+
+        import subprocess as sp
+        sp.run(["git", "init"], cwd=str(project_dir), capture_output=True)
+        sp.run(["git", "add", "-A"], cwd=str(project_dir), capture_output=True)
+        sp.run(
+            ["git", "commit", "-m", "chore(evolve): round 1"],
+            cwd=str(project_dir), capture_output=True,
+            env={**__import__("os").environ, "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@test.com",
+                 "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+        )
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            return 0, "output", False
+
+        def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
+            diagnostics.append(reason)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit):
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+            )
+        # Verify the exact format: "NO PROGRESS: <reason1> AND <reason2>"
+        combined = [d for d in diagnostics if " AND " in d]
+        assert len(combined) > 0, "Expected at least one diagnostic with ' AND ' join"
+        for d in combined:
+            assert d.startswith("NO PROGRESS: ")
+            assert "no COMMIT_MSG written (fallback commit message)" in d
+            assert "improvements.md byte-identical to pre-round state" in d
+
+    def test_zero_progress_triggers_debug_retry_count(self, tmp_path: Path):
+        """Zero-progress triggers the correct number of debug retries (MAX_DEBUG_RETRIES + 1 total)."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+        attempt_log = []
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            return 0, "output", False
+
+        def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
+            attempt_log.append(attempt)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 2
+        # Should have MAX_DEBUG_RETRIES + 1 attempts (1 original + 2 retries)
+        from loop import MAX_DEBUG_RETRIES
+        assert len(attempt_log) == MAX_DEBUG_RETRIES + 1
+        assert attempt_log == list(range(1, MAX_DEBUG_RETRIES + 2))
+
+    def test_zero_progress_improvements_unchanged_only_no_git(self, tmp_path: Path):
+        """Zero-progress triggers on improvements.md unchanged even without git repo (no COMMIT_MSG check)."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+        diagnostics = []
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            # Do NOT modify improvements.md — triggers byte-identical
+            return 0, "output", False
+
+        def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
+            diagnostics.append(reason)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 2
+        # Should still detect byte-identical even without git
+        assert any("improvements.md byte-identical" in d for d in diagnostics)
+        # Should NOT contain "no COMMIT_MSG" since git log would fail
+        # (no git repo = git log fails silently, no_commit_msg stays False)
+        assert all("no COMMIT_MSG written" not in d for d in diagnostics if "AND" not in d)
+
+    def test_zero_progress_no_commit_msg_only_reason_string(self, tmp_path: Path):
+        """When only COMMIT_MSG is missing (improvements changed), reason has only COMMIT_MSG part."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+        diagnostics = []
+
+        import subprocess as sp
+        sp.run(["git", "init"], cwd=str(project_dir), capture_output=True)
+        sp.run(["git", "add", "-A"], cwd=str(project_dir), capture_output=True)
+        sp.run(
+            ["git", "commit", "-m", "chore(evolve): round 1"],
+            cwd=str(project_dir), capture_output=True,
+            env={**__import__("os").environ, "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@test.com",
+                 "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+        )
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            # Modify improvements.md so byte-identical does NOT trigger
+            existing = imp_path.read_text()
+            imp_path.write_text(existing + f"\n- [ ] [functional] item {round_num}\n")
+            return 0, "output", False
+
+        def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
+            diagnostics.append(reason)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit):
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+            )
+        # Only COMMIT_MSG reason, no " AND " join
+        commit_msg_only = [d for d in diagnostics if "no COMMIT_MSG written" in d and " AND " not in d]
+        assert len(commit_msg_only) > 0, "Expected diagnostic with only COMMIT_MSG reason"
+
     def test_zero_progress_not_triggered_on_real_progress(self, tmp_path: Path):
         """Zero-progress detection does NOT trigger when improvements.md changes."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)

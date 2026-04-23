@@ -49,7 +49,7 @@ python evolve.py start ~/projects/my-tool --check "pytest"
 evolve init <project-dir>
 
 # Evolve a project (README = spec)
-evolve start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--yolo] [--json] [--spec SPEC.md]
+evolve start <project-dir> [--rounds 10] [--check "pytest"] [--timeout 300] [--model claude-opus-4-6] [--allow-installs] [--json] [--spec SPEC.md]
 
 # Preview what the agent would do (read-only, no file changes)
 evolve start <project-dir> --dry-run [--check "pytest"]
@@ -89,7 +89,7 @@ evolve start ~/projects/my-cli --check "cargo test"
 evolve start ~/projects/my-lib
 
 # Allow installing new packages
-evolve start ~/projects/my-tool --check "pytest" --yolo
+evolve start ~/projects/my-tool --check "pytest" --allow-installs
 
 # Use a different model
 evolve start ~/projects/my-tool --check "pytest" --model claude-sonnet-4-20250514
@@ -138,7 +138,7 @@ check = "pytest"
 rounds = 20
 timeout = 300
 model = "claude-opus-4-6"
-yolo = false
+allow_installs = false  # let the agent install new packages for [needs-package] items
 spec = "README.md"  # path to the spec file (default: README.md)
 
 # Event hooks — shell commands executed on lifecycle events
