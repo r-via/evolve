@@ -1050,6 +1050,22 @@ MAX_DEBUG_RETRIES = 2
 # Seconds of silence before the watchdog considers a subprocess stalled.
 WATCHDOG_TIMEOUT = 120
 
+# Memory-wipe sanity gate constants — keep the runtime check aligned with
+# SPEC.md § "memory.md" — "Byte-size sanity gate".  Changing either value
+# here is the single source of truth for both the detection logic in
+# _run_rounds and the tests that exercise it.
+#
+#   _MEMORY_COMPACTION_MARKER — the literal string the agent must include
+#       in its commit message (on its own line, per SPEC) to legitimise a
+#       large memory.md shrink.  Absence of the marker on a >threshold
+#       shrink triggers a debug retry with the "silently wiped memory.md"
+#       diagnostic header.
+#   _MEMORY_WIPE_THRESHOLD   — fractional shrink floor below which memory.md
+#       is considered wiped.  0.5 means "memory.md after the round is
+#       smaller than half of its pre-round size" → retry.
+_MEMORY_COMPACTION_MARKER = "memory: compaction"
+_MEMORY_WIPE_THRESHOLD = 0.5
+
 
 def _run_monitored_subprocess(
     cmd: list[str],
@@ -1356,7 +1372,10 @@ def _run_rounds(
                     #    emptying sections they couldn't read.
                     mem_size_after = memory_path.stat().st_size if memory_path.is_file() else 0
                     memory_wiped = False
-                    if mem_size_before > 0 and mem_size_after * 2 < mem_size_before:
+                    if (
+                        mem_size_before > 0
+                        and mem_size_after < mem_size_before * _MEMORY_WIPE_THRESHOLD
+                    ):
                         commit_body = ""
                         try:
                             git_body_result = subprocess.run(
@@ -1369,7 +1388,7 @@ def _run_rounds(
                             # Can't read commit body — treat the shrink as
                             # a wipe to stay on the safe side.
                             commit_body = ""
-                        if "memory: compaction" not in commit_body:
+                        if _MEMORY_COMPACTION_MARKER not in commit_body:
                             memory_wiped = True
 
                     # Any condition alone triggers zero-progress / memory-wipe retry
@@ -1384,10 +1403,11 @@ def _run_rounds(
                                 "improvements.md byte-identical to pre-round state"
                             )
                         if memory_wiped:
+                            threshold_pct = int(_MEMORY_WIPE_THRESHOLD * 100)
                             no_progress_reasons.append(
-                                f"memory.md shrunk by >50% "
+                                f"memory.md shrunk by >{threshold_pct}% "
                                 f"({mem_size_before}\u2192{mem_size_after} bytes) "
-                                "without 'memory: compaction' in commit message"
+                                f"without '{_MEMORY_COMPACTION_MARKER}' in commit message"
                             )
                         reason_str = " AND ".join(no_progress_reasons)
                         # Memory-wipe takes priority in the diagnostic

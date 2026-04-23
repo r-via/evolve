@@ -20,6 +20,8 @@ from loop import (
     _count_unchecked,
     _get_current_improvement,
     MAX_DEBUG_RETRIES,
+    _MEMORY_COMPACTION_MARKER,
+    _MEMORY_WIPE_THRESHOLD,
 )
 
 
@@ -747,8 +749,12 @@ class TestRunRounds:
         # Diagnostic uses the MEMORY WIPED prefix (not NO PROGRESS) so the
         # agent prompt builder renders the dedicated header.
         assert any(d.startswith("MEMORY WIPED: ") for d in diagnostics), diagnostics
-        assert any("memory.md shrunk by >50%" in d for d in diagnostics)
-        assert any("memory: compaction" in d for d in diagnostics)
+        # Threshold text is derived from the _MEMORY_WIPE_THRESHOLD constant —
+        # any future change to the threshold will propagate here via the
+        # constant rather than requiring a hand-edit of the magic percentage.
+        threshold_pct = int(_MEMORY_WIPE_THRESHOLD * 100)
+        assert any(f"memory.md shrunk by >{threshold_pct}%" in d for d in diagnostics)
+        assert any(_MEMORY_COMPACTION_MARKER in d for d in diagnostics)
 
     def test_memory_wipe_allowed_when_commit_has_compaction_marker(self, tmp_path: Path):
         """>50% memory.md shrink WITH 'memory: compaction' in commit → no retry."""
@@ -758,10 +764,12 @@ class TestRunRounds:
         memory_path = project_dir / "runs" / "memory.md"
         memory_path.write_text("# Agent Memory\n\n" + ("line of memory\n" * 40))
 
-        # Git commit body explicitly declares compaction
+        # Git commit body explicitly declares compaction — uses the
+        # _MEMORY_COMPACTION_MARKER constant so any future rename of the
+        # marker propagates here without test edits.
         self._setup_git_with_commit(
             project_dir,
-            "chore(memory): compact\n\nmemory: compaction\n\nTrimmed old entries.",
+            f"chore(memory): compact\n\n{_MEMORY_COMPACTION_MARKER}\n\nTrimmed old entries.",
         )
 
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
@@ -793,21 +801,29 @@ class TestRunRounds:
         assert not any("MEMORY WIPED" in d for d in diagnostics), diagnostics
 
     def test_memory_wipe_not_triggered_on_small_shrink(self, tmp_path: Path):
-        """memory.md shrinking by <=50% does NOT trigger wipe retry."""
+        """memory.md shrinking by less than the threshold does NOT trigger wipe retry."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
         ui = self.ui
         diagnostics: list[str] = []
         memory_path = project_dir / "runs" / "memory.md"
-        memory_path.write_text("x" * 1000)
+        pre_size = 1000
+        memory_path.write_text("x" * pre_size)
         self._setup_git_with_commit(project_dir, "feat: thing")
+
+        # Post-size stays strictly ABOVE the threshold cutoff so the test
+        # stays aligned with _MEMORY_WIPE_THRESHOLD: if the threshold is
+        # ever raised to e.g. 0.75, this test's post-size must still be
+        # above pre_size * threshold to remain a "small shrink".
+        post_size = int(pre_size * _MEMORY_WIPE_THRESHOLD) + 50
+        assert post_size >= pre_size * _MEMORY_WIPE_THRESHOLD  # sanity
 
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             convo = run_dir / f"conversation_loop_{round_num}.md"
             convo.write_text("# Round conversation")
             existing = imp_path.read_text()
             imp_path.write_text(existing + f"- [ ] [functional] new {round_num}\n")
-            # Trim only ~30% — below the 50% threshold
-            memory_path.write_text("x" * 700)
+            # Trim to just above the threshold — below the wipe cutoff
+            memory_path.write_text("x" * post_size)
             (run_dir / "CONVERGED").write_text("done")
             imp_path.write_text("- [x] [functional] do something\n")
             return 0, "output", False
@@ -871,10 +887,14 @@ class TestRunRounds:
         (project_dir / "README.md").write_text("# project")
         (project_dir / "runs" / "improvements.md").write_text("- [ ] [functional] do x\n")
         (project_dir / "runs" / "memory.md").write_text("# memory\n")
-        # Simulate the orchestrator's diagnostic file
+        # Simulate the orchestrator's diagnostic file — threshold percentage
+        # and marker string are derived from module constants so any future
+        # change propagates via the single source of truth.
+        threshold_pct = int(_MEMORY_WIPE_THRESHOLD * 100)
         (run_dir / "subprocess_error_round_2.txt").write_text(
-            "Round 2 — MEMORY WIPED: memory.md shrunk by >50% (2000\u21925 bytes) "
-            "without 'memory: compaction' in commit message (attempt 1)\n"
+            f"Round 2 — MEMORY WIPED: memory.md shrunk by >{threshold_pct}% "
+            f"(2000\u21925 bytes) "
+            f"without '{_MEMORY_COMPACTION_MARKER}' in commit message (attempt 1)\n"
             "Output (last 3000 chars):\n...last output...\n"
         )
 
@@ -890,7 +910,25 @@ class TestRunRounds:
         # Should NOT also render the generic NO PROGRESS header
         assert "Previous round made NO PROGRESS" not in prompt
         # Guidance about append-only / compaction marker should be surfaced
-        assert "memory: compaction" in prompt
+        assert _MEMORY_COMPACTION_MARKER in prompt
+
+    def test_memory_wipe_constants_are_single_source_of_truth(self):
+        """The documented contract in SPEC.md § 'Byte-size sanity gate' is
+        encoded in two module-level constants, not scattered magic values.
+
+        A single targeted test to catch drift: if anyone changes the marker
+        string or the threshold in loop.py, this test keeps the value
+        contract explicit and surfaces the change via a single failure
+        rather than several scattered assertion mismatches.
+        """
+        # Marker is the literal SPEC string, not a variant.
+        assert _MEMORY_COMPACTION_MARKER == "memory: compaction"
+        # Threshold is a fraction in (0, 1) — any integer or out-of-range
+        # value would break the shrink comparison in _run_rounds.
+        assert isinstance(_MEMORY_WIPE_THRESHOLD, float)
+        assert 0.0 < _MEMORY_WIPE_THRESHOLD < 1.0
+        # Current SPEC contract: "shrunk by more than 50%" → threshold 0.5.
+        assert _MEMORY_WIPE_THRESHOLD == 0.5
 
     def test_zero_progress_not_triggered_on_real_progress(self, tmp_path: Path):
         """Zero-progress detection does NOT trigger when improvements.md changes."""
