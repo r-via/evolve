@@ -21,6 +21,11 @@ Assert against `"CURRENT ATTEMPT: 3 of 3"` / `"NOW PERMITTED"` — emitted only
 by runtime banner, not by static template or diagnostic banner. Rule: prefer
 substitution-site-unique markers over substrings shared with surrounding docs.
 
+### Mechanism C: stale-since persisted in readme_sync — round 2 of 20260423_142834
+`readme_stale_since_round` stored INSIDE `state.json.readme_sync` itself (not
+top-level). Read-back in `_compute_readme_sync` from prior state. Internal
+field — SPEC schema shows only 4 documented keys but persistence needs 5th.
+
 ## Patterns
 
 ## Insights
