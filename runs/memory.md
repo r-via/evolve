@@ -21,3 +21,21 @@ Each agent reads this before starting and compacts it at the end of their turn.
   system prompt, Phase 1 escape hatch rules in system prompt, and the
   diagnostic's own notice block). Redundancy is intentional: the rules live in
   one document (system.md) but the attempt marker is computed fresh each round.
+
+### Phase 1 escape hatch test markers — round 2 of 20260423_140637
+- Context: writing tests for the attempt-marker substitution kept failing
+  on assertions like `"FINAL RETRY" not in prompt` because that string
+  also appears in the static system.md section header
+  ("Phase 1 escape hatch — FINAL RETRY ONLY (attempt 3 of 3)") and in the
+  escape hatch banner that loop._save_subprocess_diagnostic injects into
+  the diagnostic file (which is then included in the prompt body).
+- Choice: assert against `"CURRENT ATTEMPT: 3 of 3"` and `"NOW PERMITTED"`
+  — these strings are emitted ONLY by agent.build_prompt's runtime
+  attempt-3 banner substitution and appear nowhere in the static
+  template or in the diagnostic banner.
+- Rationale: the attempt-marker code path is the unlock signal we want
+  to verify in isolation; static template text is documentation, not
+  runtime state. Future tests of similar runtime substitutions should
+  prefer markers unique to the substitution site (e.g. `>>> ... <<<`
+  delimiters or unique capitalised phrases) over substrings shared with
+  the surrounding documentation.
