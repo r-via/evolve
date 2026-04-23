@@ -94,3 +94,6 @@ Drift-catch via `src.count("literal") <= 1` — allow 1 (the constant definition
 
 ### `.lower()` case-sensitivity trap in `in` assertions — round 2 of 20260423_162904
 `"not write CONVERGED again" in prompt.lower()` never matches — `.lower()` lowers BOTH sides implicitly only in the left operand, so uppercase `CONVERGED` in the literal stays uppercase and misses `converged` in lowered prompt. Rule: when mixing `.lower()` with substring search, lower the search literal too.
+
+### Mechanism A revert: backlog gate tag list — round 1 of 20260423_171103
+Dropping `[wontfix-sync:]` from `_detect_premature_converged` requires sync edits in the gate docstring AND two test fixtures (`test_convergence_gate.py` gate-docstring + `test_only_tagged_blockers` fixture + `test_premature_converged_renders_dedicated_header` diagnostic). Forgotten `wontfix-sync` in any of the three causes late test failure on attempt 2.

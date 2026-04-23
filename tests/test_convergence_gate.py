@@ -5,8 +5,8 @@ orchestrator re-verifies the two documented gates independently:
 
 1. Spec freshness gate — ``mtime(improvements.md) >= mtime(spec_file)``
    AND no ``[stale: spec changed]`` items.
-2. Backlog gate — every ``- [ ]`` line carries ``[needs-package]``,
-   ``[blocked:``, or ``[wontfix-sync:``.
+2. Backlog gate — every ``- [ ]`` line carries ``[needs-package]`` or
+   ``[blocked:``.
 
 When either gate fails, the backstop unlinks CONVERGED, emits
 ``ui.error``, and saves a ``PREMATURE CONVERGED`` diagnostic so the next
@@ -94,14 +94,13 @@ class TestDetectPrematureConverged:
         assert reason == ""
 
     def test_only_tagged_blockers_remaining_not_premature(self, tmp_path: Path):
-        """`- [ ]` items all tagged [needs-package]/[blocked:]/[wontfix-sync:] → not premature."""
+        """`- [ ]` items all tagged [needs-package]/[blocked:] → not premature."""
         _, spec, imp = _make_project(
             tmp_path,
             improvements_text=(
                 "- [x] done\n"
                 "- [ ] [functional] [needs-package] install foo\n"
                 "- [ ] [functional] [blocked: dep] later\n"
-                "- [ ] [functional] [wontfix-sync: internal only] skip\n"
             ),
             improvements_newer=True,
         )
@@ -383,8 +382,8 @@ class TestAgentPromptPrematureConvergedHeader:
         diag = run_dir / "subprocess_error_round_3.txt"
         diag.write_text(
             "Round 3 — PREMATURE CONVERGED: backlog gate: 2 unresolved "
-            "`- [ ]` item(s) without [needs-package]/[blocked:]/"
-            "[wontfix-sync:] tags (sample: - [ ] foo; - [ ] bar) (attempt 1)\n"
+            "`- [ ]` item(s) without [needs-package]/[blocked:] "
+            "tags (sample: - [ ] foo; - [ ] bar) (attempt 1)\n"
         )
         prompt = build_prompt(
             project_dir=project_dir,
