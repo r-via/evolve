@@ -75,7 +75,7 @@
 - [x] [functional] README sync: mention `EVOLVE_SPEC` in Configuration (documented in SPEC.md § Config resolution but absent from README.md)
 - [x] [functional] README sync: mention `EVOLVE_ALLOW_INSTALLS` in Configuration (documented in SPEC.md § Config resolution but absent from README.md)
 - [x] [functional] README sync: mention `EVOLVE_SESSION` in Configuration (documented in SPEC.md § Hook execution but absent from README.md)
-- [ ] [functional] README sync: mention `EVOLVE_ROUND` in Configuration (documented in SPEC.md § Hook execution but absent from README.md)
+- [x] [functional] README sync: mention `EVOLVE_ROUND` in Configuration (documented in SPEC.md § Hook execution but absent from README.md)
 - [ ] [functional] README sync: mention `EVOLVE_STATUS` in Configuration (documented in SPEC.md § Hook execution but absent from README.md)
 - [ ] [functional] README sync: mention `evolve start ~/projects/my-tool --check "pytest" --forever --allow-installs` in Examples (documented in SPEC.md § The --forever flag but absent from README.md)
 - [ ] [functional] README sync: mention `EVOLVE_CAPTURE_FRAMES` in Configuration (documented in SPEC.md § Frame capture (visual context for party mode) but absent from README.md)
