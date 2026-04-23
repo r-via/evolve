@@ -1520,6 +1520,16 @@ Your job: orchestrate a multi-agent brainstorming session, then produce:
 Simulate the discussion, then write both files. The README_proposal.md must be complete (not a diff).
 """
 
+    # Scan for captured TUI frames to attach as image blocks
+    frames_dir = run_dir / "frames"
+    frame_images: list[Path] = []
+    if frames_dir.is_dir():
+        all_frames = sorted(frames_dir.glob("*.png"))
+        # Pick the last 3-5 frames (convergence + preceding rounds)
+        frame_images = all_frames[-5:] if len(all_frames) > 5 else all_frames
+        if frame_images:
+            print(f"[probe] party mode: attaching {len(frame_images)} TUI frame(s) as visual context")
+
     try:
         from agent import run_claude_agent, _is_benign_runtime_error, _should_retry_rate_limit
         import asyncio
@@ -1534,7 +1544,11 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
             try:
                 if attempt > 1:
                     print(f"[probe] party mode: retry attempt {attempt}/{max_retries}")
-                asyncio.run(run_claude_agent(prompt, project_dir, round_num=0, run_dir=run_dir, log_filename="party_conversation.md"))
+                asyncio.run(run_claude_agent(
+                    prompt, project_dir, round_num=0, run_dir=run_dir,
+                    log_filename="party_conversation.md",
+                    images=frame_images if frame_images else None,
+                ))
                 print("[probe] party mode: agent session completed successfully")
                 break
             except Exception as e:

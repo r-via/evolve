@@ -222,12 +222,57 @@ def _patch_sdk_parser() -> None:
         pass
 
 
+def _build_multimodal_prompt(text: str, images: list[Path]) -> object:
+    """Build an async iterable prompt with text and image content blocks.
+
+    Constructs a multimodal message for the Claude Agent SDK's ``query()``
+    function, combining the text prompt with base64-encoded PNG images.
+
+    Args:
+        text: The text prompt.
+        images: List of paths to PNG image files to attach.
+
+    Returns:
+        An async iterable yielding a single user message dict with
+        multimodal content blocks.
+    """
+    import base64
+
+    content: list[dict] = [{"type": "text", "text": text}]
+    for img_path in images:
+        if not img_path.is_file():
+            continue
+        try:
+            data = base64.standard_b64encode(img_path.read_bytes()).decode("ascii")
+            content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": data,
+                },
+            })
+        except (OSError, ValueError):
+            continue
+
+    async def _gen():
+        yield {
+            "type": "user",
+            "message": {"role": "user", "content": content},
+            "parent_tool_use_id": None,
+            "session_id": "party-mode",
+        }
+
+    return _gen()
+
+
 async def run_claude_agent(
     prompt: str,
     project_dir: Path,
     round_num: int = 1,
     run_dir: Path | None = None,
     log_filename: str | None = None,
+    images: list[Path] | None = None,
 ) -> None:
     """Run Claude Code agent with the given prompt. Logs conversation to run_dir/.
 
@@ -240,6 +285,8 @@ async def run_claude_agent(
         round_num: Current evolution round number (for log naming).
         run_dir: Directory to write the conversation log into.
         log_filename: Override the default log filename.
+        images: Optional list of image file paths to attach as multimodal
+            content blocks alongside the text prompt.
     """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -281,7 +328,12 @@ async def run_claude_agent(
         seen_text_hashes: set[int] = set()
 
         try:
-            async for message in query(prompt=prompt, options=options):
+            # Build multimodal prompt when images are provided
+            effective_prompt: str | object = prompt
+            if images:
+                effective_prompt = _build_multimodal_prompt(prompt, images)
+
+            async for message in query(prompt=effective_prompt, options=options):
                 if message is None:
                     continue
 

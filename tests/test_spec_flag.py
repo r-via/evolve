@@ -290,7 +290,7 @@ class TestRunPartyModeSpec:
         # Mock the agent to capture the prompt and create the proposal file
         captured_prompts = []
 
-        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None):
+        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None):
             captured_prompts.append(prompt)
             # Simulate agent creating the proposal file
             if run_dir:
@@ -323,7 +323,7 @@ class TestRunPartyModeSpec:
         ui = MagicMock()
         captured_prompts = []
 
-        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None):
+        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None):
             captured_prompts.append(prompt)
 
         with patch("agent.run_claude_agent", mock_agent), \
@@ -348,7 +348,7 @@ class TestRunPartyModeSpec:
 
         ui = MagicMock()
 
-        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None):
+        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None):
             # Simulate agent creating the proposal with the spec-derived name
             if run_dir:
                 (run_dir / "SPEC_proposal.md").write_text("# Proposal\n")
