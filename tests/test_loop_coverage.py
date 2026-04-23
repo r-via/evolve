@@ -356,6 +356,9 @@ class TestRunRounds:
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             convo = run_dir / f"conversation_loop_{round_num}.md"
             convo.write_text("# Round conversation")
+            # Simulate progress by adding a new unchecked item each round
+            existing = imp_path.read_text()
+            imp_path.write_text(existing + f"- [ ] [functional] new item {round_num}\n")
             return 0, "output", False
 
         with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
@@ -432,6 +435,141 @@ class TestRunRounds:
             )
         assert exc.value.code == 2
 
+    def test_zero_progress_improvements_unchanged(self, tmp_path: Path):
+        """Zero-progress when improvements.md is byte-identical to pre-round state."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+        diagnostics = []
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            # Create conversation log but do NOT modify improvements.md
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation with activity")
+            return 0, "output", False
+
+        def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
+            diagnostics.append(reason)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 2
+        # All retries should report improvements.md unchanged
+        assert any("improvements.md byte-identical" in d for d in diagnostics)
+        assert any("NO PROGRESS" in d for d in diagnostics)
+
+    def test_zero_progress_no_commit_msg(self, tmp_path: Path):
+        """Zero-progress when agent commits without writing COMMIT_MSG."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+        diagnostics = []
+
+        # Initialize git repo with a commit matching fallback pattern
+        import subprocess as sp
+        sp.run(["git", "init"], cwd=str(project_dir), capture_output=True)
+        sp.run(["git", "add", "-A"], cwd=str(project_dir), capture_output=True)
+        sp.run(
+            ["git", "commit", "-m", "chore(evolve): round 1"],
+            cwd=str(project_dir), capture_output=True,
+            env={**__import__("os").environ, "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@test.com",
+                 "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+        )
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            # Modify improvements.md so byte-identical check passes
+            existing = imp_path.read_text()
+            imp_path.write_text(existing + f"- [ ] [functional] item {round_num}\n")
+            return 0, "output", False
+
+        def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
+            diagnostics.append(reason)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 2
+        # Should detect fallback commit message
+        assert any("no COMMIT_MSG written" in d for d in diagnostics)
+        assert any("NO PROGRESS" in d for d in diagnostics)
+
+    def test_zero_progress_both_conditions(self, tmp_path: Path):
+        """Zero-progress reports both conditions when both are true."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+        diagnostics = []
+
+        # Initialize git repo with fallback commit pattern
+        import subprocess as sp
+        sp.run(["git", "init"], cwd=str(project_dir), capture_output=True)
+        sp.run(["git", "add", "-A"], cwd=str(project_dir), capture_output=True)
+        sp.run(
+            ["git", "commit", "-m", "chore(evolve): round 1"],
+            cwd=str(project_dir), capture_output=True,
+            env={**__import__("os").environ, "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@test.com",
+                 "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+        )
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            # Don't modify improvements.md and don't write COMMIT_MSG
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            return 0, "output", False
+
+        def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
+            diagnostics.append(reason)
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=1, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+            )
+        assert exc.value.code == 2
+        # Both conditions should be present in the diagnostic
+        assert any("no COMMIT_MSG written" in d and "improvements.md byte-identical" in d for d in diagnostics)
+
+    def test_zero_progress_not_triggered_on_real_progress(self, tmp_path: Path):
+        """Zero-progress detection does NOT trigger when improvements.md changes."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+        ui = self.ui
+
+        def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            convo = run_dir / f"conversation_loop_{round_num}.md"
+            convo.write_text("# Round conversation")
+            # Check off the improvement — real progress
+            imp_path.write_text("- [x] [functional] do something\n- [ ] [functional] next\n")
+            (run_dir / "CONVERGED").write_text("All done")
+            return 0, "output", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("loop._generate_evolution_report"), \
+             patch("loop._run_party_mode"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, ui,
+                start_round=1, max_rounds=10, check_cmd=None,
+                yolo=False, timeout=300, model="claude-opus-4-6",
+            )
+        # Should converge (exit 0), not trigger zero-progress
+        assert exc.value.code == 0
+
     def test_forever_mode_skips_failed_round(self, tmp_path: Path):
         """In forever mode, exhausted retries skip to next round."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
@@ -486,6 +624,8 @@ class TestRunRounds:
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             convo = run_dir / f"conversation_loop_{round_num}.md"
             convo.write_text("# Round conversation")
+            # Simulate progress by modifying improvements.md
+            imp_path.write_text("- [x] [functional] do something\n- [ ] [functional] next\n")
             return 0, "output", False
 
         with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \

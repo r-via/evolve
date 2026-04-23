@@ -822,6 +822,9 @@ def _run_rounds(
                 convo = run_dir / f"conversation_loop_{round_num}.md"
                 convo_size_before = convo.stat().st_size if convo.is_file() else 0
 
+                # Snapshot improvements.md bytes before subprocess for zero-progress detection
+                imp_snapshot_before = improvements_path.read_bytes() if improvements_path.is_file() else b""
+
                 returncode, output, stalled = _run_monitored_subprocess(
                     cmd, str(project_dir), ui, round_num,
                 )
@@ -849,21 +852,58 @@ def _run_rounds(
                     checked = _count_checked(improvements_path)
                     ui.progress_summary(checked, unchecked)
 
-                    made_progress = (
-                        checked != prev_checked
-                        or unchecked != prev_unchecked
-                        or (convo.is_file() and convo.stat().st_size > convo_size_before)
-                    )
-                    if made_progress:
-                        round_succeeded = True
-                        break
+                    # --- Zero-progress detection ---
+                    # 1. Check if improvements.md is byte-identical to pre-round snapshot
+                    imp_after = improvements_path.read_bytes() if improvements_path.is_file() else b""
+                    imp_unchanged = (imp_after == imp_snapshot_before)
 
-                    # No progress — save diagnostic for retry
-                    _save_subprocess_diagnostic(
-                        run_dir, round_num, cmd, output,
-                        reason="no progress (agent ran but changed nothing)",
-                        attempt=attempt,
-                    )
+                    # 2. Check if agent committed without COMMIT_MSG (fallback commit)
+                    no_commit_msg = False
+                    try:
+                        git_log_result = subprocess.run(
+                            ["git", "log", "-1", "--format=%s"],
+                            cwd=str(project_dir), capture_output=True, text=True, timeout=10,
+                        )
+                        if git_log_result.returncode == 0:
+                            last_commit_msg = git_log_result.stdout.strip()
+                            if last_commit_msg == f"chore(evolve): round {round_num}":
+                                no_commit_msg = True
+                    except (subprocess.TimeoutExpired, FileNotFoundError):
+                        pass
+
+                    # Either condition alone triggers zero-progress
+                    if no_commit_msg or imp_unchanged:
+                        no_progress_reasons: list[str] = []
+                        if no_commit_msg:
+                            no_progress_reasons.append(
+                                "no COMMIT_MSG written (fallback commit message)"
+                            )
+                        if imp_unchanged:
+                            no_progress_reasons.append(
+                                "improvements.md byte-identical to pre-round state"
+                            )
+                        reason_str = " AND ".join(no_progress_reasons)
+                        _save_subprocess_diagnostic(
+                            run_dir, round_num, cmd, output,
+                            reason=f"NO PROGRESS: {reason_str}",
+                            attempt=attempt,
+                        )
+                    else:
+                        made_progress = (
+                            checked != prev_checked
+                            or unchecked != prev_unchecked
+                            or (convo.is_file() and convo.stat().st_size > convo_size_before)
+                        )
+                        if made_progress:
+                            round_succeeded = True
+                            break
+
+                        # No progress — save diagnostic for retry
+                        _save_subprocess_diagnostic(
+                            run_dir, round_num, cmd, output,
+                            reason="no progress (agent ran but changed nothing)",
+                            attempt=attempt,
+                        )
 
                 # Fire on_error hook for failed round
                 fire_hook(hooks, "on_error", session=session_name, round_num=round_num, status="error")

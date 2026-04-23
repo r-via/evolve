@@ -141,7 +141,18 @@ leave it unchecked. The operator must re-run with --yolo to allow it."""
     target_section = f"Current target improvement: {current}" if current else "No improvements yet — create initial runs/improvements.md based on your analysis."
     memory_section = f"\n## Memory (errors from previous rounds — do NOT repeat these)\n{memory}\n" if memory else ""
     prev_check_section = f"\n## Previous round check results\n{prev_check}\n" if prev_check else ""
-    prev_crash_section = f"\n## CRITICAL — Previous round CRASHED (fix this first!)\n```\n{prev_crash}\n```\n" if prev_crash else ""
+    if prev_crash:
+        if "NO PROGRESS" in prev_crash:
+            prev_crash_section = (
+                f"\n## CRITICAL — Previous round made NO PROGRESS\n"
+                f"The previous round ended without making meaningful changes. "
+                f"Start with Edit/Write immediately and defer exploration.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
+        else:
+            prev_crash_section = f"\n## CRITICAL — Previous round CRASHED (fix this first!)\n```\n{prev_crash}\n```\n"
+    else:
+        prev_crash_section = ""
 
     check_section = ""
     if check_cmd and check_output:

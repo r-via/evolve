@@ -460,6 +460,36 @@ class TestBuildPromptCrashLogs:
         assert "CRITICAL" in prompt
         assert "Crashed: exit code 1" in prompt
 
+    def test_no_progress_log_uses_no_progress_header(self, tmp_path: Path):
+        """NO PROGRESS diagnostic uses 'Previous round made NO PROGRESS' header."""
+        (tmp_path / "README.md").write_text("# P")
+        (tmp_path / "runs").mkdir()
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir()
+        (run_dir / "subprocess_error_round_1.txt").write_text(
+            "Round 1 — NO PROGRESS: improvements.md byte-identical (attempt 1)"
+        )
+        prompt = build_prompt(tmp_path, run_dir=run_dir)
+        assert "CRITICAL" in prompt
+        assert "Previous round made NO PROGRESS" in prompt
+        assert "Start with Edit/Write immediately" in prompt
+        # Should NOT contain CRASHED header
+        assert "Previous round CRASHED" not in prompt
+
+    def test_crash_log_uses_crashed_header(self, tmp_path: Path):
+        """Regular crash diagnostic uses 'Previous round CRASHED' header."""
+        (tmp_path / "README.md").write_text("# P")
+        (tmp_path / "runs").mkdir()
+        run_dir = tmp_path / "runs" / "session"
+        run_dir.mkdir()
+        (run_dir / "subprocess_error_round_1.txt").write_text(
+            "Round 1 — crashed (exit code 1) (attempt 1)"
+        )
+        prompt = build_prompt(tmp_path, run_dir=run_dir)
+        assert "CRITICAL" in prompt
+        assert "Previous round CRASHED" in prompt
+        assert "Previous round made NO PROGRESS" not in prompt
+
     def test_multiple_check_results_picks_latest(self, tmp_path: Path):
         """When multiple check results exist, picks the highest round number."""
         (tmp_path / "README.md").write_text("# P")
