@@ -198,9 +198,9 @@ niceties.
 *(This section applies only when `--spec` points at a file other than
 `README.md`. When `README.md` IS the spec, there is nothing to sync.)*
 
-### Mechanism A — Pre-convergence README audit (soft gate)
+### Mechanism A — Pre-convergence README audit
 
-Before writing `CONVERGED`, the agent runs a lightweight audit:
+Before the convergence gate runs, the agent invokes a lightweight audit:
 
 1. Extract user-visible claims from the spec: every CLI flag, every
    subcommand, every documented environment variable, every section under
@@ -212,13 +212,35 @@ Before writing `CONVERGED`, the agent runs a lightweight audit:
 3. For each gap found, **append a new item to `improvements.md`** of the
    form: `[ ] [functional] README sync: mention <claim> in <README section>
    (documented in <spec file> § <section> but absent from README.md)`.
-4. The audit **does not block convergence**. If every other gate passes,
-   `CONVERGED` is still written — the sync items become the first targets
-   of the next evolution cycle.
+4. The items are treated like any other `[ ]` entry: the convergence gate
+   (§ "Convergence") blocks `CONVERGED` until they are addressed. There is
+   **no exemption** — README sync gaps are real gaps between the spec and
+   what a user sees, and they must be closed before party mode brainstorms
+   the next evolution. Party mode on an un-synced README would propose
+   improvements against documentation that already lies about the current
+   state of the project.
+
+**Idempotency is mandatory.** The audit may re-run many times before the
+queue drains. Before appending each item, the agent MUST scan existing
+pending items in `improvements.md` for the same `README sync: mention X`
+phrase (same `<claim>`); if found, do **not** add a duplicate. This is
+what makes Mechanism A a convergence-compatible blocker rather than a
+source of infinite churn: round N queues 10 gaps, round N+1 fixes one
+and re-audits finding 9 (no duplicates queued), …, round N+10 finds 0
+gaps, convergence proceeds.
 
 The audit is intentionally a `grep`-level heuristic, not a claim-by-claim
 revalidation. Being cheap is what lets it run every round without budget
-concerns.
+concerns. The idempotency contract (phrase-level dedup) is the only state
+the audit keeps between runs.
+
+**Escape hatch for intrinsically-unsyncable claims.** Rarely, a spec claim
+is legitimately not worth mentioning in the user-facing README (internal
+byte constants, implementation details leaked into the spec as contracts,
+etc.). Such an item can be checked off with a `[wontfix-sync: <reason>]`
+suffix — it counts as resolved for the convergence gate, and the reason
+survives for future audits to skip the same phrase. This is the only
+sanctioned way a sync item leaves the queue without a real README edit.
 
 ### Mechanism B — Party mode produces a README proposal too
 
@@ -284,9 +306,11 @@ notice before it becomes too large to fix in one round.
 
 The three mechanisms compose cleanly with the two convergence gates:
 
-- Mechanism A ensures convergence is reached with a **queue of known sync
-  items**, not a silent debt. These items appear in `improvements.md` and
-  are the first targets of the next cycle.
+- Mechanism A ensures convergence is **gated on** the sync queue: every
+  gap it finds becomes a regular `[ ]` item that blocks `CONVERGED` until
+  fixed. Idempotency (phrase-level dedup) prevents re-queueing the same
+  gap every round, so the queue drains monotonically — no infinite
+  churn.
 - Mechanism B ensures autonomous evolutions produce both docs together —
   the drift never enters the system in the first place.
 - Mechanism C ensures the drift, if any, is visible in real time.
