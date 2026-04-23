@@ -12,15 +12,72 @@ claims; the user-facing text follows once the claim is stable.
 
 ## Architecture
 
-Evolve is organized into five modules with clear responsibilities:
+Evolve is organized as a Python package (`evolve/`) with clear module
+responsibilities:
 
 | Module | Responsibility |
 |--------|---------------|
-| `evolve.py` | CLI entry point, argument parsing, config resolution |
-| `loop.py` | Evolution orchestrator — monitored subprocesses, watchdog, debug retries, party mode |
-| `agent.py` | Claude SDK interface — prompt building, agent execution, retry logic |
-| `tui.py` | Terminal UI — `TUIProtocol` with Rich, Plain, and JSON implementations |
-| `hooks.py` | Event hooks — loading config, matching events, fire-and-forget execution |
+| `evolve/cli.py` | CLI entry point, argument parsing, config resolution |
+| `evolve/orchestrator.py` | Round lifecycle, subprocess monitoring, watchdog, debug retries |
+| `evolve/agent.py` | Claude SDK interface — prompt building, agent execution, retry logic |
+| `evolve/git.py` | Git operations — commit, push, branch management, ensure-git |
+| `evolve/state.py` | State management — state.json, improvements parsing, convergence gates, backlog discipline |
+| `evolve/party.py` | Party mode orchestration — multi-agent brainstorming, proposal generation |
+| `evolve/tui/__init__.py` | TUI protocol definition and `get_tui` factory |
+| `evolve/tui/rich.py` | Rich-based TUI implementation with frame capture |
+| `evolve/tui/plain.py` | Plain-text fallback TUI |
+| `evolve/tui/json.py` | Structured JSON output TUI for CI/CD |
+| `evolve/hooks.py` | Event hooks — loading config, matching events, fire-and-forget execution |
+| `evolve/costs.py` | Token tracking, cost estimation, budget enforcement |
+
+### Package structure
+
+The project uses a standard Python package layout:
+
+```
+evolve/
+├── __init__.py           # package marker, re-exports for backward compat
+├── cli.py                # CLI entry point (was evolve.py)
+├── orchestrator.py       # round lifecycle (extracted from loop.py)
+├── agent.py              # Claude SDK interface (was agent.py)
+├── git.py                # git operations (extracted from loop.py)
+├── state.py              # state/convergence logic (extracted from loop.py)
+├── party.py              # party mode (extracted from loop.py)
+├── hooks.py              # event hooks (was hooks.py)
+├── costs.py              # token tracking and cost estimation (new)
+└── tui/
+    ├── __init__.py       # TUIProtocol + get_tui factory (was tui.py)
+    ├── rich.py           # RichTUI with frame capture
+    ├── plain.py          # PlainTUI fallback
+    └── json.py           # JsonTUI for CI/CD
+```
+
+The `pyproject.toml` entry point is `evolve.cli:main`. The package is
+installed via `pip install .` and the `evolve` command is available globally.
+
+**Backward compatibility.** During the migration from flat modules to the
+package structure, root-level shim files (`loop.py`, `agent.py`, `tui.py`,
+`hooks.py`) re-export all public names from their new locations via
+`from evolve.orchestrator import *` etc. These shims exist for one release
+cycle and emit `DeprecationWarning` on import. They will be removed in a
+future version.
+
+**Migration strategy.** The restructuring is designed to work within evolve's
+"one granular improvement per round" model:
+
+1. Create `evolve/` package skeleton with `__init__.py`
+2. Move `hooks.py` first (smallest module, fewest dependencies)
+3. Extract `git.py` from `loop.py` (self-contained git operations)
+4. Extract `state.py` from `loop.py` (state management, convergence gates)
+5. Extract `party.py` from `loop.py` (party mode orchestration)
+6. Split `tui.py` into `tui/` subpackage
+7. Move `agent.py` into the package
+8. Move `evolve.py` → `evolve/cli.py`, update entry point
+9. Remaining `loop.py` → `evolve/orchestrator.py`
+10. Remove root-level shims once all imports updated
+
+Each step is one round. Tests and imports are updated in the same round as
+each move.
 
 ### Config resolution
 
@@ -82,10 +139,12 @@ processes are automatically detected and killed.
 │   │   ├── conversation_loop_1_attempt_1.md   # per-attempt log when retries occur
 │   │   ├── conversation_loop_1_attempt_2.md
 │   │   ├── check_round_1.txt          # post-fix check results
+│   │   ├── usage_round_1.json         # per-round token usage
 │   │   ├── subprocess_error_round_3.txt  # diagnostic from crashed/stalled round
 │   │   ├── evolution_report.md        # post-session summary with timeline
 │   │   ├── dry_run_report.md          # (dry-run only) read-only analysis
 │   │   ├── validate_report.md         # (validate only) spec compliance report
+│   │   ├── diff_report.md             # (diff only) spec compliance delta
 │   │   ├── COMMIT_MSG                 # (transient) commit message from opus
 │   │   ├── frames/                    # (optional) captured TUI frames (PNG)
 │   │   │   ├── round_1_end.png
@@ -138,8 +197,10 @@ Each round — one improvement at a time:
 11. Git commit + push
 12. Fire event hooks (on_round_end)
 13. Orchestrator re-runs check → saves check_round_N.txt
-14. Write updated state.json
-15. Next round starts as fresh subprocess (reloaded code)
+14. Orchestrator reads usage_round_N.json → updates cumulative token counts
+15. Write updated state.json (including usage and cost fields)
+16. Check --max-cost budget — if cumulative cost exceeds budget, pause session
+17. Next round starts as fresh subprocess (reloaded code)
 
 --- watchdog & debug retry ---
 
@@ -153,13 +214,13 @@ the orchestrator:
 
 --- after convergence ---
 
-16. Fire on_converged hook
-17. Party mode: all agents brainstorm next evolution
-18. Agents produce:
+18. Fire on_converged hook
+19. Party mode: all agents brainstorm next evolution
+20. Agents produce:
     - party_report.md — full discussion log with each agent's reasoning
     - <spec>_proposal.md — proposed updated spec (filename derived from --spec)
-19. Operator reviews both files
-20. If approved (or in --forever mode): replace SPEC.md → new evolution loop
+21. Operator reviews both files
+22. If approved (or in --forever mode): replace SPEC.md → new evolution loop
 ```
 
 ---
@@ -474,6 +535,8 @@ Each line is a JSON object with a `type`, `timestamp`, and event-specific fields
 {"type": "improvement_completed", "timestamp": "2026-03-24T16:02:00Z", "description": "Add input validation"}
 {"type": "converged", "timestamp": "2026-03-24T16:05:00Z", "round": 3, "reason": "All spec claims verified"}
 {"type": "hook_fired", "timestamp": "2026-03-24T16:05:01Z", "event": "on_converged", "success": true}
+{"type": "usage", "timestamp": "2026-03-24T16:02:01Z", "round": 1, "input_tokens": 45230, "output_tokens": 12400, "estimated_cost_usd": 1.24}
+{"type": "budget_reached", "timestamp": "2026-03-24T16:10:00Z", "budget_usd": 10.0, "spent_usd": 10.24}
 ```
 
 The `JsonTUI` class implements the same `TUIProtocol` as `RichTUI` and
@@ -497,6 +560,56 @@ detection). The name was chosen over the older `--yolo` precisely because
 deprecated aliases for one release cycle. They behave identically to
 `--allow-installs` but emit a `DeprecationWarning` to stderr pointing at the
 new name. They will be removed in a future version.
+
+### The --max-cost flag
+
+Budget cap for a session's estimated API cost. When the cumulative estimated
+cost exceeds the budget, the session pauses gracefully after the current
+round completes (the in-progress round is never interrupted mid-work).
+
+```bash
+--max-cost 10.00    # Pause after ~$10.00 estimated spend
+--max-cost 50       # Pause after ~$50.00
+```
+
+Also configurable via `evolve.toml`:
+
+```toml
+[tool.evolve]
+max_cost_usd = 10.0
+```
+
+And `EVOLVE_MAX_COST` environment variable. Resolution order is standard:
+CLI → env → `evolve.toml` → `pyproject.toml` → default.
+
+**Default: no budget cap** (unset). When unset, the session runs until
+convergence or `max_rounds`, whichever comes first. Setting a budget does
+not change any other behavior — rounds, convergence gates, and retries all
+work identically.
+
+**How it works:**
+
+1. After each round, the orchestrator reads `usage_round_N.json` and
+   accumulates the session's token counts
+2. The cost estimation function converts tokens to estimated USD using the
+   model's rate (see § "Cost estimation")
+3. If cumulative estimated cost exceeds `--max-cost`, the session pauses:
+   - Writes `state.json` with `status: "budget_reached"`
+   - Fires `on_error` hook with `EVOLVE_STATUS=budget_reached`
+   - Prints a clear TUI panel explaining the budget was reached
+   - Exits with code 1 (same as max rounds — work remains)
+4. The operator can resume with `--resume` and a higher `--max-cost`
+
+**Budget-reached TUI message:**
+
+```
+╭──────────── Budget Reached ─────────────╮
+│ ⚠️  Session paused at round 5           │
+│ Budget: $10.00 / Used: $10.24            │
+│ Use --resume with a higher --max-cost    │
+│ to continue                              │
+╰──────────────────────────────────────────╯
+```
 
 ### `evolve sync-readme`
 
@@ -558,11 +671,165 @@ intentional: it keeps the two concerns orthogonal and avoids the
 failure mode where automated sync creates silent drift between user
 docs and actual behavior.
 
+### `evolve diff`
+
+One-shot subcommand that shows the delta between the current spec and the
+implementation. Lighter-weight than `--validate` — focused on quickly
+identifying gaps rather than exhaustive claim-by-claim verification.
+
+```bash
+evolve diff [<project-dir>] [--spec SPEC.md]
+```
+
+**How it works:**
+
+1. Loads the spec file (same resolution as every other flag)
+2. Launches the agent in read-only mode with `--effort low` and a
+   gap-detection prompt: *"Scan the spec for major features and
+   architectural claims. For each one, check whether it is present in
+   the codebase. Report gaps — do not verify exhaustively."*
+3. Produces `runs/<session>/diff_report.md` with:
+   - Each major spec section with ✅ (present) or ❌ (missing)
+   - Overall compliance percentage
+   - Specific gaps identified with brief descriptions
+4. No files are modified, no git commits are created
+
+**Exit codes:**
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 0 | All major spec sections present — compliant |
+| 1 | One or more gaps found |
+| 2 | Error — spec file missing, agent failure, etc. |
+
+**Differences from `--validate`:**
+- Uses `--effort low` by default (cheaper, faster)
+- Checks for presence/absence of major features, not line-by-line verification
+- Does not run the check command
+- Produces a shorter, more actionable report
+- Designed for quick "how far are we?" checks, not formal validation
+
 ### Project-specific prompts
 
 Projects can override the default system prompt by creating
 `prompts/evolve-system.md` in their project directory. Evolve will use it
 instead of the default.
+
+---
+
+## Cost and token tracking
+
+Every round produces a `usage_round_N.json` file in the session directory
+containing raw token counts from the Claude Agent SDK response. The
+orchestrator aggregates these into per-session totals in `state.json` and
+`evolution_report.md`.
+
+### Token usage capture
+
+The agent writes `usage_round_N.json` at the end of each round:
+
+```json
+{
+  "round": 3,
+  "model": "claude-opus-4-6",
+  "input_tokens": 45230,
+  "output_tokens": 12400,
+  "cache_creation_tokens": 8200,
+  "cache_read_tokens": 38100,
+  "timestamp": "2026-04-24T16:02:01Z"
+}
+```
+
+The `TokenUsage` dataclass in `costs.py` encapsulates these fields and
+supports addition (accumulating per-round usage into session totals).
+
+### Cost estimation
+
+The `estimate_cost` function in `costs.py` converts token counts to estimated
+USD using a built-in rate table for known Claude models:
+
+```python
+# Built-in rates (updated periodically)
+RATES = {
+    "claude-opus-4-6":          {"input": 15.0, "output": 75.0, "cache_read": 1.5},
+    "claude-sonnet-4-20250514": {"input": 3.0,  "output": 15.0, "cache_read": 0.3},
+}
+# Rates are per 1M tokens
+```
+
+When the model is not in the rate table, token counts are still tracked
+and displayed, but cost estimation shows `"unknown"` instead of a dollar
+amount. This is a presentation concern, not a data loss — the raw token
+counts are always available in `usage_round_N.json` and `state.json`.
+
+**Custom rates.** Projects can override rates in `evolve.toml`:
+
+```toml
+[tool.evolve.rates]
+input_per_1m = 15.0
+output_per_1m = 75.0
+cache_read_per_1m = 1.5
+```
+
+These override the built-in rates for the configured model, allowing
+evolve to estimate costs for new models or custom pricing tiers before
+the built-in table is updated.
+
+### Aggregation in state.json
+
+`state.json` includes a `usage` object updated after every round:
+
+```json
+{
+  "version": 2,
+  "usage": {
+    "total_input_tokens": 234500,
+    "total_output_tokens": 87200,
+    "total_cache_creation_tokens": 42000,
+    "total_cache_read_tokens": 189000,
+    "estimated_cost_usd": 12.40,
+    "rounds_tracked": 8
+  }
+}
+```
+
+### Cost in evolution report
+
+`evolution_report.md` includes a "Cost Summary" section:
+
+```markdown
+## Cost Summary
+| Round | Input Tokens | Output Tokens | Cache Hits | Est. Cost |
+|-------|-------------|---------------|------------|-----------|
+| 1     | 45,230      | 12,400        | 38,100     | $1.24     |
+| 2     | 52,100      | 15,800        | 41,200     | $1.56     |
+...
+**Total: ~$12.40** (claude-opus-4-6)
+```
+
+### TUI cost display
+
+Cost information appears in two places in the TUI:
+
+1. **Per-round header** — estimated cost for the current session so far:
+   ```
+   ╭──────────────────── evolve ─────────────────────╮
+   │ EVOLUTION ROUND 3/10                     ~$3.80 │
+   ```
+
+2. **Completion summary** — total session cost:
+   ```
+   ╭──────────── Evolution Complete ─────────────╮
+   │ ✅ CONVERGED in 8 rounds (12m 34s)          │
+   │                                              │
+   │ 6 improvements completed                    │
+   │ 47 tests passing                            │
+   │ ~$12.40 estimated cost                       │
+   ╰──────────────────────────────────────────────╯
+   ```
+
+`PlainTUI` shows cost as a simple text line. `JsonTUI` emits
+`{"type": "usage", ...}` events (see § "The --json flag").
 
 ---
 
@@ -796,8 +1063,7 @@ instructing it to start with Edit/Write immediately and defer exploration.
 ### Per-turn cap as a granularity forcing function
 
 The Claude Agent SDK's `max_turns` parameter is set to a deliberately modest
-value (currently `40`, see [agent.py:216](agent.py#L216) and
-[agent.py:587](agent.py#L587)). This is not primarily a safety bound — the
+value (currently `40`). This is not primarily a safety bound — the
 120s watchdog plays that role — but a forcing function that makes evolve's
 core concept ("one granular improvement per round") observable. An item that
 does not fit in 40 turns is a signal the item is too large and should be
@@ -951,7 +1217,7 @@ on_error = "notify-send 'evolve error'"
 | `on_round_start` | A new round begins |
 | `on_round_end` | A round completes successfully |
 | `on_converged` | The project reaches convergence |
-| `on_error` | A round fails (crash, stall, or check failure) |
+| `on_error` | A round fails (crash, stall, check failure, or budget reached) |
 
 **Hook execution model:**
 - Hooks run as fire-and-forget subprocesses with a 30-second timeout
@@ -970,7 +1236,7 @@ dashboards, monitoring):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "session": "20260325_153156",
   "project": "my-tool",
   "round": 5,
@@ -978,14 +1244,36 @@ dashboards, monitoring):
   "phase": "improvement",
   "status": "running",
   "improvements": {"done": 12, "remaining": 3, "blocked": 1},
+  "backlog": {
+    "pending": 3,
+    "done": 12,
+    "blocked": 1,
+    "added_this_round": 0,
+    "growth_rate_last_5_rounds": -0.6
+  },
+  "usage": {
+    "total_input_tokens": 234500,
+    "total_output_tokens": 87200,
+    "total_cache_creation_tokens": 42000,
+    "total_cache_read_tokens": 189000,
+    "estimated_cost_usd": 12.40,
+    "rounds_tracked": 5
+  },
   "last_check": {"passed": true, "tests": 143, "duration_s": 1.3},
   "started_at": "2026-03-25T15:31:56Z",
   "updated_at": "2026-03-25T16:05:00Z"
 }
 ```
 
-The `status` field can be: `running`, `converged`, `max_rounds`, `error`, or
-`party_mode`. The schema is versioned for forward compatibility.
+The `status` field can be: `running`, `converged`, `max_rounds`, `error`,
+`party_mode`, or `budget_reached`. The schema is versioned for forward
+compatibility.
+
+**Schema versioning.** `state.json` uses a `version` field to signal
+breaking schema changes. Version 1 is the original schema (no `usage` or
+`backlog` fields). Version 2 adds `usage` and `backlog`. External consumers
+should ignore unknown keys for forward compatibility — the version bump is
+for consumers that need to know which fields are guaranteed present.
 
 ---
 
@@ -1008,15 +1296,25 @@ After each session completes (converged or max rounds reached), evolve writes
 | 2 | feat: add input validation | validator.py, parser.py | 43→47 |
 ...
 
+## Cost Summary
+| Round | Input Tokens | Output Tokens | Cache Hits | Est. Cost |
+|-------|-------------|---------------|------------|-----------|
+| 1     | 45,230      | 12,400        | 38,100     | $1.24     |
+| 2     | 52,100      | 15,800        | 41,200     | $1.56     |
+...
+**Total: ~$12.40** (claude-opus-4-6)
+
 ## Summary
 - 6 improvements completed
 - 2 bugs fixed
 - 12 files modified
+- ~$12.40 estimated API cost
 ```
 
-The report is generated by parsing conversation logs, commit messages, and
-check results from the session directory. It serves both human review
-(post-session summary) and CI/CD integration (PR description content).
+The report is generated by parsing conversation logs, commit messages,
+check results, and usage files from the session directory. It serves both
+human review (post-session summary) and CI/CD integration (PR description
+content).
 
 ---
 
@@ -1031,7 +1329,9 @@ to plain text when `rich` is not installed).
 - Real-time agent activity feed (tools used, files edited)
 - Check command results with pass/fail indicators
 - Git commit + push status
-- Completion summary panel on exit
+- Per-round estimated cost display in round headers
+- Completion summary panel on exit (including total cost)
+- Budget-reached panel when `--max-cost` is exceeded
 - Graceful fallback to plain text when `rich` is not installed
 - TUI interface enforced via Protocol — `RichTUI`, `PlainTUI`, and `JsonTUI`
   all implement the same `TUIProtocol`, guaranteeing method parity at
@@ -1127,6 +1427,8 @@ After convergence, all agents from `agents/` brainstorm the next evolution.
   `capture_frames = true`). The last 3-5 PNGs covering the final rounds +
   convergence are attached to each agent's prompt as image blocks, giving them
   visual context for the run.
+- Session cost summary from `state.json` `usage` field — agents can factor
+  cost efficiency into their next-cycle proposals
 
 **Outputs:**
 - `party_report.md` — full discussion explaining each agent's reasoning
@@ -1166,7 +1468,7 @@ Types: `fix`, `feat`, `refactor`, `perf`, `docs`, `test`, `chore`
 | Exit Code | Meaning |
 |-----------|---------|
 | 0 | Converged — project fully matches spec |
-| 1 | Max rounds reached — improvements remain |
+| 1 | Max rounds reached or budget reached — improvements remain |
 | 2 | Error — agent failure, missing deps, or invalid args |
 
 ```bash
@@ -1218,7 +1520,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          evolve start . --check "pytest" --rounds 20 --json > evolve-output.jsonl
+          evolve start . --check "pytest" --rounds 20 --max-cost 50 --json > evolve-output.jsonl
           echo "EXIT_CODE=$?" >> $GITHUB_ENV
 
       - name: Create PR on convergence
@@ -1263,31 +1565,61 @@ Evolve has its own test suite. Run it with pytest:
 pytest tests/
 
 # Run with coverage
-pytest tests/ --cov=. --cov-report=term-missing
+pytest tests/ --cov=evolve --cov-report=term-missing
 ```
 
 ### Test coverage target
 
-The project targets **80% test coverage** minimum. Current coverage should be
+The project targets **95% test coverage** minimum. Current coverage should be
 verified before merging any changes:
 
 ```bash
-pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=80
+pytest tests/ --cov=evolve --cov-report=term-missing --cov-fail-under=95
 ```
+
+Agent.py specifically targets 95%+ coverage. The gap in prior cycles was
+the SDK interaction paths — `analyze_and_fix` core loop, party agent async
+runner, and sync-readme agent. These are covered by mocking the `ClaudeAgent`
+boundary with a fixture that yields controlled tool-use sequences, rather
+than requiring a live API key.
 
 ### Test structure
 
 ```
 tests/
-├── test_loop.py            # _is_needs_package, counters, _get_current_improvement, _detect_last_round, _count_blocked
-├── test_loop_extended.py   # _git_commit, _run_monitored_subprocess, _save_subprocess_diagnostic, resume, reports
-├── test_agent.py           # build_prompt, error helpers, retry logic
-├── test_tui.py             # factory function, TUI Protocol parity, JsonTUI
-├── test_evolve.py          # CLI arg parsing, _show_status, config resolution, init, clean, history
-└── test_hooks.py           # hook loading, event matching, execution, timeout, failure handling
+├── test_orchestrator.py    # round lifecycle, subprocess monitoring, watchdog
+├── test_agent.py           # build_prompt, error helpers, retry logic, SDK mock
+├── test_git.py             # git operations, commit, push, branch management
+├── test_state.py           # state.json, improvements parsing, convergence gates
+├── test_party.py           # party mode orchestration
+├── test_tui.py             # TUI Protocol parity, RichTUI, PlainTUI, JsonTUI
+├── test_cli.py             # CLI arg parsing, config resolution, subcommands
+├── test_hooks.py           # hook loading, event matching, execution, timeout
+├── test_costs.py           # token tracking, cost estimation, budget enforcement
+├── test_smoke.py           # end-to-end smoke test (one round against trivial project)
+└── ...
 ```
 
 Tests cover all pure utility functions without requiring the Claude SDK.
 Integration tests that need the SDK use mocked responses. Error-path tests
 verify graceful degradation under failure conditions (corrupted files,
 timeouts, missing dependencies).
+
+### End-to-end smoke test
+
+`test_smoke.py` contains a single test that exercises the full pipeline:
+creates a temporary git repo with a 3-file Python project and a spec that
+has one deliberate gap, runs `evolve start --rounds 1 --check "pytest"` with
+a mocked Claude agent that makes a single edit, and verifies that
+`improvements.md` was updated, `state.json` was written, and the check
+command passed. This catches regressions in the full subprocess → agent →
+git → state pipeline that unit tests miss.
+
+### Path-agnostic drift tests
+
+Constant-drift tests (`test_constant_drift.py`) and spec-prompt-sync tests
+(`test_spec_prompt_sync.py`) scan source files for magic strings and
+invariants. These tests use dynamic package discovery (`importlib` or
+`glob`) to find source files rather than hardcoding paths like `"loop.py"`.
+This ensures the tests survive the package restructuring without per-file
+updates.
