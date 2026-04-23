@@ -64,3 +64,6 @@ mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). A
 
 ### Memory-discipline rewrite: static vs runtime header drift — round 9 of 20260423_142834
 `prompts/system.md` § Memory now says log broad (errors, decisions, surprises, patterns, insights). BUT `agent.py:223` still injects `## Memory (errors from previous rounds — do NOT repeat these)` — contradicts broadened policy. Static template ≠ runtime section header; both must move together or discipline doesn't land.
+
+### Memory-wipe sanity gate: snapshot-timing trap — round 10 of 20260423_142834
+`mem_size_before` captured BEFORE `_run_monitored_subprocess` → mock writes inside mock don't affect it. On retry-attempt 2, pre-snapshot = already-wiped state → shrink not re-detected. Test asserts only that `MEMORY WIPED:` appears in diagnostics list, not exit code — retry may recover via `unchecked != prev_unchecked`. Use `MEMORY WIPED` prefix (not `NO PROGRESS`) so `agent.py` picks correct header branch.

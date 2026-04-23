@@ -1292,6 +1292,16 @@ def _run_rounds(
                 # Snapshot improvements.md bytes before subprocess for zero-progress detection
                 imp_snapshot_before = improvements_path.read_bytes() if improvements_path.is_file() else b""
 
+                # Snapshot memory.md byte size before subprocess for the
+                # memory-wipe sanity gate.  If the agent shrinks memory.md
+                # by more than 50% in a single round without explicitly
+                # declaring `memory: compaction` in its commit message, we
+                # treat it as a silent wipe and trigger a debug retry
+                # (same family as zero-progress detection).  See
+                # SPEC.md § "memory.md" — "Byte-size sanity gate".
+                memory_path = project_dir / "runs" / "memory.md"
+                mem_size_before = memory_path.stat().st_size if memory_path.is_file() else 0
+
                 returncode, output, stalled = _run_monitored_subprocess(
                     cmd, str(project_dir), ui, round_num,
                 )
@@ -1338,8 +1348,32 @@ def _run_rounds(
                     except (subprocess.TimeoutExpired, FileNotFoundError):
                         pass
 
-                    # Either condition alone triggers zero-progress
-                    if no_commit_msg or imp_unchanged:
+                    # 3. Memory-wipe sanity gate: detect silent wipes of
+                    #    memory.md.  A >50% shrink without an explicit
+                    #    "memory: compaction" line in the commit message
+                    #    is treated as a wipe and triggers a retry.  This
+                    #    catches agents that "compact" memory.md by
+                    #    emptying sections they couldn't read.
+                    mem_size_after = memory_path.stat().st_size if memory_path.is_file() else 0
+                    memory_wiped = False
+                    if mem_size_before > 0 and mem_size_after * 2 < mem_size_before:
+                        commit_body = ""
+                        try:
+                            git_body_result = subprocess.run(
+                                ["git", "log", "-1", "--format=%B"],
+                                cwd=str(project_dir), capture_output=True, text=True, timeout=10,
+                            )
+                            if git_body_result.returncode == 0:
+                                commit_body = git_body_result.stdout
+                        except (subprocess.TimeoutExpired, FileNotFoundError):
+                            # Can't read commit body — treat the shrink as
+                            # a wipe to stay on the safe side.
+                            commit_body = ""
+                        if "memory: compaction" not in commit_body:
+                            memory_wiped = True
+
+                    # Any condition alone triggers zero-progress / memory-wipe retry
+                    if no_commit_msg or imp_unchanged or memory_wiped:
                         no_progress_reasons: list[str] = []
                         if no_commit_msg:
                             no_progress_reasons.append(
@@ -1349,10 +1383,20 @@ def _run_rounds(
                             no_progress_reasons.append(
                                 "improvements.md byte-identical to pre-round state"
                             )
+                        if memory_wiped:
+                            no_progress_reasons.append(
+                                f"memory.md shrunk by >50% "
+                                f"({mem_size_before}\u2192{mem_size_after} bytes) "
+                                "without 'memory: compaction' in commit message"
+                            )
                         reason_str = " AND ".join(no_progress_reasons)
+                        # Memory-wipe takes priority in the diagnostic
+                        # prefix so the agent's prompt builder can render
+                        # the dedicated "silently wiped memory.md" header.
+                        prefix = "MEMORY WIPED" if memory_wiped else "NO PROGRESS"
                         _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
-                            reason=f"NO PROGRESS: {reason_str}",
+                            reason=f"{prefix}: {reason_str}",
                             attempt=attempt,
                         )
                     else:

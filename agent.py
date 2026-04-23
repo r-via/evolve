@@ -223,7 +223,18 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     memory_section = f"\n## Memory (errors from previous rounds — do NOT repeat these)\n{memory}\n" if memory else ""
     prev_check_section = f"\n## Previous round check results\n{prev_check}\n" if prev_check else ""
     if prev_crash:
-        if "NO PROGRESS" in prev_crash:
+        if "MEMORY WIPED" in prev_crash:
+            prev_crash_section = (
+                f"\n## CRITICAL — Previous round silently wiped memory.md\n"
+                f"The previous round shrank memory.md by more than 50% "
+                f"without declaring `memory: compaction` in its commit "
+                f"message. Memory is append-only below ~500 lines; "
+                f"compaction requires the explicit COMMIT_MSG marker. "
+                f"Do NOT repeat this — preserve existing entries and "
+                f"append, do not rewrite or wipe sections.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
+        elif "NO PROGRESS" in prev_crash:
             prev_crash_section = (
                 f"\n## CRITICAL — Previous round made NO PROGRESS\n"
                 f"The previous round ended without making meaningful changes. "
