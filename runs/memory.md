@@ -79,3 +79,6 @@ mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). A
 
 ### state.json: `backlog` added BESIDE `improvements`, not replacing — round 15 of 20260423_142834
 SPEC § "Growth monitoring" documents `state.backlog.{pending,done,blocked,added_this_round,growth_rate_last_5_rounds}`. Kept legacy `state.improvements.{done,remaining,blocked}` because 8+ existing tests assert its exact shape (`test_loop.py:523` etc.). `pending` ≡ `remaining` — same value, two keys for back-compat. Don't dedup until callers are migrated.
+
+### Rules 2-4 are prompt-only — tests assert text, not behavior — round 16 of 20260423_142834
+Rule 1 = orchestrator code (`_detect_backlog_violation`). Rules 2-4 = system prompt directives only. Tests grep `prompts/system.md` AND the `build_prompt()` output for rule labels + key directives (`"extend the existing item"`, `[P1/P2/P3]` + `TOP/middle/BOTTOM`, `last 3`/`conversation_loop_`). Must collapse whitespace before substring match — rule 2 phrase wraps across a line break in source.
