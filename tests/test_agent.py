@@ -191,3 +191,140 @@ class TestShouldRetryRateLimit:
     def test_non_rate_limit(self):
         e = Exception("something else")
         assert _should_retry_rate_limit(e, 1, 5) is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 3.5 — Structural change self-detection (prompt-driven)
+# ---------------------------------------------------------------------------
+# SPEC.md § "Structural change self-detection" — agent-side protocol lives
+# entirely in prompts/system.md.  These tests verify the template contains
+# all documented trigger conditions, the STRUCTURAL prefix rule, the
+# RESTART_REQUIRED schema, and the Phase 4 skip directive.
+
+_ROOT = Path(__file__).resolve().parent.parent
+_PROMPT_TEMPLATE = (_ROOT / "prompts" / "system.md").read_text(encoding="utf-8")
+
+
+class TestStructuralChangeSelfDetection:
+    """Verify prompts/system.md contains the Phase 3.5 block per SPEC.md."""
+
+    # -- Section header --
+
+    def test_phase_35_header_present(self):
+        """Phase 3.5 section header with correct title exists."""
+        assert "Phase 3.5" in _PROMPT_TEMPLATE
+        assert "STRUCTURAL CHANGE SELF-DETECTION" in _PROMPT_TEMPLATE
+
+    def test_mandatory_before_commit(self):
+        """Phase 3.5 is marked as mandatory before commit."""
+        assert "mandatory before commit" in _PROMPT_TEMPLATE
+
+    # -- Trigger conditions (6 per SPEC) --
+
+    def test_trigger_file_rename(self):
+        """Trigger: file rename detected via git diff --diff-filter=R."""
+        assert "diff-filter=R" in _PROMPT_TEMPLATE
+
+    def test_trigger_file_creation_deletion_imports(self):
+        """Trigger: file creation/deletion referenced by import in another file."""
+        assert 'grep -l "from <name>"' in _PROMPT_TEMPLATE or \
+               "grep -l" in _PROMPT_TEMPLATE
+        assert 'import <name>' in _PROMPT_TEMPLATE or \
+               "imported by another tracked file" in _PROMPT_TEMPLATE
+
+    def test_trigger_pyproject_toml_scripts(self):
+        """Trigger: pyproject.toml [project.scripts] section changes."""
+        assert "[project.scripts]" in _PROMPT_TEMPLATE
+
+    def test_trigger_pyproject_toml_setuptools(self):
+        """Trigger: pyproject.toml [tool.setuptools] section changes."""
+        assert "[tool.setuptools]" in _PROMPT_TEMPLATE
+
+    def test_trigger_init_py(self):
+        """Trigger: __init__.py changes that alter module re-exports."""
+        assert "__init__.py" in _PROMPT_TEMPLATE
+
+    def test_trigger_main_py(self):
+        """Trigger: __main__.py creation or deletion."""
+        assert "__main__.py" in _PROMPT_TEMPLATE
+
+    def test_trigger_conftest(self):
+        """Trigger: conftest.py or tests/conftest.py changes."""
+        assert "conftest.py" in _PROMPT_TEMPLATE
+        assert "tests/conftest.py" in _PROMPT_TEMPLATE
+
+    # -- Agent protocol --
+
+    def test_structural_prefix_rule(self):
+        """COMMIT_MSG first line must be prefixed with 'STRUCTURAL: '."""
+        assert "STRUCTURAL: " in _PROMPT_TEMPLATE
+
+    def test_restart_required_file(self):
+        """Template instructs writing a RESTART_REQUIRED marker file."""
+        assert "RESTART_REQUIRED" in _PROMPT_TEMPLATE
+
+    def test_restart_required_schema_reason(self):
+        """RESTART_REQUIRED schema includes 'reason' field."""
+        assert "reason:" in _PROMPT_TEMPLATE
+
+    def test_restart_required_schema_verify(self):
+        """RESTART_REQUIRED schema includes 'verify' field."""
+        assert "verify:" in _PROMPT_TEMPLATE
+
+    def test_restart_required_schema_resume(self):
+        """RESTART_REQUIRED schema includes 'resume' field."""
+        assert "resume:" in _PROMPT_TEMPLATE
+
+    def test_restart_required_schema_round(self):
+        """RESTART_REQUIRED schema includes 'round' field."""
+        assert "round:" in _PROMPT_TEMPLATE
+
+    def test_restart_required_schema_timestamp(self):
+        """RESTART_REQUIRED schema includes 'timestamp' field."""
+        assert "timestamp:" in _PROMPT_TEMPLATE
+
+    def test_phase_4_skip_directive(self):
+        """Template directs agent to skip Phase 4 on structural changes."""
+        assert "Skip Phase 4" in _PROMPT_TEMPLATE
+
+    def test_no_converged_on_structural(self):
+        """Template says do NOT write CONVERGED on structural changes."""
+        # Extract the Phase 3.5 block: from "Phase 3.5" to "Phase 4 —"
+        # (the actual Phase 4 header, not the inline "Skip Phase 4" ref)
+        phase35_start = _PROMPT_TEMPLATE.find("Phase 3.5")
+        phase4_header = _PROMPT_TEMPLATE.find("Phase 4 —", phase35_start)
+        phase35_block = _PROMPT_TEMPLATE[phase35_start:phase4_header]
+        assert "Do NOT write" in phase35_block
+        assert "CONVERGED" in phase35_block
+
+    def test_exit_code_3_mentioned(self):
+        """Template mentions orchestrator exit code 3."""
+        phase35_start = _PROMPT_TEMPLATE.find("Phase 3.5")
+        phase4_header = _PROMPT_TEMPLATE.find("Phase 4 —", phase35_start)
+        phase35_block = _PROMPT_TEMPLATE[phase35_start:phase4_header]
+        assert "exit with code 3" in phase35_block
+
+    # -- Runtime verification via build_prompt --
+
+    def test_build_prompt_renders_structural_block(self, tmp_path: Path):
+        """build_prompt() output includes the structural change block."""
+        (tmp_path / "README.md").write_text("# Proj")
+        (tmp_path / "runs").mkdir()
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir()
+        prompt = build_prompt(tmp_path, run_dir=run_dir)
+        assert "STRUCTURAL CHANGE SELF-DETECTION" in prompt
+        assert "RESTART_REQUIRED" in prompt
+        assert "STRUCTURAL: " in prompt
+
+    def test_build_prompt_substitutes_run_dir_in_restart_required(self, tmp_path: Path):
+        """build_prompt() substitutes {run_dir} in the RESTART_REQUIRED path."""
+        (tmp_path / "README.md").write_text("# Proj")
+        (tmp_path / "runs").mkdir()
+        run_dir = tmp_path / "runs" / "session1"
+        run_dir.mkdir()
+        prompt = build_prompt(tmp_path, run_dir=run_dir)
+        # After substitution, {run_dir} should be replaced with actual path
+        assert "{run_dir}" not in prompt
+        expected = f"{run_dir}/RESTART_REQUIRED"
+        assert expected in prompt
