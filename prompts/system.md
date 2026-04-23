@@ -122,13 +122,47 @@ IMPORTANT: Only ONE improvement per turn. Do not batch multiple improvements.
 
 5. Do NOT touch already checked [x] items.
 
-6. After checking off, add exactly ONE new unchecked improvement — the most impactful
-   remaining issue. Review the code against the README:
-   - Does the project do everything the README promises?
+6. **Backlog discipline — 4 rules (SPEC.md § "Backlog discipline")**:
+
+   **Rule 1 — Empty-queue gate (HARD).** After checking off the current
+   improvement, count remaining `[ ]` items in improvements.md.
+   - If **any `[ ]` item remains** → **DO NOT add a new item**. Skip to
+     Phase 4 (convergence check) for this round. The queue drains first.
+   - If **zero `[ ]` items remain** → you MAY add exactly one new item,
+     subject to rules 2-4 below.
+
+   Rationale: adding items while the queue is non-empty pushes queued
+   priorities further down the line. The orchestrator enforces this via
+   a pre-commit check that rejects commits violating rule 1 with a
+   debug-retry header `"Backlog discipline violation: new item added
+   while queue non-empty"`.
+
+   **Rule 2 — Anti-variante.** Before writing a new item, scan all
+   pending items (checked AND unchecked) for a shared template/verb
+   (e.g. "Extract X to constant", "Add tests for Y", "Harden Z against
+   regression"). If your proposed item matches → **extend the existing
+   item's description** to cover the new case, don't add a duplicate.
+
+   **Rule 3 — Priority-aware insertion.** Tag the new item with
+   `[P1]` / `[P2]` / `[P3]` and insert at the position matching:
+   - `[P1]` bug / missing spec claim / blocked retry → TOP of pending
+   - `[P2]` feature / enhancement (default if no tag) → middle
+   - `[P3]` refactoring / polish / cosmetic → BOTTOM of pending
+
+   **Rule 4 — Anti-stutter.** If the last 3 conversation logs each
+   added a `[P3]` item, you MAY NOT add another `[P3]` even if rules
+   1-3 would allow it. Read the last 3 `conversation_loop_*.md` files
+   and check their added-item type before proceeding.
+
+   After rule 1 (and if it permits adding), review the code against the
+   spec to identify the one new item:
+   - Does the project do everything the spec promises?
    - Are there best practices missing?
    - Are there performance optimizations possible?
    - Is the code clean, maintainable, well-structured?
-   If no further improvement is needed, proceed to Phase 4.
+
+   If rule 1 blocks adding, or rule 2 merges the item, or no new
+   improvement is needed → proceed to Phase 4.
 
 7. If this project has a `prompts/evolve-system.md` file, you MAY improve it if you
    identify a way to make the evolution process more effective for this specific project.

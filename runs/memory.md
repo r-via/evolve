@@ -70,3 +70,6 @@ mock `agent.run_claude_agent` (not `loop._run_party_agent` — doesn't exist). A
 
 ### memory.md scaffold lives in `_init_config`, not first-round agent — round 12 of 20260423_142834
 `_init_config` in evolve.py now writes `runs/memory.md` with 4 typed sections. No code path creates memory.md otherwise — previously stayed "(none)" until agent first wrote. Scaffold hard-references `SPEC.md` in the pointer text → drifts for `--spec CLAIMS.md` projects (tracked as follow-up).
+
+### `_run_rounds` UI stub: MagicMock > hand-rolled — round 13 of 20260423_142834
+`_run_rounds` calls `round_header`, `progress_summary`, `warn`, `capture_frame`, … — surface keeps growing. Hand-rolled `_StubTUI` breaks on new method. `MagicMock()` swallows all — simpler, survives future TUIProtocol additions.

@@ -536,11 +536,80 @@ instead of the default.
 
 ## improvements.md — the convergence tracker
 
-One improvement added per round. Format:
+Format:
 
 - A checkbox (`[ ]` pending, `[x]` done)
 - A type tag: `[functional]` or `[performance]`
 - Optional `[needs-package]` flag — skipped unless `--allow-installs`
+- Optional priority tag `[P1]` / `[P2]` / `[P3]` (see "Backlog discipline"
+  below); untagged items default to `[P2]`
+
+### Backlog discipline
+
+The "add exactly one new improvement per round" rule (Phase 3 step 6) is a
+default that only makes sense when the backlog is healthy. In practice it
+tends to grow the queue monotonically — each round completes one item and
+appends one, and the agent easily pattern-matches on its own recent work,
+adding three, four, five variants of the same refactoring before the
+original priorities get touched. The session of 20260423_140637 produced
+5 consecutive "extract string X to module-level constant" items before
+the queued memory-template and coverage items were addressed.
+
+Four guardrails govern new items:
+
+1. **Empty-queue rule (hard gate).** A new item is added **only** when all
+   pending items in `improvements.md` are checked off. If any `[ ]` item
+   remains after the current target is closed, the agent skips the "add
+   one" step and lets the queue drain. This is the strictest of the four
+   rules and subsumes most of the others — when it's obeyed, the queue
+   monotonically shrinks toward convergence instead of oscillating.
+2. **Anti-variante rule.** Before considering any new item, scan pending
+   items for a shared template/verb (e.g. "Extract X to a constant",
+   "Add tests for Y", "Harden Z against regression"). If the proposed
+   item shares the template → **merge into the existing item** (extend
+   its description to cover the new case), do not create a duplicate.
+   This prevents the 5-variant refactoring pile-up.
+3. **Priority-aware insertion.** When a new item is legitimately added
+   (the queue was empty per rule 1, and the item doesn't variant-match
+   per rule 2), insert it at the position matching its priority tag, not
+   blindly at the end:
+   - `[P1]` — bugs, missing spec claims, blocked retries: inserted at
+     the TOP (next-up)
+   - `[P2]` — improvements, enhancements, non-blocking features
+     (default): inserted in the middle by insertion order among `[P2]`
+   - `[P3]` — refactorings, polish, cosmetic: inserted at the BOTTOM
+4. **Anti-stutter rule.** If the last 3 rounds have each added a `[P3]`
+   refactoring item, the next round MAY NOT add another `[P3]` item
+   even if rules 1-3 would permit it. This short-circuits the "pattern
+   match on own work" failure mode when the empty-queue rule somehow
+   isn't holding.
+
+The orchestrator enforces rule 1 via a simple pre-commit check: if the
+agent's commit modifies `improvements.md` to add a new unchecked item
+while at least one other unchecked item exists, the commit is rejected
+with a debug-retry diagnostic header `"CRITICAL — Backlog discipline
+violation: new item added while queue non-empty"`. Rules 2-4 are
+agent-enforced via system prompt.
+
+### Growth monitoring
+
+`state.json` exposes a `backlog` object updated every round:
+
+```json
+{
+  "backlog": {
+    "pending": 3,
+    "done": 60,
+    "blocked": 0,
+    "added_this_round": 0,
+    "growth_rate_last_5_rounds": -0.6
+  }
+}
+```
+
+A sustained positive `growth_rate` (backlog grows faster than it drains)
+is itself a signal worth logging — in practice, rule 1 should drive this
+to ≤ 0 on every run that's actually making progress.
 
 ---
 
