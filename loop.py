@@ -743,9 +743,29 @@ def _save_subprocess_diagnostic(
         attempt: Which retry attempt produced this failure.
     """
     error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
+    # When this diagnostic is about to be read by the FINAL retry (attempt 3),
+    # prepend an explicit Phase 1 escape hatch banner so the agent's prompt
+    # builder can pick it up and surface it prominently. attempt=K means the
+    # Kth attempt just failed, so the *next* attempt will be K+1.
+    next_attempt = attempt + 1
+    escape_hatch_banner = ""
+    if next_attempt >= 3:
+        escape_hatch_banner = (
+            "### Phase 1 escape hatch notice\n"
+            f"The next run of round {round_num} will be attempt "
+            f"{next_attempt} of 3 — the FINAL retry. If Phase 1 check "
+            "failures are still unresolved AND the failing output references "
+            "NO files named in the current improvement target, the Phase 1 "
+            "escape hatch is PERMITTED (see prompts/system.md § 'Phase 1 "
+            "escape hatch'). Log blocked errors to memory.md, append a "
+            "'Phase 1 bypass' item to improvements.md, proceed with the "
+            "target, and include a 'Phase 1 bypass: <summary>' line in "
+            "COMMIT_MSG.\n\n"
+        )
     error_log.write_text(
         f"Round {round_num} — {reason} (attempt {attempt})\n"
         f"Command: {' '.join(str(c) for c in cmd)}\n\n"
+        f"{escape_hatch_banner}"
         f"Output (last 3000 chars):\n{(output or '')[-3000:]}\n"
     )
 

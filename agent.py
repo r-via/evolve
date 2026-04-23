@@ -118,10 +118,28 @@ def build_prompt(
 
     # Previous round subprocess crash logs (orchestrator-level errors)
     prev_crash = ""
+    prev_crash_file = None
     if run_dir:
         for f in sorted(Path(run_dir).glob("subprocess_error_round_*.txt"), key=lambda p: int(re.search(r'_(\d+)\.txt$', p.name).group(1)), reverse=True):
             prev_crash = f.read_text()
+            prev_crash_file = f
             break
+
+    # Determine the current attempt number for this run.
+    #
+    # The orchestrator writes `subprocess_error_round_N.txt` when an attempt
+    # fails, with a header line ending in "(attempt K)" — so if K=2 failed,
+    # THIS run is attempt 3 (the final retry). We parse that here so the
+    # agent knows whether the Phase 1 escape hatch is permitted.
+    current_attempt = 1
+    if prev_crash and prev_crash_file is not None:
+        # Only treat the diagnostic as referring to "this round" if the file
+        # matches the round number we are running.
+        m_round = re.search(r"subprocess_error_round_(\d+)\.txt$", str(prev_crash_file))
+        if m_round and int(m_round.group(1)) == round_num:
+            m_att = re.search(r"\(attempt (\d+)\)", prev_crash)
+            if m_att:
+                current_attempt = int(m_att.group(1)) + 1
 
     allow_installs_note = ""
     if not allow_installs:
@@ -145,6 +163,35 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     system_prompt = system_prompt.replace("{round_num}", str(round_num))
     system_prompt = system_prompt.replace("{prev_round_1}", str(round_num - 1))
     system_prompt = system_prompt.replace("{prev_round_2}", str(round_num - 2))
+
+    # Phase 1 escape hatch: attempt-marker banner. Injected into system.md at
+    # the `{attempt_marker}` placeholder so the agent knows which attempt it
+    # is on and whether the Phase 1 escape hatch is currently permitted.
+    if current_attempt >= 3:
+        attempt_marker = (
+            "**>>> CURRENT ATTEMPT: 3 of 3 (FINAL RETRY) <<<**\n"
+            "The Phase 1 escape hatch is NOW PERMITTED if the three guard\n"
+            "conditions above all hold. Evaluate the guard honestly:\n"
+            "  (1) You are on attempt 3 — CONFIRMED by this banner.\n"
+            "  (2) Are Phase 1 errors still present?\n"
+            "  (3) Do the failing tests touch NONE of the files named in\n"
+            "      your current improvement target?\n"
+            "If and only if all three hold, apply the four actions (a-d)\n"
+            "and proceed with your Phase 3 target. Otherwise, continue\n"
+            "normal Phase 1 debugging.\n"
+        )
+    elif current_attempt == 2:
+        attempt_marker = (
+            "**CURRENT ATTEMPT: 2 of 3** — Standard Phase 1 applies. The\n"
+            "Phase 1 escape hatch is NOT permitted on attempt 2; it unlocks\n"
+            "only on the final retry (attempt 3).\n"
+        )
+    else:
+        attempt_marker = (
+            "**CURRENT ATTEMPT: 1 of 3** — Standard Phase 1 applies. The\n"
+            "Phase 1 escape hatch is NOT permitted on the first attempt.\n"
+        )
+    system_prompt = system_prompt.replace("{attempt_marker}", attempt_marker)
 
     # Build sections
     readme_section = f"## README (specification)\n{readme}" if readme else "## README\n(no README found)"

@@ -27,6 +27,64 @@ Before ANY improvement work, you MUST:
 
 Only when the check command passes (or all manual checks are clean) may you proceed to Phase 2.
 
+### Phase 1 escape hatch — FINAL RETRY ONLY (attempt 3 of 3)
+
+This rule overrides "fix errors first" in a narrow, explicit case. It ONLY
+applies when ALL THREE of the following hold:
+
+1. You are on **attempt 3** (the final retry — see the `{attempt_marker}`
+   banner injected below; if the banner does not say "ATTEMPT 3", this escape
+   hatch is FORBIDDEN and normal Phase 1 applies).
+2. Phase 1 errors from the check command are still present after your
+   investigation.
+3. The failing test / check output references **NO** files named in the
+   current improvement target. Scan the target text for file paths
+   (e.g. `agent.py`, `loop.py`, `prompts/system.md`) and grep the failing
+   output for each one. If any target-scoped file appears in the failures,
+   the escape hatch is FORBIDDEN — those failures ARE the target's
+   responsibility.
+
+When all three conditions hold, you are permitted to:
+
+(a) **Log** the failing tests to `runs/memory.md` under a new
+    `## Blocked Errors` section with:
+    - The full check output excerpt (first 1500 chars is enough)
+    - An ISO-8601 timestamp
+    - A note explaining which pre-existing failures triggered the Phase 1
+      bypass and why they are unrelated to the target.
+(b) **Append** a dedicated high-priority item to `runs/improvements.md`:
+    ```
+    - [ ] [functional] Phase 1 bypass: fix pre-existing failures (<short summary>) that blocked round N — see memory.md § Blocked Errors
+    ```
+    This becomes the top-priority target of the next cycle.
+(c) **Proceed** with the original Phase 3 improvement target for this
+    attempt, treating the pre-existing failures as known-broken state to
+    work around (e.g. run tests with `-k 'not broken_test'` or equivalent
+    while building and verifying your target's changes).
+(d) At commit time, include a top-level line in `COMMIT_MSG`:
+    ```
+    Phase 1 bypass: <short summary>
+    ```
+    so the bypass is visible in git history.
+
+The bypass does **NOT** apply when:
+- The failing tests reference files in the target's scope (those MUST be
+  fixed first — they are the target's responsibility, not pre-existing
+  state).
+- You have retries remaining (attempt 1 or 2 — those MUST still do normal
+  Phase 1 work; trying to bypass on an earlier attempt skips rightful
+  diagnostic time).
+- The failures are a regression introduced by the current target (those
+  mean the target was implemented incorrectly — fix the regression).
+
+This is a deliberate, narrow hole in the "fix errors first" rule. It exists
+to unstick rounds where pre-existing, unrelated failures have consumed two
+full retries without progress. The orphaned errors do not disappear — they
+become the top-priority item for the next round and get dedicated
+attention.
+
+{attempt_marker}
+
 **VERIFY LOOP — after every change:**
 After every file edit, run the check command (or relevant manual command) immediately.
 Do NOT batch multiple changes before verifying. The cycle is:
