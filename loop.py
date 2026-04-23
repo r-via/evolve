@@ -905,11 +905,11 @@ def _run_rounds(
                 )
 
                 # Launch party mode
-                _run_party_mode(project_dir, run_dir, ui)
+                _run_party_mode(project_dir, run_dir, ui, spec=spec)
 
                 if forever:
-                    # Auto-merge README_proposal.md into README.md and restart
-                    _forever_restart(project_dir, run_dir, improvements_path, ui)
+                    # Auto-merge spec proposal into spec file and restart
+                    _forever_restart(project_dir, run_dir, improvements_path, ui, spec=spec)
 
                     # Create a new session directory for the next cycle
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1249,6 +1249,7 @@ def run_validate(
         check_output=check_output,
         check_cmd=check_cmd,
         run_dir=run_dir,
+        spec=spec,
     )
 
     # 3. Parse the validate report for pass/fail determination
@@ -1278,7 +1279,7 @@ def run_validate(
         return 2
 
 
-def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = None) -> None:
+def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = None, spec: str | None = None) -> None:
     """Launch party mode: multi-agent brainstorming post-convergence.
 
     Loads agent personas and workflow definitions, then runs a Claude
@@ -1289,6 +1290,7 @@ def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = N
         project_dir: Root directory of the project.
         run_dir: Session directory for party mode artifacts.
         ui: TUI instance for status output (auto-created if None).
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
     if ui is None:
         ui = get_tui()
@@ -1334,7 +1336,9 @@ def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = N
     print(f"[probe] party mode: workflow loaded ({len(workflow)} chars)")
 
     # Load context
-    readme = (project_dir / "README.md").read_text() if (project_dir / "README.md").is_file() else "(none)"
+    spec_file = spec or "README.md"
+    spec_path = project_dir / spec_file
+    readme = spec_path.read_text() if spec_path.is_file() else "(none)"
     improvements = (project_dir / "runs" / "improvements.md").read_text() if (project_dir / "runs" / "improvements.md").is_file() else "(none)"
     memory = (project_dir / "runs" / "memory.md").read_text() if (project_dir / "runs" / "memory.md").is_file() else "(none)"
     converged = (run_dir / "CONVERGED").read_text().strip() if (run_dir / "CONVERGED").is_file() else ""
@@ -1343,12 +1347,17 @@ def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = N
     roster = "\n".join(f"- {a['file']}" for a in agents)
     personas = "\n\n".join(f"### {a['file']}\n\n{a['content']}" for a in agents)
 
+    # Derive proposal filename from spec (e.g. SPEC.md → SPEC_proposal.md)
+    spec_stem = Path(spec_file).stem
+    spec_suffix = Path(spec_file).suffix or ".md"
+    proposal_filename = f"{spec_stem}_proposal{spec_suffix}"
+
     prompt = f"""\
 You are a Party Mode facilitator. The project has CONVERGED — all improvements done.
 
 Your job: orchestrate a multi-agent brainstorming session, then produce:
 1. `{run_dir}/party_report.md` — full discussion with each agent's reasoning
-2. `{run_dir}/README_proposal.md` — complete updated README for the next evolution
+2. `{run_dir}/{proposal_filename}` — complete updated spec for the next evolution
 
 ## Workflow
 {workflow}
@@ -1409,7 +1418,7 @@ Simulate the discussion, then write both files. The README_proposal.md must be c
         ui.warn("claude-agent-sdk not installed — skipping party mode")
         return
 
-    proposal = run_dir / "README_proposal.md"
+    proposal = run_dir / proposal_filename
     report = run_dir / "party_report.md"
     print(f"[probe] party mode: finished — report={'yes' if report.is_file() else 'no'}, proposal={'yes' if proposal.is_file() else 'no'}")
     ui.party_results(
@@ -1423,26 +1432,32 @@ def _forever_restart(
     run_dir: Path,
     improvements_path: Path,
     ui: TUIProtocol,
+    spec: str | None = None,
 ) -> None:
     """Post-convergence restart for forever mode.
 
-    1. Merge README_proposal.md into README.md (if produced by party mode)
+    1. Merge the spec proposal into the spec file (if produced by party mode)
     2. Reset improvements.md for the next evolution cycle
 
     Args:
         project_dir: Root directory of the project.
-        run_dir: Session directory containing the README proposal.
+        run_dir: Session directory containing the spec proposal.
         improvements_path: Path to improvements.md to reset.
         ui: TUI instance for status messages.
+        spec: Path to the spec file relative to project_dir (default: README.md).
     """
-    proposal = run_dir / "README_proposal.md"
-    readme = project_dir / "README.md"
+    spec_file = spec or "README.md"
+    spec_stem = Path(spec_file).stem
+    spec_suffix = Path(spec_file).suffix or ".md"
+    proposal_filename = f"{spec_stem}_proposal{spec_suffix}"
+    proposal = run_dir / proposal_filename
+    target = project_dir / spec_file
 
     if proposal.is_file():
-        ui.info("  Forever mode: adopting README_proposal.md as new README.md")
-        readme.write_text(proposal.read_text())
+        ui.info(f"  Forever mode: adopting {proposal_filename} as new {spec_file}")
+        target.write_text(proposal.read_text())
     else:
-        ui.warn("No README_proposal.md produced — restarting with current README")
+        ui.warn(f"No {proposal_filename} produced — restarting with current {spec_file}")
 
     # Reset improvements.md for the next cycle
     ui.info("  Forever mode: resetting improvements.md for next cycle")

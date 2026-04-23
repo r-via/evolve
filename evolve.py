@@ -97,6 +97,7 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         ("timeout", "EVOLVE_TIMEOUT", 300, "int"),
         ("model", "EVOLVE_MODEL", "claude-opus-4-6", "str"),
         ("yolo", "EVOLVE_YOLO", False, "bool"),
+        ("spec", "EVOLVE_SPEC", None, "str"),
     ]
 
     for name, env_var, default, ftype in fields:
@@ -226,6 +227,7 @@ def main():
     start_p.add_argument("--dry-run", action="store_true", dest="dry_run", help="Read-only analysis mode — produces a report without modifying files")
     start_p.add_argument("--validate", action="store_true", help="Validate spec compliance — pass/fail per README claim (exit 0=pass, 1=fail)")
     start_p.add_argument("--json", action="store_true", help="Emit structured JSON events to stdout (for CI/CD)")
+    start_p.add_argument("--spec", default=None, help="Path to spec file relative to project dir (default: README.md, or EVOLVE_SPEC env var)")
 
     # --- status ---
     status_p = sub.add_parser("status", help="Show evolution status for a project")
@@ -257,6 +259,14 @@ def main():
         if args.json:
             import tui as _tui_mod
             _tui_mod._use_json = True
+        # Validate spec file exists if --spec is set
+        spec = getattr(args, "spec", None)
+        if spec:
+            spec_path = project_path / spec
+            if not spec_path.is_file():
+                print(f"ERROR: spec file not found: {spec_path}")
+                sys.exit(2)
+
         if args.validate:
             from loop import run_validate
             sys.exit(run_validate(
@@ -264,6 +274,7 @@ def main():
                 check_cmd=args.check,
                 timeout=args.timeout,
                 model=args.model,
+                spec=spec,
             ))
         elif args.dry_run:
             from loop import run_dry_run
@@ -272,6 +283,7 @@ def main():
                 check_cmd=args.check,
                 timeout=args.timeout,
                 model=args.model,
+                spec=spec,
             )
         else:
             from loop import evolve_loop
@@ -284,6 +296,7 @@ def main():
                 model=args.model,
                 resume=args.resume,
                 forever=args.forever,
+                spec=spec,
             )
 
     elif args.command == "status":
@@ -305,6 +318,7 @@ def main():
             timeout=args.timeout,
             run_dir=Path(args.run_dir) if args.run_dir else None,
             model=args.model,
+            spec=args.spec,
         )
 
 
@@ -329,6 +343,7 @@ def _parse_round_args():
     p.add_argument("--run-dir", default=None)
     p.add_argument("--yolo", action="store_true")
     p.add_argument("--model", default="claude-opus-4-6")
+    p.add_argument("--spec", default=None)
     args = p.parse_args(sys.argv[2:])
     args.command = "_round"
     return args
@@ -343,6 +358,7 @@ rounds = 10
 timeout = 300
 model = "claude-opus-4-6"
 yolo = false
+spec = "README.md"
 """
 
 

@@ -471,7 +471,7 @@ class TestForeverRestart:
         # improvements still reset
         assert improvements.read_text() == "# Improvements\n"
         self.ui.warn.assert_called_once_with(
-            "No README_proposal.md produced — restarting with current README"
+            "No README_proposal.md produced — restarting with current README.md"
         )
 
 
