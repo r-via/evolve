@@ -318,7 +318,7 @@ class TestPartyModeFrameAttachment:
         # Mock run_claude_agent
         mock_agent = AsyncMock()
 
-        with patch("loop._run_party_mode") as mock_party:
+        with patch("evolve.orchestrator._run_party_mode") as mock_party:
             # Instead of calling the real function, test the frame scanning logic directly
             pass
 
@@ -419,7 +419,7 @@ class TestPartyModeFrameAttachment:
         fake_agent._is_benign_runtime_error = mock_is_benign
         fake_agent._should_retry_rate_limit = mock_should_retry
 
-        monkeypatch.setitem(__import__("sys").modules, "agent", fake_agent)
+        monkeypatch.setitem(__import__("sys").modules, "evolve.agent", fake_agent)
 
         from evolve.tui import PlainTUI
         ui = PlainTUI()
@@ -477,7 +477,7 @@ class TestPartyModeFrameAttachment:
         fake_agent._is_benign_runtime_error = mock_is_benign
         fake_agent._should_retry_rate_limit = mock_should_retry
 
-        monkeypatch.setitem(__import__("sys").modules, "agent", fake_agent)
+        monkeypatch.setitem(__import__("sys").modules, "evolve.agent", fake_agent)
 
         from evolve.tui import PlainTUI
         ui = PlainTUI()

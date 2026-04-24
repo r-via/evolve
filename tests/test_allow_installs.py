@@ -56,7 +56,7 @@ class TestAllowInstallsCLIFlag:
         (tmp_path / "README.md").write_text("# Test")
         with patch("sys.argv", ["evolve", "start", str(tmp_path), "--yolo"]), \
              patch.dict("sys.modules", {"claude_agent_sdk": __import__("unittest.mock").mock.MagicMock()}), \
-             patch("loop.evolve_loop") as mock_loop:
+             patch("evolve.orchestrator.evolve_loop") as mock_loop:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 try:

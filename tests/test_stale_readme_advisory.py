@@ -233,7 +233,7 @@ class TestAdvisoryWiring:
 
     def test_emit_helper_called_in_evolve_loop(self, tmp_path: Path, monkeypatch):
         """evolve_loop calls _emit_stale_readme_advisory at startup."""
-        import loop as loop_mod
+        import evolve.orchestrator as loop_mod
 
         calls: list[tuple] = []
 
@@ -261,7 +261,7 @@ class TestAdvisoryWiring:
 
     def test_emit_helper_called_in_run_dry_run(self, tmp_path: Path, monkeypatch):
         """run_dry_run calls _emit_stale_readme_advisory at startup."""
-        import loop as loop_mod
+        import evolve.orchestrator as loop_mod
 
         calls: list[tuple] = []
         monkeypatch.setattr(
@@ -270,7 +270,7 @@ class TestAdvisoryWiring:
             lambda p, s, u: calls.append((p, s)),
         )
         # Short-circuit the rest of run_dry_run.
-        import agent as agent_mod
+        import evolve.agent as agent_mod
 
         monkeypatch.setattr(agent_mod, "run_dry_run_agent", lambda *a, **k: None)
 
@@ -283,7 +283,7 @@ class TestAdvisoryWiring:
 
     def test_emit_helper_called_in_run_validate(self, tmp_path: Path, monkeypatch):
         """run_validate calls _emit_stale_readme_advisory at startup."""
-        import loop as loop_mod
+        import evolve.orchestrator as loop_mod
 
         calls: list[tuple] = []
         monkeypatch.setattr(
@@ -291,7 +291,7 @@ class TestAdvisoryWiring:
             "_emit_stale_readme_advisory",
             lambda p, s, u: calls.append((p, s)),
         )
-        import agent as agent_mod
+        import evolve.agent as agent_mod
 
         monkeypatch.setattr(agent_mod, "run_validate_agent", lambda *a, **k: None)
 

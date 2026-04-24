@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-import agent as agent_mod
+import evolve.agent as agent_mod
 import evolve as evolve_mod
 import evolve.tui as tui_mod
 

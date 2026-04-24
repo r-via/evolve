@@ -128,7 +128,7 @@ class TestEnsureGit:
     def test_not_a_git_repo(self, tmp_path: Path):
         """Exits with code 2 if not a git repo."""
         mock_result = MagicMock(returncode=1)
-        with patch("loop.subprocess.run", return_value=mock_result):
+        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result):
             with pytest.raises(SystemExit) as exc:
                 _ensure_git(tmp_path)
             assert exc.value.code == 2
@@ -145,7 +145,7 @@ class TestEnsureGit:
                 return status_clean
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)  # should not raise
 
     def test_uncommitted_changes_triggers_commit(self, tmp_path: Path):
@@ -160,7 +160,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="M file.py\n")
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         # Should have called git add -A and git commit
@@ -172,7 +172,7 @@ class TestEnsureGit:
         """Error message should reference the project directory."""
         mock_ui = MagicMock()
         mock_result = MagicMock(returncode=1)
-        with patch("loop.subprocess.run", return_value=mock_result):
+        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result):
             with pytest.raises(SystemExit):
                 _ensure_git(tmp_path, ui=mock_ui)
         mock_ui.error.assert_called_once()
@@ -190,7 +190,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="M dirty.py\n")
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         commit_calls = [(c, kw) for c, kw in calls if "commit" in c]
@@ -216,7 +216,7 @@ class TestEnsureGit:
                 )
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         cmd_strs = [" ".join(c) for c in calls]
@@ -235,7 +235,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="M file.py\n")
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path, ui=mock_ui)
 
         mock_ui.uncommitted.assert_called_once()
@@ -251,7 +251,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="")
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path, ui=mock_ui)
 
         mock_ui.uncommitted.assert_not_called()
@@ -260,7 +260,7 @@ class TestEnsureGit:
         """When a custom ui is passed, it should be used instead of get_tui()."""
         mock_ui = MagicMock()
         mock_result = MagicMock(returncode=1)
-        with patch("loop.subprocess.run", return_value=mock_result), \
+        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
              patch("evolve.git.get_tui") as mock_get_tui:
             with pytest.raises(SystemExit):
                 _ensure_git(tmp_path, ui=mock_ui)
@@ -273,7 +273,7 @@ class TestEnsureGit:
         """When ui=None, get_tui() is called to get the default UI."""
         mock_ui = MagicMock()
         mock_result = MagicMock(returncode=1)
-        with patch("loop.subprocess.run", return_value=mock_result), \
+        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
              patch("evolve.git.get_tui", return_value=mock_ui):
             with pytest.raises(SystemExit):
                 _ensure_git(tmp_path)
@@ -291,7 +291,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="   \n  \n")
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         cmd_strs = [" ".join(c) for c in calls]
@@ -309,7 +309,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="M file.py\n")
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         for cmd, kwargs in calls:
@@ -331,7 +331,7 @@ class TestGitCommit:
                 return MagicMock(returncode=0)  # no diff = nothing to commit
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "test msg")
 
         # Should NOT have called git commit
@@ -349,7 +349,7 @@ class TestGitCommit:
                 return MagicMock(returncode=0, stderr="")
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "feat: test")
 
         cmd_strs = [" ".join(str(c) for c in cmd) for cmd in calls]
@@ -365,7 +365,7 @@ class TestGitCommit:
                 return MagicMock(returncode=1, stderr="remote rejected")
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "feat: test")  # should not raise
 
     def test_commit_push_no_upstream_retries_with_set_upstream(self, tmp_path: Path):
@@ -387,7 +387,7 @@ class TestGitCommit:
                 )
             return MagicMock(returncode=0)
 
-        with patch("loop.subprocess.run", side_effect=side_effect):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "feat: test")
 
         cmd_strs = [" ".join(str(c) for c in cmd) for cmd in calls]
@@ -487,7 +487,7 @@ class TestGenerateEvolutionReport:
 
     def test_basic_report_converged(self, tmp_path: Path):
         project_dir, run_dir = self._setup_project(tmp_path)
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=3, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "# Evolution Report" in report
@@ -497,7 +497,7 @@ class TestGenerateEvolutionReport:
 
     def test_basic_report_max_rounds(self, tmp_path: Path):
         project_dir, run_dir = self._setup_project(tmp_path)
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=5, final_round=5, converged=False)
         report = (run_dir / "evolution_report.md").read_text()
         assert "MAX_ROUNDS" in report
@@ -507,7 +507,7 @@ class TestGenerateEvolutionReport:
     def test_report_with_check_results(self, tmp_path: Path):
         project_dir, run_dir = self._setup_project(tmp_path)
         (run_dir / "check_round_1.txt").write_text("Round 1 post-fix check: PASS\n42 passed\n")
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "42 passed" in report
@@ -517,7 +517,7 @@ class TestGenerateEvolutionReport:
         (run_dir / "conversation_loop_1.md").write_text(
             "feat(parser): add validation\nEdit → src/parser.py\nWrite → src/validator.py\n"
         )
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "feat(parser): add validation" in report
@@ -526,7 +526,7 @@ class TestGenerateEvolutionReport:
     def test_report_no_rounds(self, tmp_path: Path):
         """Report with 0 final_round shouldn't crash."""
         project_dir, run_dir = self._setup_project(tmp_path)
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=0, converged=False)
         report = (run_dir / "evolution_report.md").read_text()
         assert "# Evolution Report" in report
@@ -536,7 +536,7 @@ class TestGenerateEvolutionReport:
         project_dir, run_dir = self._setup_project(tmp_path)
         (run_dir / "check_round_1.txt").write_text("Round 1 PASS\n42 passed\n")
         (run_dir / "check_round_2.txt").write_text("Round 2 PASS\n45 passed\n")
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         # Round 1 has no previous, shows "42 passed"
@@ -549,7 +549,7 @@ class TestGenerateEvolutionReport:
         project_dir, run_dir = self._setup_project(tmp_path)
         (run_dir / "check_round_1.txt").write_text("Round 1 PASS\n42 passed\n")
         (run_dir / "check_round_2.txt").write_text("Round 2 PASS\n42 passed\n")
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         # Both rounds should show "42 passed" (no arrow since unchanged)
@@ -562,7 +562,7 @@ class TestGenerateEvolutionReport:
         (run_dir / "conversation_loop_1.md").write_text(
             "Edit → src/foo.py\nEdit → src/foo.py\nEdit → src/bar.py\n"
         )
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         # src/foo.py should appear only once in the files column
@@ -589,7 +589,7 @@ class TestGenerateEvolutionReport:
             "cache_creation_tokens": 9000, "cache_read_tokens": 41200,
             "model": "claude-opus-4-6", "round": 2,
         }))
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "## Cost Summary" in report
@@ -611,7 +611,7 @@ class TestGenerateEvolutionReport:
     def test_report_no_cost_summary_without_usage(self, tmp_path: Path):
         """Report omits Cost Summary when no usage_round_N.json files exist."""
         project_dir, run_dir = self._setup_project(tmp_path)
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "## Cost Summary" not in report

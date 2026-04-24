@@ -117,11 +117,11 @@ class TestCircuitBreakerIntegration:
         def always_stall(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             return 0, "deterministic pytest hang\npytest collecting...", True
 
-        with patch("loop._run_monitored_subprocess", side_effect=always_stall), \
-             patch("loop._save_subprocess_diagnostic"), \
-             patch("loop._generate_evolution_report"), \
-             patch("loop._run_party_mode"), \
-             patch("loop._forever_restart"), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=always_stall), \
+             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.orchestrator._run_party_mode"), \
+             patch("evolve.orchestrator._forever_restart"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -153,9 +153,9 @@ class TestCircuitBreakerIntegration:
                 return 1, "crash attempt 2", False
             return 2, "crash attempt 3 different exit code", False
 
-        with patch("loop._run_monitored_subprocess", side_effect=heterogeneous), \
-             patch("loop._save_subprocess_diagnostic"), \
-             patch("loop._generate_evolution_report"), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=heterogeneous), \
+             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -176,9 +176,9 @@ class TestCircuitBreakerIntegration:
         def always_stall(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             return 0, "identical stall output", True
 
-        with patch("loop._run_monitored_subprocess", side_effect=always_stall), \
-             patch("loop._save_subprocess_diagnostic"), \
-             patch("loop._generate_evolution_report"), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=always_stall), \
+             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,

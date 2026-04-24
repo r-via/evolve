@@ -271,9 +271,9 @@ class TestMainDispatch:
         (tmp_path / "README.md").write_text("# Test")
         with patch("sys.argv", ["evolve", "start", str(tmp_path), "--rounds", "5"]), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
-             patch("loop.evolve_loop") as mock_loop, \
-             patch("loop._ensure_git"), \
-             patch("loop._run_rounds"):
+             patch("evolve.orchestrator.evolve_loop") as mock_loop, \
+             patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._run_rounds"):
             try:
                 main()
             except SystemExit:
@@ -293,8 +293,8 @@ class TestMainDispatch:
             "--run-dir", str(run_dir),
         ]), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
-             patch("loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("agent.asyncio.run", side_effect=lambda coro: coro.close()):
+             patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
+             patch("evolve.agent.asyncio.run", side_effect=lambda coro: coro.close()):
             main()
 
     def test_history_command(self, tmp_path: Path):
@@ -313,7 +313,7 @@ class TestMainDispatch:
         mock_validate = MagicMock(return_value=0)
         with patch("sys.argv", ["evolve", "start", str(tmp_path), "--validate"]), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
-             patch("loop.run_validate", mock_validate):
+             patch("evolve.orchestrator.run_validate", mock_validate):
             with pytest.raises(SystemExit) as exc:
                 main()
             assert exc.value.code == 0
@@ -325,7 +325,7 @@ class TestMainDispatch:
         mock_dry_run = MagicMock()
         with patch("sys.argv", ["evolve", "start", str(tmp_path), "--dry-run"]), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
-             patch("loop.run_dry_run", mock_dry_run):
+             patch("evolve.orchestrator.run_dry_run", mock_dry_run):
             main()
         mock_dry_run.assert_called_once()
 
@@ -338,7 +338,7 @@ class TestMainDispatch:
         try:
             with patch("sys.argv", ["evolve", "start", str(tmp_path), "--json"]), \
                  patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}), \
-                 patch("loop.evolve_loop", mock_loop):
+                 patch("evolve.orchestrator.evolve_loop", mock_loop):
                 main()
             assert _tui_mod._use_json is True
         finally:

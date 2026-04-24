@@ -748,7 +748,7 @@ class TestEffortFlag:
         import claude_agent_sdk as _sdk
         if isinstance(_sdk, MagicMock):
             pytest.skip("conftest installed a claude_agent_sdk stub — real SDK not available")
-        import agent as _agent_mod
+        import evolve.agent as _agent_mod
         original = _agent_mod.EFFORT
         try:
             _agent_mod.EFFORT = "low"
@@ -767,12 +767,12 @@ class TestEffortFlag:
 
     def test_run_single_round_sets_agent_effort(self, tmp_path: Path):
         """loop.run_single_round writes args.effort to agent.EFFORT."""
-        import agent as _agent_mod
+        import evolve.agent as _agent_mod
         original = _agent_mod.EFFORT
         (tmp_path / "runs").mkdir()
         try:
             from unittest.mock import patch as _patch
-            with _patch("agent.analyze_and_fix"):
+            with _patch("evolve.agent.analyze_and_fix"):
                 from loop import run_single_round
                 run_single_round(
                     project_dir=tmp_path,

@@ -43,7 +43,7 @@ class TestAutoDetectMakefileOSError:
         (tmp_path / "Makefile").write_text("test:\n\techo ok\n")
 
         with patch("shutil.which", side_effect=lambda name: "/usr/bin/make" if name == "make" else None), \
-             patch("loop.Path.read_text", side_effect=OSError("permission denied")):
+             patch("evolve.orchestrator.Path.read_text", side_effect=OSError("permission denied")):
             # Monkey-patch read_text just for Makefile path — simplest: patch on the method
             result = _auto_detect_check(tmp_path)
 
@@ -74,7 +74,7 @@ class TestGitShowAtSubprocessError:
 
     def test_os_error_returns_none(self, tmp_path: Path):
         """Generic OSError returns None."""
-        with patch("loop.subprocess.run", side_effect=OSError("io error")):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=OSError("io error")):
             assert _git_show_at(tmp_path, "HEAD", "runs/improvements.md") is None
 
 
@@ -129,9 +129,9 @@ class TestYoloAliasEntryPoints:
             if len(args) >= 8:
                 captured["allow_installs_positional"] = args[7]
 
-        with patch("loop._run_rounds", side_effect=_fake_run_rounds), \
-             patch("loop._ensure_git"), \
-             patch("loop.load_hooks", return_value={}):
+        with patch("evolve.orchestrator._run_rounds", side_effect=_fake_run_rounds), \
+             patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator.load_hooks", return_value={}):
             evolve_loop(
                 tmp_path,
                 max_rounds=1,
@@ -162,8 +162,8 @@ class TestYoloAliasEntryPoints:
         def _fake_analyze(*args, **kwargs):
             captured["allow_installs"] = kwargs.get("allow_installs", args[2] if len(args) > 2 else None)
 
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("agent.analyze_and_fix", side_effect=_fake_analyze), \
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
+             patch("evolve.agent.analyze_and_fix", side_effect=_fake_analyze), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path,
@@ -200,9 +200,9 @@ class TestResumeCorruptedFilenames:
             # Expect start_round == 2 (last good numeric round + 1)
             called["start_round"] = args[4] if len(args) > 4 else kwargs.get("start_round")
 
-        with patch("loop._run_rounds", side_effect=_fake_run_rounds), \
-             patch("loop._ensure_git"), \
-             patch("loop.load_hooks", return_value={}):
+        with patch("evolve.orchestrator._run_rounds", side_effect=_fake_run_rounds), \
+             patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator.load_hooks", return_value={}):
             evolve_loop(
                 tmp_path,
                 max_rounds=10,
@@ -227,9 +227,9 @@ class TestResumeCorruptedFilenames:
         def _fake_run_rounds(*args, **kwargs):
             called["start_round"] = args[4] if len(args) > 4 else kwargs.get("start_round")
 
-        with patch("loop._run_rounds", side_effect=_fake_run_rounds), \
-             patch("loop._ensure_git"), \
-             patch("loop.load_hooks", return_value={}):
+        with patch("evolve.orchestrator._run_rounds", side_effect=_fake_run_rounds), \
+             patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator.load_hooks", return_value={}):
             evolve_loop(
                 tmp_path,
                 max_rounds=10,
@@ -261,8 +261,8 @@ class TestCheckOutputStderr:
         def _fake_dry_agent(*args, **kwargs):
             captured_check["check_output"] = kwargs.get("check_output", "")
 
-        with patch("loop.subprocess.run", return_value=check_result), \
-             patch("agent.run_dry_run_agent", side_effect=_fake_dry_agent), \
+        with patch("evolve.orchestrator.subprocess.run", return_value=check_result), \
+             patch("evolve.agent.run_dry_run_agent", side_effect=_fake_dry_agent), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_dry_run(tmp_path, check_cmd="pytest", timeout=10)
 
@@ -291,8 +291,8 @@ class TestCheckOutputStderr:
                 (rd / "validate_report.md").write_text("All claims: PASS\n")
             _fake_val_agent(*args, **kwargs)
 
-        with patch("loop.subprocess.run", return_value=check_result), \
-             patch("agent.run_validate_agent", side_effect=_write_report), \
+        with patch("evolve.orchestrator.subprocess.run", return_value=check_result), \
+             patch("evolve.agent.run_validate_agent", side_effect=_write_report), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_validate(tmp_path, check_cmd="pytest", timeout=10)
 
@@ -321,7 +321,7 @@ class TestGenerateEvolutionReportVisualTimeline:
         (frames_dir / "round_1_end.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (frames_dir / "converged.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(
                 project_dir, run_dir, max_rounds=10, final_round=1,
                 converged=True, capture_frames=True,
@@ -342,7 +342,7 @@ class TestGenerateEvolutionReportVisualTimeline:
         run_dir.mkdir()
         (runs_dir / "improvements.md").write_text("# Improvements\n- [x] done\n")
 
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(
                 project_dir, run_dir, max_rounds=10, final_round=1,
                 converged=True, capture_frames=True,
@@ -362,7 +362,7 @@ class TestGenerateEvolutionReportVisualTimeline:
         (runs_dir / "improvements.md").write_text("# Improvements\n- [x] done\n")
         (run_dir / "frames").mkdir()  # empty dir
 
-        with patch("loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(
                 project_dir, run_dir, max_rounds=10, final_round=1,
                 converged=True, capture_frames=True,
@@ -384,9 +384,9 @@ class TestEvolveLoopHooksPrint:
 
         fake_hooks = {"on_round_start": "echo start", "on_round_end": "echo end"}
 
-        with patch("loop.load_hooks", return_value=fake_hooks), \
-             patch("loop._run_rounds"), \
-             patch("loop._ensure_git"):
+        with patch("evolve.orchestrator.load_hooks", return_value=fake_hooks), \
+             patch("evolve.orchestrator._run_rounds"), \
+             patch("evolve.orchestrator._ensure_git"):
             evolve_loop(
                 tmp_path,
                 max_rounds=1,
@@ -435,9 +435,9 @@ class TestRunRoundsIntegrationBranches:
             (run_dir / "CONVERGED").write_text("Done")
             return 0, "out", False
 
-        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("loop._generate_evolution_report"), \
-             patch("loop._run_party_mode"), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit):
             loop._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -468,10 +468,10 @@ class TestRunRoundsIntegrationBranches:
                 raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
             return real_run(cmd, *args, **kwargs)
 
-        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("loop._generate_evolution_report"), \
-             patch("loop._run_party_mode"), \
-             patch("loop.subprocess.run", side_effect=flaky_run), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.orchestrator._run_party_mode"), \
+             patch("evolve.orchestrator.subprocess.run", side_effect=flaky_run), \
              pytest.raises(SystemExit):
             loop._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -506,11 +506,11 @@ class TestRunRoundsIntegrationBranches:
                 raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
             return real_run(cmd, *args, **kwargs)
 
-        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("loop._generate_evolution_report"), \
-             patch("loop._run_party_mode"), \
-             patch("loop._save_subprocess_diagnostic"), \
-             patch("loop.subprocess.run", side_effect=flaky_run), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.orchestrator._run_party_mode"), \
+             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
+             patch("evolve.orchestrator.subprocess.run", side_effect=flaky_run), \
              pytest.raises(SystemExit):
             loop._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -544,9 +544,9 @@ class TestRunRoundsIntegrationBranches:
         # When spec is newer, _check_spec_freshness marks items stale —
         # which means "add a next item". So the loop will continue past the
         # rejected CONVERGED. Use max_rounds=1 so it exits at max via SystemExit.
-        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("loop._generate_evolution_report"), \
-             patch("loop._run_party_mode"), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit):
             loop._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -571,9 +571,9 @@ class TestRunRoundsIntegrationBranches:
         def spy_save(*args, **kwargs):
             save_calls.append(kwargs.get("reason", ""))
 
-        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("loop._save_subprocess_diagnostic", side_effect=spy_save), \
-             patch("loop._generate_evolution_report"), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=spy_save), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             loop._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -608,9 +608,9 @@ class TestRunRoundsIntegrationBranches:
             os.utime(imp_path, (old, old))
             return 0, "out", False
 
-        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("loop._generate_evolution_report"), \
-             patch("loop._run_party_mode"), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit):
             loop._run_rounds(
                 project_dir, run_dir, imp_path, ui,

@@ -125,7 +125,7 @@ class TestRunDryRunAgent:
             coro.close()
             raise RuntimeError("cancel scope")
 
-        with patch("agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             # Should return without error
             run_dry_run_agent(tmp_path, run_dir=rdir)
@@ -146,8 +146,8 @@ class TestRunDryRunAgent:
                 raise Exception("rate_limit exceeded")
             # Second call succeeds
 
-        with patch("agent.asyncio.run", side_effect=mock_asyncio_run), \
-             patch("agent.time.sleep") as mock_sleep, \
+        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+             patch("evolve.agent.time.sleep") as mock_sleep, \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_dry_run_agent(tmp_path, run_dir=rdir, max_retries=3)
             assert call_count == 2
@@ -163,7 +163,7 @@ class TestRunDryRunAgent:
             coro.close()
             raise ValueError("unexpected SDK error")
 
-        with patch("agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             # Should not raise — logs warning and returns
             run_dry_run_agent(tmp_path, run_dir=rdir)
@@ -176,7 +176,7 @@ class TestRunDryRunAgent:
         def mock_asyncio_run(coro):
             coro.close()
 
-        with patch("agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_dry_run_agent(tmp_path, run_dir=rdir)
             assert rdir.is_dir()
@@ -194,8 +194,8 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("loop._auto_detect_check", return_value=None), \
-             patch("agent.run_dry_run_agent") as mock_agent:
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
+             patch("evolve.agent.run_dry_run_agent") as mock_agent:
             from loop import run_dry_run
             run_dry_run(tmp_path)
 
@@ -213,8 +213,8 @@ class TestRunDryRun:
         mock_result.stdout = "5 passed"
         mock_result.stderr = ""
 
-        with patch("loop.subprocess.run", return_value=mock_result) as mock_sub, \
-             patch("agent.run_dry_run_agent") as mock_agent:
+        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result) as mock_sub, \
+             patch("evolve.agent.run_dry_run_agent") as mock_agent:
             from loop import run_dry_run
             run_dry_run(tmp_path, check_cmd="pytest", timeout=60)
 
@@ -231,8 +231,8 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("loop.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 60)), \
-             patch("agent.run_dry_run_agent"):
+        with patch("evolve.orchestrator.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 60)), \
+             patch("evolve.agent.run_dry_run_agent"):
             from loop import run_dry_run
             # Should not raise
             run_dry_run(tmp_path, check_cmd="pytest", timeout=60)
@@ -244,9 +244,9 @@ class TestRunDryRun:
 
         mock_result = MagicMock(returncode=0, stdout="ok", stderr="")
 
-        with patch("loop._auto_detect_check", return_value="pytest") as mock_detect, \
-             patch("loop.subprocess.run", return_value=mock_result), \
-             patch("agent.run_dry_run_agent"):
+        with patch("evolve.orchestrator._auto_detect_check", return_value="pytest") as mock_detect, \
+             patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
+             patch("evolve.agent.run_dry_run_agent"):
             from loop import run_dry_run
             run_dry_run(tmp_path)
             mock_detect.assert_called_once_with(tmp_path)
@@ -256,8 +256,8 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("loop._auto_detect_check", return_value=None), \
-             patch("agent.run_dry_run_agent"):
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
+             patch("evolve.agent.run_dry_run_agent"):
             from loop import run_dry_run
             run_dry_run(tmp_path)
 
@@ -276,8 +276,8 @@ class TestRunDryRun:
             if rd:
                 (rd / "dry_run_report.md").write_text("# Report\n")
 
-        with patch("loop._auto_detect_check", return_value=None), \
-             patch("agent.run_dry_run_agent", side_effect=create_report):
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
+             patch("evolve.agent.run_dry_run_agent", side_effect=create_report):
             from loop import run_dry_run
             run_dry_run(tmp_path)
 
@@ -296,10 +296,10 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        import agent as _agent_mod
+        import evolve.agent as _agent_mod
 
-        with patch("loop._auto_detect_check", return_value=None), \
-             patch("agent.run_dry_run_agent"):
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
+             patch("evolve.agent.run_dry_run_agent"):
             from loop import run_dry_run
             run_dry_run(tmp_path, model="claude-sonnet-4-20250514")
             assert _agent_mod.MODEL == "claude-sonnet-4-20250514"

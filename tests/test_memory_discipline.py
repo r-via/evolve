@@ -257,9 +257,9 @@ class TestMemoryWipeSanityGateRetry:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("loop._generate_evolution_report"), \
+        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
