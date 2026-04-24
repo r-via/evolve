@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from loop import _is_needs_package
-from tui import get_tui
+from evolve.tui import get_tui
 
 
 def _detect_current_attempt(run_dir: Path | None, round_num: int) -> int:
@@ -133,6 +133,70 @@ def _load_project_context(project_dir: Path, spec: str | None = None) -> dict[st
     improvements = improvements_path.read_text() if improvements_path.is_file() else None
 
     return {"readme": readme, "improvements": improvements}
+
+
+# Signature patterns for programmatic anomaly detection in the previous
+# round's conversation log.  Kept as module-level constants so the list
+# is easy to extend and the detection + prompt rendering stay aligned.
+# See SPEC.md § "Prior round audit".
+_PRIOR_ROUND_ANOMALY_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("watchdog stall / SIGKILL", r"stalled \(\d+s without output\) — killing subprocess"),
+    ("subprocess killed by signal", r"Round \d+ failed \(exit -\d+\)"),
+    ("pre-check TIMEOUT", r"pre-check TIMEOUT after \d+s"),
+    ("frame capture error", r"Frame capture failed for [\w_]+: not well-formed"),
+    ("circuit breaker tripped (exit 4)", r"deterministic loop detected"),
+)
+
+
+def _detect_prior_round_anomalies(
+    run_dir: Path | None, round_num: int
+) -> list[str]:
+    """Scan artifacts of round ``round_num - 1`` for anomaly signals.
+
+    Returns a list of short human-readable tags ("watchdog stall /
+    SIGKILL", "post-fix check FAIL", etc.) describing any abnormal
+    behaviour in the prior round.  Used by ``build_prompt`` to render a
+    dedicated ``## Prior round audit`` section that forces the agent to
+    investigate before proceeding with the current target — SPEC.md §
+    "Prior round audit".
+
+    Non-anomalous prior rounds return an empty list and the section is
+    omitted from the prompt entirely.
+    """
+    if not run_dir or round_num <= 1:
+        return []
+    rdir = Path(run_dir)
+    prev = round_num - 1
+    anomalies: list[str] = []
+
+    # Signal 1 — orchestrator-level diagnostic exists.  Already surfaced
+    # via ``prev_crash_section``; tallied here so the audit shows the
+    # full picture instead of silently overlapping with prev_crash.
+    if (rdir / f"subprocess_error_round_{prev}.txt").is_file():
+        anomalies.append("orchestrator diagnostic present")
+
+    # Signal 2 — post-fix check reported FAIL.
+    check_file = rdir / f"check_round_{prev}.txt"
+    if check_file.is_file():
+        try:
+            text = check_file.read_text()
+            if "post-fix check: FAIL" in text:
+                anomalies.append("post-fix check FAIL")
+        except OSError:
+            pass
+
+    # Signals 3..N — regex matches in the prior round's conversation log.
+    convo_file = rdir / f"conversation_loop_{prev}.md"
+    if convo_file.is_file():
+        try:
+            text = convo_file.read_text()
+            for label, pattern in _PRIOR_ROUND_ANOMALY_PATTERNS:
+                if re.search(pattern, text):
+                    anomalies.append(label)
+        except OSError:
+            pass
+
+    return anomalies
 
 
 def build_prompt(
@@ -327,6 +391,51 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     else:
         prev_crash_section = ""
 
+    # Prior round audit — scan the previous round's artifacts for
+    # anomaly signals (watchdog stalls, SIGKILL, pre-check timeouts,
+    # frame capture errors, circuit-breaker trips, post-fix FAIL).  When
+    # any signal is present, surface a dedicated section at the top of
+    # the prompt instructing the agent to investigate those anomalies
+    # before touching the backlog.  See SPEC.md § "Prior round audit".
+    prior_anomalies = _detect_prior_round_anomalies(run_dir, round_num)
+    if prior_anomalies:
+        prev = round_num - 1
+        prior_round_audit_section = (
+            f"\n## Prior round audit — Round {prev} showed anomalies\n"
+            f"Before doing ANY backlog work this round, investigate and "
+            f"resolve the anomalies listed below.  They are programmatic "
+            f"signals from round {prev}'s artifacts "
+            f"(``subprocess_error_round_{prev}.txt``, "
+            f"``check_round_{prev}.txt``, "
+            f"``conversation_loop_{prev}.md``).\n\n"
+            f"**Anomalies detected ({len(prior_anomalies)}):**\n"
+            + "\n".join(f"- {a}" for a in prior_anomalies)
+            + "\n\n"
+            f"**Action required (in order):**\n"
+            f"1. Open the three artifacts above and read the relevant "
+            f"excerpts.\n"
+            f"2. Identify the root cause of each anomaly.  Examples: a "
+            f"flaky test hanging pytest, a bad import breaking a "
+            f"subprocess, a non-deterministic fixture exceeding the "
+            f"watchdog, a malformed subprocess output corrupting frame "
+            f"capture.\n"
+            f"3. Apply the fix NOW — edit the offending code/test/"
+            f"config before touching the current improvement target.  "
+            f"Commit the audit fix with a ``fix(audit):`` prefix in "
+            f"COMMIT_MSG so the round history shows that the round's "
+            f"primary work was prior-round remediation.\n"
+            f"4. Only after the audit fix is committed and verified may "
+            f"you proceed with the current target.\n"
+            f"5. If an anomaly is genuinely unfixable (e.g. a known "
+            f"flaky external service) and does not block progress, "
+            f"document it in ``runs/memory.md`` under a new "
+            f"``## Known anomalies`` section with the signature and "
+            f"why it is being deferred — so future rounds don't "
+            f"re-investigate the same known-benign signal.\n"
+        )
+    else:
+        prior_round_audit_section = ""
+
     # Retry continuity: when this run is a debug retry (attempt > 1), surface
     # the previous attempt's full conversation log so the agent can continue
     # from where it stopped instead of restarting the investigation.  The
@@ -371,6 +480,7 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
 {improvements_section}
 
 {target_section}
+{prior_round_audit_section}
 {prev_crash_section}
 {prev_attempt_section}
 {memory_section}

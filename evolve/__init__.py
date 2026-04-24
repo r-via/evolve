@@ -392,7 +392,7 @@ def main():
         args = _resolve_config(args, project_path)
         # Enable JSON TUI mode if --json flag is set
         if args.json:
-            import tui as _tui_mod
+            import evolve.tui as _tui_mod
             _tui_mod._use_json = True
         # Validate spec file exists if --spec is set
         spec = getattr(args, "spec", None)
@@ -672,7 +672,7 @@ def _show_history(project_dir: Path) -> None:
     """
     import re as _re
 
-    from tui import get_tui
+    from evolve.tui import get_tui
     ui = get_tui()
 
     runs_dir = project_dir / "runs"
@@ -752,7 +752,7 @@ def _show_status(project_dir: Path):
     Args:
         project_dir: Path to the target project.
     """
-    from tui import get_tui
+    from evolve.tui import get_tui
     ui = get_tui()
 
     runs_dir = project_dir / "runs"

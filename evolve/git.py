@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from tui import TUIProtocol, get_tui
+from evolve.tui import TUIProtocol, get_tui
 
 
 def _git_show_at(project_dir: Path, ref: str, rel_path: str) -> str | None:

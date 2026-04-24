@@ -267,6 +267,47 @@ After Step 0, inspect the previous two rounds' conversation logs:
 If round {round_num} is 1 or 2, or the previous logs don't exist, skip Step 1.
 Step 0 (prior-attempt check) still applies on every round.
 
+### Step 1.5 — prior round audit (applies on every round ≥ 2)
+
+The orchestrator pre-computes a list of programmatic anomaly signals in the
+previous round's artifacts (watchdog stalls, SIGKILL, pre-check timeouts,
+frame capture errors, circuit-breaker trips, post-fix check FAIL).  When any
+are present, ``build_prompt`` injects a dedicated **``## Prior round audit``**
+section at the top of this prompt with the full list.
+
+**If that section appears, it OVERRIDES normal Phase 1/2/3 priority:**
+
+1. Read ``runs/<session>/subprocess_error_round_{prev_round_1}.txt`` (if
+   present), ``check_round_{prev_round_1}.txt``, and
+   ``conversation_loop_{prev_round_1}.md`` — in that order — to locate each
+   anomaly's origin.
+2. Identify the root cause.  Typical patterns:
+   - A silently-hanging pytest (watchdog stall) → find the test that hangs
+     (look for the last ``PASSED``/``FAILED`` before the stall), mark it
+     ``@pytest.mark.slow`` or fix the underlying deadlock.
+   - A subprocess killed by SIGKILL or a pre-check TIMEOUT → same
+     investigation; may also indicate a fixture/import that needs trimming.
+   - Frame capture "not well-formed" errors → a recent commit likely broke
+     the ``RichTUI.subprocess_output`` sanitisation; check
+     ``evolve/tui/rich.py``.
+   - Circuit breaker tripped → check ``subprocess_error_round_{prev_round_1}.txt``
+     for the repeated failure signature; the three identical attempts mean
+     the within-round retry could not self-heal.
+3. Apply the fix IMMEDIATELY.  Before touching the current improvement
+   target, commit the audit fix with a ``fix(audit):`` prefix in
+   ``COMMIT_MSG`` so the round history shows that the round's primary
+   work was prior-round remediation.
+4. Only after the audit fix is committed and verified (re-run the check)
+   may you proceed with Phase 1 / Phase 2 / Phase 3 for the current target.
+5. If an anomaly is genuinely unfixable (e.g. a known flaky external
+   service) and does not block progress, document it in ``runs/memory.md``
+   under a new ``## Known anomalies`` section with the signature and why
+   it is being deferred — so future rounds don't re-investigate the same
+   known-benign signal.
+
+If the ``## Prior round audit`` section is NOT present in this prompt, the
+prior round was clean and you may proceed normally.
+
 ## Verification — MANDATORY for every action
 - BEFORE starting, read the run directory ({run_dir}) for previous conversations and results.
 - BEFORE starting, read `runs/memory.md` to avoid repeating past mistakes.

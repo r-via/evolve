@@ -36,7 +36,7 @@ from evolve.state import (
     _parse_restart_required,
     _write_state_json,
 )
-from tui import TUIProtocol, get_tui
+from evolve.tui import TUIProtocol, get_tui
 
 
 def _auto_detect_check(project_dir: Path) -> str | None:

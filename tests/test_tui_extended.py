@@ -2,8 +2,8 @@
 
 from unittest.mock import patch
 
-from tui import PlainTUI, RichTUI, JsonTUI, _has_rich, get_tui
-import tui as _tui_mod
+from evolve.tui import PlainTUI, RichTUI, JsonTUI, _has_rich, get_tui
+import evolve.tui as _tui_mod
 
 
 class TestPlainTUIExtended:
@@ -315,7 +315,7 @@ class TestHasRichImportError:
         with patch.dict("sys.modules", {"rich": None}):
             # Force re-evaluation by calling the function directly
             # Since _has_rich imports rich each call, patching sys.modules works
-            from tui import _has_rich as check_rich
+            from evolve.tui import _has_rich as check_rich
             result = check_rich()
             assert result is False
 
@@ -324,7 +324,7 @@ class TestHasRichImportError:
         old_json = _tui_mod._use_json
         try:
             _tui_mod._use_json = False
-            with patch("tui._has_rich", return_value=False):
+            with patch("evolve.tui._has_rich", return_value=False):
                 ui = get_tui()
                 assert isinstance(ui, PlainTUI)
         finally:

@@ -35,7 +35,7 @@ import pytest
 
 import agent as agent_mod
 import evolve as evolve_mod
-import tui as tui_mod
+import evolve.tui as tui_mod
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -99,24 +99,26 @@ class TestCairosvgMissingWarn:
         assert "no-op" in warn
 
     def test_call_sites_no_longer_duplicate_the_literal(self):
-        """tui.py must reference the constant at both warning call sites.
+        """evolve/tui/ must reference the constant at both warning call sites.
 
         Previously the same wording lived inlined at RichTUI.__init__ and
         RichTUI.capture_frame.  Extracting to _CAIROSVG_MISSING_WARN means
         the body ``capture_frames is enabled but cairosvg`` should appear
-        exactly once in tui.py — inside the constant assignment.
+        exactly once in the tui package — inside the constant assignment
+        in ``evolve/tui/__init__.py``.
         """
-        src = (REPO_ROOT / "tui.py").read_text()
-        count = src.count("capture_frames is enabled but cairosvg")
+        # The constant definition lives in evolve/tui/__init__.py
+        init_src = (REPO_ROOT / "evolve" / "tui" / "__init__.py").read_text()
+        count = init_src.count("capture_frames is enabled but cairosvg")
         assert count <= 1, (
-            f"tui.py contains {count} copies of the cairosvg-missing "
+            f"evolve/tui/__init__.py contains {count} copies of the cairosvg-missing "
             "wording — expected 1 (constant body).  Both call sites must "
             "log _CAIROSVG_MISSING_WARN rather than re-inlining the text."
         )
-        # The constant must actually be referenced.
-        assert "_CAIROSVG_MISSING_WARN" in src
-        # And the call-site usage must go through _log.warning(<constant>).
-        assert "_log.warning(_CAIROSVG_MISSING_WARN)" in src
+        assert "_CAIROSVG_MISSING_WARN" in init_src
+        # The call-site usage in rich.py must go through _log.warning(<constant>).
+        rich_src = (REPO_ROOT / "evolve" / "tui" / "rich.py").read_text()
+        assert "_log.warning(_CAIROSVG_MISSING_WARN)" in rich_src
 
 
 # ---------------------------------------------------------------------------

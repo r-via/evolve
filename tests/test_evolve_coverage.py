@@ -330,10 +330,10 @@ class TestMainDispatch:
         mock_dry_run.assert_called_once()
 
     def test_start_json_flag_sets_tui(self, tmp_path: Path):
-        """main() sets tui._use_json when --json is passed (lines 258-259)."""
+        """main() sets evolve.tui._use_json when --json is passed."""
         (tmp_path / "README.md").write_text("# Test")
         mock_loop = MagicMock()
-        import tui as _tui_mod
+        import evolve.tui as _tui_mod
         original = getattr(_tui_mod, '_use_json', False)
         try:
             with patch("sys.argv", ["evolve", "start", str(tmp_path), "--json"]), \

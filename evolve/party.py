@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tui import TUIProtocol, get_tui
+from evolve.tui import TUIProtocol, get_tui
 
 
 def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = None, spec: str | None = None) -> None:

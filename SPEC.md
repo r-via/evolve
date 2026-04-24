@@ -1293,6 +1293,58 @@ the next round's subprocess crash triggers the zero-progress retry and
 then the Phase 1 escape hatch. The structural-change protocol is the
 preventive layer; the retry/escape guards are the reactive layer.
 
+### Prior round audit
+
+Every round (≥ 2) runs a pre-flight audit of the previous round's
+artifacts before the agent touches the backlog.  The goal is a simple,
+unavoidable rule: if round N-1 finished in a state that deserves a
+second look, round N has to fix that second-look item *first*, not
+carry on with whatever the improvements.md current target says.
+
+**Signals scanned programmatically (by ``_detect_prior_round_anomalies``
+in ``agent.py``):**
+
+| Signal                         | Source                                                      |
+|--------------------------------|-------------------------------------------------------------|
+| orchestrator diagnostic present | ``subprocess_error_round_{N-1}.txt`` exists                  |
+| post-fix check FAIL            | ``check_round_{N-1}.txt`` contains ``post-fix check: FAIL`` |
+| watchdog stall / SIGKILL       | ``stalled (Ns without output) — killing subprocess`` in log |
+| subprocess killed by signal    | ``Round N failed (exit -K)`` in log                         |
+| pre-check TIMEOUT              | ``pre-check TIMEOUT after Ns`` in log                       |
+| frame capture error            | ``Frame capture failed for X: not well-formed`` in log      |
+| circuit breaker tripped (exit 4) | ``deterministic loop detected`` in log                      |
+
+When any signal fires, ``build_prompt`` injects a dedicated
+``## Prior round audit`` section at the top of the system prompt
+(between ``target_section`` and ``prev_crash_section``) listing every
+anomaly detected and the mandatory action sequence: read the three
+artifacts named above, identify root cause, apply the fix, commit
+with a ``fix(audit):`` prefix, *then* resume the current target.
+
+**Interaction with the existing prev_crash / retry-continuity paths:**
+
+- ``prev_crash_section`` (pre-existing) handles the *strong* signal of
+  an orchestrator diagnostic file and tailors the message per crash
+  type (MEMORY WIPED, BACKLOG VIOLATION, NO PROGRESS, PREMATURE
+  CONVERGED, generic CRASH).  The audit section is *additive*: it
+  lists the diagnostic alongside the softer signals (frame capture
+  errors, watchdog warnings, circuit-breaker notices) that the
+  prev_crash path doesn't surface.
+- ``prev_attempt_section`` (retry continuity) handles within-round
+  continuity when the agent is on attempt 2 or 3.  The audit section
+  handles *cross-round* continuity — the previous round committed,
+  but left behind evidence that something needs attention before the
+  next target.
+
+**Deferral escape hatch.** If an anomaly is genuinely unfixable (a
+flaky external service, a platform-specific bug that doesn't affect
+the evolve project itself), the agent is instructed to document it in
+``runs/memory.md`` under a ``## Known anomalies`` section rather than
+spend every round re-investigating the same known-benign signal.
+Rounds audit against that log: if the signal matches a known-anomaly
+entry, the section is still rendered (so the operator sees it) but
+the agent may acknowledge and proceed.
+
 ### Round-wide heartbeat
 
 The parent orchestrator watches each round subprocess with a
