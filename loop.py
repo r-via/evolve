@@ -482,7 +482,7 @@ def evolve_loop(
     spec: str | None = None,
     yolo: bool | None = None,
     capture_frames: bool = False,
-    effort: str | None = "max",
+    effort: str | None = "medium",
     max_cost: float | None = None,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess.
@@ -831,7 +831,7 @@ def _run_rounds(
     hooks: dict[str, str] | None = None,
     spec: str | None = None,
     capture_frames: bool = False,
-    effort: str | None = "max",
+    effort: str | None = "medium",
     max_cost: float | None = None,
 ) -> None:
     """Run evolution rounds from start_round to max_rounds.
@@ -1465,7 +1465,7 @@ def run_single_round(
     model: str = "claude-opus-4-6",
     spec: str | None = None,
     yolo: bool | None = None,
-    effort: str | None = "max",
+    effort: str | None = "medium",
 ) -> None:
     """Execute a single evolution round (called as subprocess).
 
@@ -1588,7 +1588,7 @@ def run_dry_run(
     timeout: int = 300,
     model: str = "claude-opus-4-6",
     spec: str | None = None,
-    effort: str | None = "max",
+    effort: str | None = "medium",
 ) -> None:
     """Run a read-only analysis of the project without modifying files.
 
@@ -1680,7 +1680,7 @@ def run_validate(
     timeout: int = 300,
     model: str = "claude-opus-4-6",
     spec: str | None = None,
-    effort: str | None = "max",
+    effort: str | None = "medium",
 ) -> int:
     """Run spec compliance validation without modifying project files.
 
@@ -1869,7 +1869,7 @@ def run_sync_readme(
     spec: str | None = None,
     apply: bool = False,
     model: str = "claude-opus-4-6",
-    effort: str | None = "max",
+    effort: str | None = "medium",
 ) -> int:
     """Run the ``evolve sync-readme`` one-shot subcommand.
 

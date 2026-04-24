@@ -55,7 +55,7 @@ MODEL = "claude-opus-4-6"
 #: per-round basis.  The value is overwritten by ``loop.py`` (and the
 #: sync-readme / dry-run / validate entry points) at the start of each
 #: session based on the resolved CLI → env → config → default chain.
-EFFORT: str | None = "max"
+EFFORT: str | None = "medium"
 
 
 # Prompt section emitted on a debug retry to hand the agent the previous

@@ -125,7 +125,7 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
         ("allow_installs", "EVOLVE_ALLOW_INSTALLS", False, "bool"),
         ("spec", "EVOLVE_SPEC", None, "str"),
         ("capture_frames", "EVOLVE_CAPTURE_FRAMES", False, "bool"),
-        ("effort", "EVOLVE_EFFORT", "max", "str"),
+        ("effort", "EVOLVE_EFFORT", "medium", "str"),
         ("max_cost", "EVOLVE_MAX_COST", None, "float", "max_cost_usd"),
     ]
 
@@ -304,7 +304,7 @@ def main():
         "--effort",
         type=_validate_effort,
         default=None,
-        help="Reasoning effort level passed to the Claude Agent SDK: low, medium, high, or max (default: max, or EVOLVE_EFFORT env var)",
+        help="Reasoning effort level passed to the Claude Agent SDK: low, medium, high, or max (default: medium, or EVOLVE_EFFORT env var)",
     )
     start_p.add_argument(
         "--max-cost",
@@ -343,7 +343,7 @@ def main():
         "--effort",
         type=_validate_effort,
         default=None,
-        help="Reasoning effort level passed to the Claude Agent SDK: low, medium, high, or max (default: max, or EVOLVE_EFFORT env var)",
+        help="Reasoning effort level passed to the Claude Agent SDK: low, medium, high, or max (default: medium, or EVOLVE_EFFORT env var)",
     )
 
     # --- diff ---
@@ -410,7 +410,7 @@ def main():
                 timeout=args.timeout,
                 model=args.model,
                 spec=spec,
-                effort=getattr(args, "effort", "max"),
+                effort=getattr(args, "effort", "medium"),
             ))
         elif args.dry_run:
             from loop import run_dry_run
@@ -420,7 +420,7 @@ def main():
                 timeout=args.timeout,
                 model=args.model,
                 spec=spec,
-                effort=getattr(args, "effort", "max"),
+                effort=getattr(args, "effort", "medium"),
             )
         else:
             from loop import evolve_loop
@@ -435,7 +435,7 @@ def main():
                 forever=args.forever,
                 spec=spec,
                 capture_frames=getattr(args, "capture_frames", False),
-                effort=getattr(args, "effort", "max"),
+                effort=getattr(args, "effort", "medium"),
                 max_cost=getattr(args, "max_cost", None),
             )
 
@@ -460,15 +460,15 @@ def main():
             spec=getattr(args, "spec", None),
             apply=getattr(args, "apply", False),
             model=args.model or "claude-opus-4-6",
-            effort=getattr(args, "effort", "max"),
+            effort=getattr(args, "effort", "medium"),
         ))
 
     elif args.command == "diff":
         import os as _os
         project_path = Path(args.project_dir).resolve()
         args = _resolve_config(args, project_path)
-        # SPEC § "evolve diff": default effort is "low", not "max".
-        # _resolve_config defaults effort to "max"; override to "low"
+        # SPEC § "evolve diff": default effort is "low", not "medium".
+        # _resolve_config defaults effort to "medium"; override to "low"
         # when the user didn't explicitly set effort via CLI/env/config.
         _effort_cli = any(a == "--effort" or a.startswith("--effort=") for a in sys.argv)
         _effort_env = bool(_os.environ.get("EVOLVE_EFFORT", ""))
@@ -527,7 +527,7 @@ def _parse_round_args():
     p.add_argument("--yolo", action="store_true", dest="allow_installs")  # deprecated alias
     p.add_argument("--model", default="claude-opus-4-6")
     p.add_argument("--spec", default=None)
-    p.add_argument("--effort", type=_validate_effort, default="max")
+    p.add_argument("--effort", type=_validate_effort, default="medium")
     args = p.parse_args(sys.argv[2:])
     args.command = "_round"
     return args

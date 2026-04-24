@@ -342,9 +342,9 @@ extended-thinking budget the agent is allowed per turn. One of `low`,
 `medium`, `high`, `max`, or unset (SDK default).
 
 ```bash
---effort max      # Default — maximum reasoning, highest quality
+--effort max      # maximum reasoning, highest quality, highest cost
 --effort high     # deeper reasoning with a smaller budget than max
---effort medium   # balanced
+--effort medium   # Default — balanced cost / quality / latency
 --effort low      # quick iteration on simple targets
 ```
 
@@ -352,17 +352,20 @@ Also configurable via `evolve.toml`:
 
 ```toml
 [tool.evolve]
-effort = "max"
+effort = "medium"
 ```
 
 And `EVOLVE_EFFORT` environment variable. Resolution order is standard:
 CLI → env → `evolve.toml` → `pyproject.toml` → default.
 
-**Default is `"max"`.** Evolve's targets are typically non-trivial
-(architectural changes, test coverage, multi-file refactors), and the
-quality gain of `max` over `medium` tends to dominate the cost/latency
-delta on a per-round basis. Operators who prioritize speed or cost over
-quality can opt down explicitly via `--effort low` or `--effort medium`.
+**Default is `"medium"`.** `medium` gives the best
+cost/quality/latency ratio for the majority of evolve rounds — small
+fixes, test additions, incremental refactors, doc tweaks. Bumping to
+`--effort high` or `--effort max` is a per-session decision when the
+backlog contains genuinely hard work (architectural changes,
+multi-file coordination, subtle invariant preservation). `--effort
+low` remains appropriate for quick iteration or `evolve diff`-style
+survey runs.
 
 **Scope note.** The `--effort` flag applies to evolve's own SDK sessions
 (every round's agent invocation, dry-run, validate, and party-mode agents).

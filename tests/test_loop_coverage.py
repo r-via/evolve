@@ -1186,8 +1186,8 @@ class TestRunRounds:
             args = _parse_round_args()
         assert args.effort == "low"
 
-    def test_parse_round_args_effort_default_is_max(self):
-        """_parse_round_args defaults effort to 'max' when --effort is omitted."""
+    def test_parse_round_args_effort_default_is_medium(self):
+        """_parse_round_args defaults effort to 'medium' when --effort is omitted."""
         from evolve import _parse_round_args
 
         with patch("sys.argv", [
@@ -1195,7 +1195,7 @@ class TestRunRounds:
             "--round-num", "1",
         ]):
             args = _parse_round_args()
-        assert args.effort == "max"
+        assert args.effort == "medium"
 
     def test_effort_end_to_end_argv_to_agent_module(self, tmp_path: Path):
         """Full plumbing: _run_rounds builds argv with --effort, _parse_round_args

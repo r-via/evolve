@@ -654,14 +654,14 @@ class TestEffortFlag:
         assert "low" in str(exc_info.value)
         assert "max" in str(exc_info.value)
 
-    def test_default_is_max_when_unset(self, tmp_path: Path):
-        """No CLI, no env, no config → effort defaults to 'max'."""
+    def test_default_is_medium_when_unset(self, tmp_path: Path):
+        """No CLI, no env, no config → effort defaults to 'medium'."""
         from evolve import _resolve_config
         args = self._make_args()
         with patch("sys.argv", ["evolve", "start", str(tmp_path)]):
             with patch.dict("os.environ", {}, clear=True):
                 result = _resolve_config(args, tmp_path)
-        assert result.effort == "max"
+        assert result.effort == "medium"
 
     def test_cli_wins_over_file_and_env(self, tmp_path: Path):
         """CLI --effort low overrides evolve.toml and EVOLVE_EFFORT."""
