@@ -400,17 +400,27 @@ class TestGitCommit:
 
 class TestRunPartyMode:
     def test_no_agents_dir(self, tmp_path: Path):
-        """Skips gracefully when no agents directory exists."""
+        """Skips gracefully when no agents directory exists.
+
+        ``_run_party_mode`` was extracted to ``evolve/party.py`` during
+        the package restructuring, so ``loop.Path`` is no longer the
+        import site to patch — the fallback lookup
+        ``Path(__file__).parent.parent / "agents"`` now resolves via
+        ``evolve.party.Path``.  Patching the wrong module used to leave
+        the real repo's ``agents/`` directory discoverable, which
+        triggered a full Claude Agent SDK session (158s per run).
+        """
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
-        # Patch Path(__file__).parent to avoid finding real agents
-        with patch("loop.Path") as mock_path:
-            # Make project agents_dir.is_dir() return False
+        with patch("evolve.party.Path") as mock_path:
+            # Any Path(...) returns an object whose is_dir() is False, and
+            # whose ``.parent.parent / "agents"`` sub-path is likewise
+            # absent — covers both the project-local and the
+            # evolve-shipped fallback agents directories.
             mock_path_inst = MagicMock()
             mock_path_inst.is_dir.return_value = False
-            mock_path_inst.parent.__truediv__.return_value.is_dir.return_value = False
+            mock_path_inst.parent.parent.__truediv__.return_value.is_dir.return_value = False
             mock_path.return_value = mock_path_inst
-            # Just call with a real tmp_path that has no agents/
             _run_party_mode(tmp_path, run_dir)  # should not crash
 
     def test_agents_present_but_sdk_missing(self, tmp_path: Path):
