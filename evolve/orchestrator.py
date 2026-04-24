@@ -545,6 +545,17 @@ def evolve_loop(
     """
     if yolo is not None:
         allow_installs = yolo
+
+    # SPEC § "Migration from legacy runs/" — ensure .evolve/runs/ layout
+    # and migrate legacy runs/ if needed, before any path resolution.
+    try:
+        _ensure_runs_layout(project_dir)
+    except _RunsLayoutError as exc:
+        ui_early = get_tui()
+        ui_early.error(f"Runs layout error: {exc}")
+        import sys as _sys
+        _sys.exit(2)
+
     improvements_path = _runs_base(project_dir) / "improvements.md"
 
     _probe(f"evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")

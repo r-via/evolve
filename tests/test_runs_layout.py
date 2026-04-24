@@ -2,6 +2,7 @@
 
 Covers SPEC.md § "The .evolve/ directory" — canonical path resolution,
 legacy fallback, migration via git mv, and ambiguous-state detection.
+Also tests the wiring of _ensure_runs_layout into evolve_loop startup.
 """
 
 from __future__ import annotations
@@ -86,3 +87,36 @@ class TestEnsureRunsLayout:
         # File was moved
         assert (result / "test.md").read_text() == "content"
         assert not legacy.exists()
+
+
+class TestEnsureRunsLayoutWiring:
+    """Tests that evolve_loop calls _ensure_runs_layout at startup."""
+
+    def test_evolve_loop_calls_ensure_runs_layout(self, tmp_path: Path):
+        """evolve_loop calls _ensure_runs_layout before any path usage (AC 1)."""
+        from evolve.orchestrator import evolve_loop
+
+        (tmp_path / "README.md").write_text("# Test")
+        (tmp_path / ".evolve" / "runs").mkdir(parents=True)
+
+        with patch("evolve.orchestrator._ensure_runs_layout") as mock_ensure, \
+             patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._run_rounds"):
+            evolve_loop(tmp_path, max_rounds=1)
+
+        mock_ensure.assert_called_once_with(tmp_path)
+
+    def test_evolve_loop_exits_on_runs_layout_error(self, tmp_path: Path):
+        """_RunsLayoutError causes sys.exit(2) with error message (AC 2)."""
+        from evolve.orchestrator import evolve_loop
+
+        (tmp_path / "README.md").write_text("# Test")
+
+        with patch("evolve.orchestrator._ensure_runs_layout",
+                   side_effect=_RunsLayoutError("Both exist")), \
+             patch("evolve.orchestrator.get_tui") as mock_tui, \
+             pytest.raises(SystemExit, match="2"):
+            evolve_loop(tmp_path, max_rounds=1)
+
+        mock_tui().error.assert_called_once()
+        assert "Both exist" in mock_tui().error.call_args[0][0]
