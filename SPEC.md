@@ -125,39 +125,93 @@ Each `evolve start` creates a timestamped session. Each round runs as a
 **monitored subprocess** so code changes are picked up immediately and stalled
 processes are automatically detected and killed.
 
+### The `.evolve/` directory
+
+All evolve-produced artifacts — session runs, cumulative backlog,
+memory log, frames, reports — live under **`.evolve/`** at the root
+of the project being evolved, following the same dotfile-directory
+convention as `.git/`, `.vscode/`, `.pytest_cache/`, `.venv/`.
+
+**Rationale.**  When evolve is used as a pip-installed module driving a
+third-party project (`python -m evolve start <target-project>`), the
+target project is NOT evolve's own repository — it's arbitrary user
+code.  Dropping a top-level `runs/` directory into that project
+pollutes its root with a non-idiomatic name that clashes with the
+target's own conventions and shows up in every `ls`, every
+`git status`, every IDE file tree.  The `.evolve/` prefix makes it
+immediately obvious the directory is tool-managed state, follows
+the universal dotfile convention every developer already knows, and
+is easy to gitignore (a single `.evolve/` line) for projects that
+treat evolution artifacts as local-only.
+
+**Layout.**
+
 ```
 <project>/
 ├── README.md                          # user-facing documentation
 ├── SPEC.md                            # THE SPEC — evolve converges to this
 ├── evolve.toml                        # (optional) project-level config
-├── runs/
-│   ├── improvements.md                # shared — one improvement added per round
-│   ├── memory.md                      # shared — cumulative learning log (append-only, compacted past ~500 lines)
-│   ├── 20260324_160000/               # session 1
-│   │   ├── state.json                 # real-time session state (queryable)
-│   │   ├── conversation_loop_1.md     # full opus conversation log
-│   │   ├── conversation_loop_1_attempt_1.md   # per-attempt log when retries occur
-│   │   ├── conversation_loop_1_attempt_2.md
-│   │   ├── check_round_1.txt          # post-fix check results
-│   │   ├── usage_round_1.json         # per-round token usage
-│   │   ├── subprocess_error_round_3.txt  # diagnostic from crashed/stalled round
-│   │   ├── evolution_report.md        # post-session summary with timeline
-│   │   ├── dry_run_report.md          # (dry-run only) read-only analysis
-│   │   ├── validate_report.md         # (validate only) spec compliance report
-│   │   ├── diff_report.md             # (diff only) spec compliance delta
-│   │   ├── COMMIT_MSG                 # (transient) commit message from opus
-│   │   ├── frames/                    # (optional) captured TUI frames (PNG)
-│   │   │   ├── round_1_end.png
-│   │   │   ├── round_2_end.png
-│   │   │   └── converged.png
-│   │   └── CONVERGED                  # written by opus when done
-│   └── 20260324_170000/               # session 2
-│       ├── ...
-│       ├── party_report.md            # multi-agent discussion log
-│       └── SPEC_proposal.md           # proposed next spec (name mirrors --spec)
+├── .evolve/                           # ← tool-managed, like .git/
+│   └── runs/
+│       ├── improvements.md            # shared — one improvement added per round
+│       ├── memory.md                  # shared — cumulative learning log (append-only, compacted past ~500 lines)
+│       ├── 20260324_160000/           # session 1
+│       │   ├── state.json             # real-time session state (queryable)
+│       │   ├── conversation_loop_1.md # full opus conversation log
+│       │   ├── conversation_loop_1_attempt_1.md   # per-attempt log when retries occur
+│       │   ├── conversation_loop_1_attempt_2.md
+│       │   ├── check_round_1.txt     # post-fix check results
+│       │   ├── usage_round_1.json    # per-round token usage
+│       │   ├── subprocess_error_round_3.txt  # diagnostic from crashed/stalled round
+│       │   ├── evolution_report.md   # post-session summary with timeline
+│       │   ├── dry_run_report.md     # (dry-run only) read-only analysis
+│       │   ├── validate_report.md    # (validate only) spec compliance report
+│       │   ├── diff_report.md        # (diff only) spec compliance delta
+│       │   ├── COMMIT_MSG            # (transient) commit message from opus
+│       │   ├── frames/               # (optional) captured TUI frames (PNG)
+│       │   │   ├── round_1_end.png
+│       │   │   ├── round_2_end.png
+│       │   │   └── converged.png
+│       │   └── CONVERGED             # written by opus when done
+│       └── 20260324_170000/          # session 2
+│           ├── ...
+│           ├── party_report.md      # multi-agent discussion log
+│           └── SPEC_proposal.md     # proposed next spec (name mirrors --spec)
 └── prompts/
-    └── evolve-system.md               # (optional) project-specific prompt override
+    └── evolve-system.md              # (optional) project-specific prompt override
 ```
+
+**Single canonical path.**  There is exactly one location for every
+artifact: `.evolve/runs/…`.  Code MUST NOT accept both `.evolve/runs/`
+and a legacy `runs/` at the same time — ambiguity breaks resume,
+breaks cross-round audit, and splits evolution history across two
+trees.  Every read and every write resolves to `<project>/.evolve/
+runs/<relative>`.
+
+**Migration from legacy `runs/`.**  Projects that predate this layout
+have a top-level `runs/` directory.  On first encounter, evolve MUST:
+
+1. Detect the ambiguous state: both `<project>/runs/` and
+   `<project>/.evolve/runs/` exist, or only legacy `<project>/runs/`.
+2. If only legacy exists → migrate in-place: `git mv runs .evolve/
+   runs` (so git history is preserved and the commit lands in the
+   current session), emit an operator-facing notice `[migrate]
+   moved runs/ → .evolve/runs/`, continue.
+3. If both exist → refuse to start with a clear error pointing at
+   one of:
+   - `mv runs/* .evolve/runs/ && rmdir runs` (merge legacy into new)
+   - `rm -rf runs` (discard legacy; for projects where the state is
+     not worth preserving)
+   The operator must resolve before the next run — evolve will not
+   pick a winner automatically.
+
+**Gitignore note.**  The default recommendation is to *track*
+`.evolve/runs/` so the evolution audit trail (conversation logs,
+state.json, evolution reports) becomes part of the project's git
+history.  Projects that treat evolution as ephemeral may gitignore
+`.evolve/` entirely or selectively gitignore `.evolve/runs/*/frames/`
+(PNGs are expensive in git LFS); both are valid deployments.  Evolve
+does not write a `.gitignore` entry automatically.
 
 ---
 
