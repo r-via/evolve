@@ -263,6 +263,62 @@ alone is insufficient for structural changes**. This self-detection is the
 primary guard; the orchestrator's entry-point smoke test and zero-progress
 retry are backups.
 
+**Phase 3.6 — ADVERSARIAL REVIEW (mandatory, after commit, before Phase 4)**:
+
+After the implementation commit and after Phase 3.5 structural-change
+detection has run (or determined the change is non-structural), you MUST
+role-play **Zara (Adversarial Reviewer, `agents/reviewer.md`)** for a
+forced adversarial review of the round's work.  Protocol and attack plan
+are in `tasks/review-adversarial-round.md`; in short:
+
+1. **Reset persona** — erase the implementer (Amelia) mindset.  You are
+   now Zara: cynical, ten-year reviewer, assumes the dev cut corners.
+2. **Four passes** on the round's artifacts (US text, `git diff HEAD^
+   HEAD`, `conversation_loop_{round_num}.md`, relevant `SPEC.md`
+   sections, `memory.md`):
+   - **Pass 1** — acceptance-criteria audit: each AC classified as
+     IMPLEMENTED / PARTIAL / MISSING with evidence.
+   - **Pass 2** — claim-vs-reality: every claim in Amelia's block
+     grepped against the diff.  Claims without evidence → HIGH.
+     Silent diff hunks Amelia never mentioned → MEDIUM.
+   - **Pass 3** — code and test quality: placeholder asserts, silent
+     exception swallowing, magic numbers, N+1 loops, injection risks,
+     self-pass tests (tests written by the same pass that introduced
+     the behaviour — did they ever fail first?).
+   - **Pass 4** — SPEC compliance: normative ("MUST", "MUST NOT",
+     "SHOULD") statements in `SPEC.md` that the change violates.
+3. **Minimum 3 findings.**  If the round is genuinely clean, enumerate
+   the three highest-risk areas checked and cite WHY each was sound —
+   no "looks good" reviews.
+4. **Write the review** to `{run_dir}/review_round_{round_num}.md`
+   with the output schema from `tasks/review-adversarial-round.md`:
+   verdict (APPROVED / CHANGES REQUESTED / BLOCKED), categorised
+   findings (HIGH / MEDIUM / LOW), reviewer narrative.
+
+**Verdict → next step:**
+
+- **APPROVED** (0 HIGH) — continue to Phase 4 convergence check.
+- **CHANGES REQUESTED** (1-2 HIGH) — do NOT proceed to Phase 4.  Write
+  a follow-up section to `COMMIT_MSG` (or append to the existing
+  commit body via `git commit --amend` before the orchestrator sees
+  the commit) listing the HIGH findings.  The orchestrator's review
+  integration will pick it up and trigger a debug retry where the
+  next attempt addresses each HIGH finding.
+- **BLOCKED** (3+ HIGH, or any finding tagged `[regression-risk]`) —
+  do NOT mark the current target `[x]`.  Write a new backlog item
+  per the three-persona pipeline (Winston → John → final draft)
+  titled "US-NNN: address BLOCKED review of round {round_num}"
+  with the HIGH findings as acceptance criteria, and skip to
+  Phase 4 (which will NOT converge because a new `[ ]` item exists).
+  The orchestrator will exit or continue per the usual rules; the
+  BLOCKED review surfaces the root cause in `review_round_{round_num}.md`.
+
+This adversarial pass is the structural guarantee that every `[x]`
+passed through at least one skeptical look at the actual diff.  The
+round's own agent has a conflict of interest on self-assessment
+(same entity drafted, implemented, and checked off); Zara resolves
+that by persona-forcing a cynical mindset on fresh eyes.
+
 **Phase 4 — CONVERGENCE (only when everything is truly done)**:
 You MUST only declare convergence when ALL of the following are true:
 - Zero errors

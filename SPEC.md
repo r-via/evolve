@@ -1473,6 +1473,100 @@ the next round's subprocess crash triggers the zero-progress retry and
 then the Phase 1 escape hatch. The structural-change protocol is the
 preventive layer; the retry/escape guards are the reactive layer.
 
+### Adversarial round review (Phase 3.6)
+
+After each round's implementation commit — but before the Phase 4
+convergence check — the agent role-plays a dedicated adversarial
+reviewer persona (**Zara**, `agents/reviewer.md`) and runs a
+skeptical audit of the round's work.  This closes the self-
+assessment conflict of interest: without an adversarial pass, the
+same agent that drafted the US, implemented it, and decides the
+checkoff produces "looks good" reviews by default, and the
+cumulative quality of `improvements.md` drifts downward.
+
+**Persona separation.**  Zara is NOT the same persona as Winston
+(architect — drafted the US), John (PM — validated value/priority),
+or Amelia (dev — implemented the story).  Persona mixing defeats
+the purpose: the drafter and implementer already believe the work
+is good.  Zara's mandate is to find what they glossed over.
+
+**Input scope.**  Zara receives exactly these artifacts:
+
+1. The US item text (the `[x] [type] [priority] US-NNN: …` line
+   plus its AC block and Definition of Done).
+2. `git diff HEAD^ HEAD -- .` — the round's commit.
+3. `conversation_loop_{round_num}.md` — including the persona
+   blocks that led to the US and the dev's implementation block.
+4. `SPEC.md` — for normative-statement compliance.
+5. `runs/memory.md` (or `.evolve/runs/memory.md`) — cross-round
+   context.
+
+Zara does **not** receive:
+
+- Prior round reviews (each round is reviewed fresh — no chain
+  effect, no reviewer-colludes-with-past-reviewer failure mode).
+- `state.json` or cost data (irrelevant to code quality).
+
+**Four attack passes.** (Full protocol in
+`tasks/review-adversarial-round.md`.)
+
+| Pass | Focus                                       | Key failure modes to find                                          |
+|------|---------------------------------------------|--------------------------------------------------------------------|
+| 1    | Acceptance-criteria audit                   | AC classified as PARTIAL / MISSING with no test evidence → HIGH    |
+| 2    | Claim-vs-reality (dev narrative vs. diff)   | Claim without diff evidence → HIGH; silent diff hunks → MEDIUM      |
+| 3    | Code and test quality                       | Placeholder asserts, swallowed exceptions, self-pass tests         |
+| 4    | SPEC-compliance                             | Implementation violates a MUST / MUST NOT in `SPEC.md` → HIGH      |
+
+**Minimum findings.**  Zara produces **at least 3 findings** per
+review.  If genuinely clean, she enumerates the three highest-risk
+areas checked and cites why each was sound — no "looks good"
+reviews.  A review with fewer than 3 findings is suspected of
+insufficient scrutiny and triggers a retry of the review itself.
+
+**Output.**  Written to `{run_dir}/review_round_{N}.md` with a
+strict schema (verdict, categorised findings, reviewer narrative).
+The file is committed alongside the round's other artifacts and
+becomes part of the evolution audit trail; the prior-round audit
+path (§ "Prior round audit") scans prior review files as an
+additional anomaly signal.
+
+**Verdict → orchestrator action.**
+
+| Verdict           | Condition                                                    | Action                                                                                                              |
+|-------------------|--------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| APPROVED          | 0 HIGH findings                                               | Round proceeds to Phase 4 convergence.                                                                              |
+| CHANGES REQUESTED | 1-2 HIGH findings                                             | Orchestrator writes `subprocess_error_round_{N}.txt` with a `REVIEW: changes requested` prefix listing the HIGH findings; triggers a debug retry (same mechanism as NO PROGRESS / MEMORY WIPED).  The retry reads the review and addresses each HIGH finding before re-committing. |
+| BLOCKED           | ≥ 3 HIGH findings, OR any finding tagged `[regression-risk]` | Orchestrator exits with code 2 surfacing the review summary.  Operator intervention required — the round needs a rewrite, not a patch list. |
+
+The `REVIEW:` diagnostic prefix is recognised by `build_prompt` in
+`agent.py` alongside the existing prefixes (NO PROGRESS, MEMORY
+WIPED, BACKLOG VIOLATION, PREMATURE CONVERGED) and emits a dedicated
+`## CRITICAL — Previous attempt failed adversarial review` section
+at the top of the retry prompt, with the HIGH findings expanded.
+
+**Interaction with existing mechanisms.**
+
+- Complements `prev_crash_section` (for orchestrator-level failures)
+  and `prev_attempt_section` (for within-round retry continuity).
+  Zara's output is for *cross-phase* continuity: the dev persona
+  committed successfully, but the work still didn't pass skeptical
+  review.
+- Complements the circuit breaker: if three successive retries
+  produce the same CHANGES REQUESTED verdict with the same HIGH
+  signature, the circuit breaker's identical-failure fingerprint
+  includes `REVIEW: changes requested` and exit 4 fires.
+- The minimum-findings rule (≥ 3) prevents Zara from becoming a
+  rubber stamp even on clean code — if she cannot find three
+  substantive things to check, she is under-scrutinising.
+
+**Future extensions (not required for initial implementation):**
+
+- Session-end review — a higher-level Zara pass at convergence
+  that audits the whole session's story arc (did the backlog make
+  sense end-to-end, or did rounds produce churn?).
+- Forever-cycle review — between forever-mode cycles, audit the
+  SPEC proposal adoption for drift from the original spec intent.
+
 ### Prior round audit
 
 Every round (≥ 2) runs a pre-flight audit of the previous round's
