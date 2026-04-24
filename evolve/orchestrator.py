@@ -76,6 +76,72 @@ def _probe_ok(msg: str) -> None:
     print(f"{_PROBE_OK_PREFIX} {msg}", flush=True)
 
 
+def _scaffold_shared_runtime_files(project_dir: Path, spec: str | None) -> None:
+    """Pre-create shared cross-round runtime files at ``{runs_base}``.
+
+    Predictable files that every evolution session needs — the
+    backlog (``improvements.md``) and the cumulative learning log
+    (``memory.md``) — are created by code, not by the agent's
+    system prompt.  Rationale:
+
+    - The agent's prompt can INSTRUCT it to write in a particular
+      path but cannot GUARANTEE the path: a prompt glitch, a model
+      change, or an ambiguous interpretation of "runs/improvements.md"
+      vs "{run_dir}/improvements.md" can land the file in the wrong
+      place, costing rounds to recover.
+    - Pre-existing files at the canonical location are
+      unambiguous — the agent reads and appends to them, rather
+      than deciding where to create them.
+    - Both files are trivial to scaffold with a sane default
+      template; no work is lost and the contract is simple.
+
+    Idempotent: existing files are never overwritten.  Both files
+    land under ``_runs_base(project_dir)`` — the canonical
+    ``.evolve/runs/`` on fresh projects, the legacy ``runs/`` on
+    projects still mid-migration.
+
+    Args:
+        project_dir: Root directory of the project being evolved.
+        spec: Optional spec filename (``SPEC.md``, ``README.md``, …)
+            — forwarded to the memory scaffolder so the default
+            pointer prose names the actual spec file.
+    """
+    runs_base = _runs_base(project_dir)
+    runs_base.mkdir(parents=True, exist_ok=True)
+
+    # improvements.md — shared backlog
+    imp_path = runs_base / "improvements.md"
+    if not imp_path.is_file():
+        imp_path.write_text(
+            "# Improvements\n\n"
+            "Backlog of user-story items driving evolution — "
+            "see SPEC.md § \"Item format — user story with "
+            "acceptance criteria\".  Entries are appended by the "
+            "Winston → John → final-draft persona pipeline; the "
+            "orchestrator's pre-commit check rejects free-form "
+            "additions.  New sessions append here; this file is "
+            "shared across rounds and across sessions of the same "
+            "project.\n"
+        )
+
+    # memory.md — cumulative learning log with typed sections
+    mem_path = runs_base / "memory.md"
+    if not mem_path.is_file():
+        # Reuse the CLI's memory template renderer when available so
+        # the cold-start scaffold is identical whether the operator
+        # runs ``evolve init`` first or jumps straight to
+        # ``evolve start``.  Falls back to a minimal inline template
+        # if the import fails (defensive).
+        try:
+            from evolve.cli import _render_default_memory_md
+            mem_path.write_text(_render_default_memory_md(spec))
+        except ImportError:  # pragma: no cover — defensive fallback
+            mem_path.write_text(
+                "# Agent Memory\n\n"
+                "## Errors\n\n## Decisions\n\n## Patterns\n\n## Insights\n"
+            )
+
+
 def _is_self_evolving(project_dir: Path) -> bool:
     """Return True when evolve is evolving its own source tree.
 
@@ -596,6 +662,17 @@ def evolve_loop(
         _sys.exit(2)
 
     improvements_path = _runs_base(project_dir) / "improvements.md"
+
+    # Pre-create shared runtime files if missing — ``improvements.md``
+    # and ``memory.md`` are canonical cross-round state and must exist
+    # at ``{runs_base}`` before the first round so the agent doesn't
+    # have to guess where to create them (the old default behaviour
+    # sometimes produced per-session copies under ``{run_dir}``).
+    # The agent's system prompt is prescriptive about paths but
+    # prescriptive instructions cannot replace the file actually
+    # existing — when a predictable file is expected, code creates
+    # it, not instructions.
+    _scaffold_shared_runtime_files(project_dir, spec)
 
     _probe(f"evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
     # Announce the two independent timing axes once at startup so the

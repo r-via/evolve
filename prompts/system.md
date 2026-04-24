@@ -287,11 +287,17 @@ the orchestrator with a ``US format violation`` diagnostic.
 
 **Implementing the current target ([ ] → [x]):**
 
-1. If ``{runs_base}/improvements.md`` does not exist, draft US-001 via the
-   Winston → John → final-draft sequence above, THEN proceed to
-   Amelia to implement.
-2. If improvements.md has an unchecked ``[ ]`` item, implement ONLY
-   that one — role-play **Amelia** under
+``{runs_base}/improvements.md`` and ``{runs_base}/memory.md`` are
+pre-created by the orchestrator on session startup (see SPEC §
+"memory.md" and § "improvements.md" scaffolding).  You ALWAYS read
+from and write to these canonical paths; you do NOT create them.
+
+1. If ``{runs_base}/improvements.md`` has no ``[ ]`` items (fresh
+   project, cold start), draft US-001 via the Winston → John →
+   final-draft sequence above and APPEND it to the existing file,
+   THEN proceed to Amelia to implement.
+2. If ``{runs_base}/improvements.md`` has an unchecked ``[ ]``
+   item, implement ONLY that one — role-play **Amelia** under
    ``### US-<id> implementation — dev pass`` in your conversation
    log.  Amelia is ultra-succinct: one line per edit
    (``edit evolve/loop.py:123-140 — extract _foo helper``), one

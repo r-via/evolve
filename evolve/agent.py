@@ -355,7 +355,6 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     # when the template (or project-specific override) contains literal curly braces
     # (e.g. JSON examples, Rust code, Go generics).
     from evolve.orchestrator import WATCHDOG_TIMEOUT
-    from evolve.state import _runs_base
     # Shared cross-round files (``improvements.md``, ``memory.md``)
     # live under ``_runs_base(project_dir)`` — canonical location is
     # ``.evolve/runs/`` per SPEC § "The .evolve/ directory" with a
