@@ -11,7 +11,94 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+import subprocess as _subprocess
+
 from evolve.git import _git_show_at
+
+
+# ---------------------------------------------------------------------------
+# Runs directory helpers — SPEC.md § "The .evolve/ directory"
+# ---------------------------------------------------------------------------
+
+
+def _runs_base(project_dir: Path) -> Path:
+    """Return the canonical runs base directory for *project_dir*.
+
+    All evolve artifacts live under ``<project>/.evolve/runs/``.  This is
+    the single source of truth for the base path — no module should
+    hard-code ``"runs"`` as a path component.
+
+    Args:
+        project_dir: Root directory of the project being evolved.
+
+    Returns:
+        ``project_dir / ".evolve" / "runs"``
+    """
+    return project_dir / ".evolve" / "runs"
+
+
+class _RunsLayoutError(Exception):
+    """Raised when both legacy ``runs/`` and ``.evolve/runs/`` exist."""
+
+
+def _ensure_runs_layout(project_dir: Path) -> Path:
+    """Ensure the runs directory is in the canonical ``.evolve/runs/`` location.
+
+    Handles three cases per SPEC.md § "Migration from legacy runs/":
+
+    1. **Only ``.evolve/runs/`` exists** (or neither) — return it, create if needed.
+    2. **Only legacy ``runs/`` exists** — migrate in-place via ``git mv`` (preserves
+       git history), emit a ``[migrate]`` notice, return the new path.
+    3. **Both exist** — raise ``_RunsLayoutError`` with instructions.
+
+    Args:
+        project_dir: Root directory of the project being evolved.
+
+    Returns:
+        The canonical ``project_dir / ".evolve" / "runs"`` path (created if needed).
+
+    Raises:
+        _RunsLayoutError: When both ``runs/`` and ``.evolve/runs/`` exist and
+            the operator must resolve the ambiguity manually.
+    """
+    canonical = _runs_base(project_dir)
+    legacy = project_dir / "runs"
+
+    legacy_exists = legacy.is_dir()
+    canonical_exists = canonical.is_dir()
+
+    # Case 3 — ambiguous
+    if legacy_exists and canonical_exists:
+        raise _RunsLayoutError(
+            f"Both '{legacy}' and '{canonical}' exist.\n"
+            f"Resolve before restarting:\n"
+            f"  mv runs/* .evolve/runs/ && rmdir runs   # merge legacy into new\n"
+            f"  rm -rf runs                              # discard legacy\n"
+        )
+
+    # Case 2 — legacy migration
+    if legacy_exists and not canonical_exists:
+        # Ensure .evolve/ parent exists
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        # Try git mv first (preserves history)
+        try:
+            _subprocess.run(
+                ["git", "mv", "runs", str(canonical.relative_to(project_dir))],
+                cwd=str(project_dir),
+                capture_output=True,
+                check=True,
+                timeout=30,
+            )
+        except (FileNotFoundError, _subprocess.CalledProcessError, _subprocess.TimeoutExpired):
+            # Fallback: plain rename (no git history, but works outside git repos)
+            import shutil
+            shutil.move(str(legacy), str(canonical))
+        print(f"[migrate] moved runs/ → .evolve/runs/")
+        return canonical
+
+    # Case 1 — canonical (or fresh start)
+    canonical.mkdir(parents=True, exist_ok=True)
+    return canonical
 
 
 # ---------------------------------------------------------------------------

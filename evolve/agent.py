@@ -8,7 +8,7 @@ import shutil
 import time
 from pathlib import Path
 
-from evolve.state import _is_needs_package
+from evolve.state import _is_needs_package, _runs_base
 from evolve.tui import get_tui
 
 
@@ -190,7 +190,7 @@ def _load_project_context(project_dir: Path, spec: str | None = None) -> dict[st
                 break
 
     # Load improvements
-    improvements_path = project_dir / "runs" / "improvements.md"
+    improvements_path = _runs_base(project_dir) / "improvements.md"
     improvements = improvements_path.read_text() if improvements_path.is_file() else None
 
     return {"readme": readme, "improvements": improvements}
@@ -318,7 +318,7 @@ def build_prompt(
                 break
 
     # Memory
-    memory_path = project_dir / "runs" / "memory.md"
+    memory_path = _runs_base(project_dir) / "memory.md"
     memory = memory_path.read_text().strip() if memory_path.is_file() else ""
 
     # Previous check results
@@ -346,10 +346,10 @@ def build_prompt(
     if not allow_installs:
         allow_installs_note = """
 CONSTRAINT: Do NOT add new binaries or pip/npm packages. If an improvement requires
-a new dependency, add it to runs/improvements.md with the tag [needs-package] and
+a new dependency, add it to .evolve/runs/improvements.md with the tag [needs-package] and
 leave it unchecked. The operator must re-run with --allow-installs to allow it."""
 
-    rdir = str(run_dir or "runs")
+    rdir = str(run_dir or ".evolve/runs")
 
     # Interpolate using str.replace() instead of .format() to avoid KeyError
     # when the template (or project-specific override) contains literal curly braces
@@ -657,7 +657,7 @@ async def run_claude_agent(
     )
 
     # Log file
-    out_dir = run_dir or (project_dir / "runs")
+    out_dir = run_dir or _runs_base(project_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     fname = log_filename or f"conversation_loop_{round_num}.md"
     log_path = out_dir / fname
@@ -943,7 +943,7 @@ def build_validate_prompt(
     readme = ctx["readme"]
     improvements = ctx["improvements"] or "(none)"
 
-    rdir = str(run_dir or "runs")
+    rdir = str(run_dir or ".evolve/runs")
 
     check_section = _build_check_section(check_cmd, check_output)
 
@@ -1017,7 +1017,7 @@ def build_dry_run_prompt(
     readme = ctx["readme"]
     improvements = ctx["improvements"] or "(none)"
 
-    rdir = str(run_dir or "runs")
+    rdir = str(run_dir or ".evolve/runs")
 
     check_section = _build_check_section(check_cmd, check_output)
 
@@ -1229,7 +1229,7 @@ def run_dry_run_agent(
         max_retries: Maximum SDK call attempts on rate-limit errors.
         spec: Path to the spec file relative to project_dir (default: README.md).
     """
-    rdir = run_dir or (project_dir / "runs")
+    rdir = run_dir or _runs_base(project_dir)
     rdir.mkdir(parents=True, exist_ok=True)
 
     prompt = build_dry_run_prompt(project_dir, check_output, check_cmd, rdir, spec=spec)
@@ -1284,7 +1284,7 @@ def run_validate_agent(
         max_retries: Maximum SDK call attempts on rate-limit errors.
         spec: Path to the spec file relative to project_dir (default: README.md).
     """
-    rdir = run_dir or (project_dir / "runs")
+    rdir = run_dir or _runs_base(project_dir)
     rdir.mkdir(parents=True, exist_ok=True)
 
     prompt = build_validate_prompt(project_dir, check_output, check_cmd, rdir, spec=spec)
@@ -1330,7 +1330,7 @@ def build_diff_prompt(
     readme = ctx["readme"]
     improvements = ctx["improvements"] or "(none)"
 
-    rdir = str(run_dir or "runs")
+    rdir = str(run_dir or ".evolve/runs")
 
     return f"""\
 You are a lightweight spec compliance agent. You are running in DIFF mode.
@@ -1414,7 +1414,7 @@ def run_diff_agent(
         max_retries: Maximum SDK call attempts on rate-limit errors.
         spec: Path to the spec file relative to project_dir (default: README.md).
     """
-    rdir = run_dir or (project_dir / "runs")
+    rdir = run_dir or _runs_base(project_dir)
     rdir.mkdir(parents=True, exist_ok=True)
 
     prompt = build_diff_prompt(project_dir, rdir, spec=spec)

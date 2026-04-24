@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from evolve.state import _runs_base
 from evolve.tui import TUIProtocol, get_tui
 
 
@@ -72,8 +73,9 @@ def _run_party_mode(project_dir: Path, run_dir: Path, ui: TUIProtocol | None = N
     spec_file = spec or "README.md"
     spec_path = project_dir / spec_file
     readme = spec_path.read_text() if spec_path.is_file() else "(none)"
-    improvements = (project_dir / "runs" / "improvements.md").read_text() if (project_dir / "runs" / "improvements.md").is_file() else "(none)"
-    memory = (project_dir / "runs" / "memory.md").read_text() if (project_dir / "runs" / "memory.md").is_file() else "(none)"
+    _rb = _runs_base(project_dir)
+    improvements = (_rb / "improvements.md").read_text() if (_rb / "improvements.md").is_file() else "(none)"
+    memory = (_rb / "memory.md").read_text() if (_rb / "memory.md").is_file() else "(none)"
     converged = (run_dir / "CONVERGED").read_text().strip() if (run_dir / "CONVERGED").is_file() else ""
     print("[probe] party mode: context loaded (README, improvements, memory)")
 

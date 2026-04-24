@@ -21,6 +21,7 @@ from evolve.git import _ensure_git, _git_commit, _git_show_at, _setup_forever_br
 from evolve.hooks import fire_hook, load_hooks
 from evolve.party import _forever_restart, _run_party_mode
 from evolve.state import (
+    _RunsLayoutError,
     _check_spec_freshness,
     _compute_backlog_stats,
     _count_blocked,
@@ -28,12 +29,14 @@ from evolve.state import (
     _count_unchecked,
     _detect_backlog_violation,
     _detect_premature_converged,
+    _ensure_runs_layout,
     _extract_unchecked_lines,
     _extract_unchecked_set,
     _get_current_improvement,
     _is_needs_package,
     _parse_check_output,
     _parse_restart_required,
+    _runs_base,
     _write_state_json,
 )
 from evolve.tui import TUIProtocol, get_tui
@@ -295,7 +298,7 @@ def _generate_evolution_report(
         converged: Whether the session converged successfully.
     """
     session_name = run_dir.name
-    improvements_path = project_dir / "runs" / "improvements.md"
+    improvements_path = _runs_base(project_dir) / "improvements.md"
     checked = _count_checked(improvements_path)
     unchecked = _count_unchecked(improvements_path)
     status = "CONVERGED" if converged else "MAX_ROUNDS"
@@ -508,7 +511,7 @@ def evolve_loop(
     """
     if yolo is not None:
         allow_installs = yolo
-    improvements_path = project_dir / "runs" / "improvements.md"
+    improvements_path = _runs_base(project_dir) / "improvements.md"
 
     print(f"[probe] evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
 
@@ -541,7 +544,7 @@ def evolve_loop(
 
     if resume:
         # Find the most recent session and detect last completed round
-        runs_dir = project_dir / "runs"
+        runs_dir = _runs_base(project_dir)
         if runs_dir.is_dir():
             sessions = sorted(
                 [d for d in runs_dir.iterdir() if d.is_dir() and d.name[0].isdigit()],
@@ -582,7 +585,7 @@ def evolve_loop(
 
     # Create timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = project_dir / "runs" / timestamp
+    run_dir = _runs_base(project_dir) / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
     ui = get_tui(run_dir=run_dir, capture_frames=capture_frames)
     ui.run_dir_info(str(run_dir))
@@ -977,7 +980,7 @@ def _run_rounds(
                 # treat it as a silent wipe and trigger a debug retry
                 # (same family as zero-progress detection).  See
                 # SPEC.md § "memory.md" — "Byte-size sanity gate".
-                memory_path = project_dir / "runs" / "memory.md"
+                memory_path = _runs_base(project_dir) / "memory.md"
                 mem_size_before = memory_path.stat().st_size if memory_path.is_file() else 0
 
                 returncode, output, stalled = _run_monitored_subprocess(
@@ -1406,7 +1409,7 @@ def _run_rounds(
 
                     # Create a new session directory for the next cycle
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    run_dir = project_dir / "runs" / timestamp
+                    run_dir = _runs_base(project_dir) / timestamp
                     run_dir.mkdir(parents=True, exist_ok=True)
                     # Update TUI with new run_dir for frame capture
                     if capture_frames:
@@ -1523,9 +1526,9 @@ def run_single_round(
     _agent_mod.MODEL = model
     _agent_mod.EFFORT = effort
 
-    rdir = run_dir or (project_dir / "runs")
+    rdir = run_dir or _runs_base(project_dir)
     rdir.mkdir(parents=True, exist_ok=True)
-    improvements_path = project_dir / "runs" / "improvements.md"
+    improvements_path = _runs_base(project_dir) / "improvements.md"
     ui = get_tui()
 
     print(f"[probe] round {round_num} starting — project={project_dir.name}, model={model}", flush=True)
@@ -1720,7 +1723,7 @@ def run_dry_run(
 
     # Create timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = project_dir / "runs" / timestamp
+    run_dir = _runs_base(project_dir) / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
     ui.run_dir_info(str(run_dir))
     ui.info("  Mode: DRY RUN (read-only analysis, no file changes)")
@@ -1812,7 +1815,7 @@ def run_validate(
 
     # Create timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = project_dir / "runs" / timestamp
+    run_dir = _runs_base(project_dir) / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
     ui.run_dir_info(str(run_dir))
     ui.info("  Mode: VALIDATE (spec compliance check, no file changes)")
@@ -1916,7 +1919,7 @@ def run_diff(
 
     # Create timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = project_dir / "runs" / timestamp
+    run_dir = _runs_base(project_dir) / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
     ui.run_dir_info(str(run_dir))
     ui.info("  Mode: DIFF (lightweight gap detection, no file changes)")
@@ -2017,7 +2020,7 @@ def run_sync_readme(
 
     # Create timestamped run directory for the conversation log + sentinel.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = project_dir / "runs" / timestamp
+    run_dir = _runs_base(project_dir) / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
     ui.run_dir_info(str(run_dir))
     mode_label = "APPLY (will commit README.md)" if apply else "PROPOSAL (writes README_proposal.md)"
