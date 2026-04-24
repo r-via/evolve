@@ -2462,13 +2462,19 @@ layers of defense:
 **Interaction with prompt caching.**  Combined with the caching
 contract (above), the effect compounds:
 
-- Caching gives ~90% discount on the cached block content.
-- Archival reduces the cached block content by ~30-40% over
-  time as stable sections move out.
+- The Claude Code CLI's native caching gives ~90% discount on
+  the **stable leading prefix** of the system prompt across
+  calls within the TTL — that prefix is typically system.md +
+  SPEC.md + README.md.
+- Archival reduces the volume of that leading prefix by ~30-40%
+  over time as stable sections move out, so the first round of
+  a session (cache write) is cheaper too.
 
-The two levers are orthogonal: caching attacks the per-call cost
-of repeated content; archival attacks the intrinsic volume of
-what gets included.  Both should land.
+The two levers are orthogonal: caching attacks the per-call
+cost of repeated content (cache reads on round N > 1);
+archival attacks the intrinsic volume of what gets included in
+every call (cheaper cache writes on round 1).  Both should
+land.
 
 **Migration bootstrap — what to archive first.**
 

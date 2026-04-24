@@ -291,14 +291,19 @@ def build_prompt_blocks(
 ) -> PromptBlocks:
     """Build a two-block prompt for the opus agent (prompt caching).
 
-    Returns a :class:`PromptBlocks` with ``cached`` (static per session —
-    system template + SPEC/README) and ``uncached`` (per-round variable —
-    check results, memory, attempt marker, prior audit, crash logs).  The
-    cached block is deterministic for the session so that the SDK's
-    ``cache_control={"type": "ephemeral"}`` achieves cache hits on
-    subsequent rounds.
+    Returns a :class:`PromptBlocks` with ``cached`` (static per session
+    — system template + SPEC/README) and ``uncached`` (per-round
+    variable — check results, memory, attempt marker, prior audit,
+    crash logs).  Callers concatenate ``cached + uncached`` and pass
+    the result as a single-string ``system_prompt`` to the SDK; the
+    Claude Code CLI handles prompt caching natively on the stable
+    leading prefix across calls.  Passing a list-of-dicts with
+    ``cache_control`` to the SDK is not accepted (signature is
+    ``str | SystemPromptPreset | None``) and would silently produce
+    an empty-system-prompt call — see SPEC.md § "Prompt caching".
 
-    See SPEC.md § "Prompt caching" for the contract.
+    Keeping the static portion first (and identical across rounds)
+    is what makes the native cache hit reliably.
 
     Args:
         project_dir: Root directory of the project being evolved.
@@ -813,28 +818,24 @@ async def run_claude_agent(
     run_dir: Path | None = None,
     log_filename: str | None = None,
     images: list[Path] | None = None,
-    system_prompt_blocks: list[dict] | None = None,
 ) -> None:
     """Run Claude Code agent with the given prompt. Logs conversation to run_dir/.
 
     Streams SDK messages, deduplicates partial updates, and writes a
     Markdown conversation log.  Tool calls are shown live in the TUI.
 
+    The prompt is passed as a **single string** — never a list-of-dicts.
+    The underlying Claude Code CLI applies prompt caching natively on
+    stable leading prefixes; see SPEC.md § "Prompt caching".
+
     Args:
-        prompt: The assembled system prompt for the agent (used as the
-            user message when *system_prompt_blocks* is provided, or as
-            the sole prompt when it is ``None``).
+        prompt: The assembled system prompt for the agent.
         project_dir: Root directory of the project (used as cwd).
         round_num: Current evolution round number (for log naming).
         run_dir: Directory to write the conversation log into.
         log_filename: Override the default log filename.
         images: Optional list of image file paths to attach as multimodal
             content blocks alongside the text prompt.
-        system_prompt_blocks: Two-block system prompt list with
-            ``cache_control`` for prompt caching (SPEC.md § "Prompt
-            caching").  When provided, this is set on
-            ``ClaudeAgentOptions(system_prompt=...)`` and *prompt*
-            becomes the initial user message.
     """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -847,7 +848,6 @@ async def run_claude_agent(
         disallowed_tools=["Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
         effort=EFFORT,
-        **({"system_prompt": system_prompt_blocks} if system_prompt_blocks else {}),
     )
 
     # Log file
@@ -1264,7 +1264,6 @@ async def _run_readonly_claude_agent(
     log_filename: str,
     log_header: str,
     disallowed_tools: list[str] | None = None,
-    system_prompt_blocks: list[dict] | None = None,
 ) -> None:
     """Shared helper for running the Claude agent in read-only modes.
 
@@ -1279,8 +1278,6 @@ async def _run_readonly_claude_agent(
         log_header: Markdown header written at the top of the log file.
         disallowed_tools: Tools to block.  Defaults to read-only set
             (Edit, Bash, Task, Agent, WebSearch, WebFetch).
-        system_prompt_blocks: Two-block system prompt list with
-            ``cache_control`` for prompt caching.
     """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -1296,7 +1293,6 @@ async def _run_readonly_claude_agent(
         disallowed_tools=disallowed_tools,
         include_partial_messages=True,
         effort=EFFORT,
-        **({"system_prompt": system_prompt_blocks} if system_prompt_blocks else {}),
     )
 
     log_path = run_dir / log_filename
@@ -1733,8 +1729,6 @@ async def _run_sync_readme_claude_agent(
     prompt: str,
     project_dir: Path,
     run_dir: Path,
-    *,
-    system_prompt_blocks: list[dict] | None = None,
 ) -> None:
     """Run the Claude agent for the ``sync-readme`` one-shot subcommand.
 
@@ -1755,7 +1749,6 @@ async def _run_sync_readme_claude_agent(
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
         effort=EFFORT,
-        **({"system_prompt": system_prompt_blocks} if system_prompt_blocks else {}),
     )
 
     log_path = run_dir / "sync_readme_conversation.md"
@@ -1989,8 +1982,6 @@ async def _run_memory_curation_claude_agent(
     prompt: str,
     project_dir: Path,
     run_dir: Path,
-    *,
-    system_prompt_blocks: list[dict] | None = None,
 ) -> None:
     """Run the Mira curation agent via the Claude SDK.
 
@@ -2008,7 +1999,6 @@ async def _run_memory_curation_claude_agent(
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
         effort="low",
-        **({"system_prompt": system_prompt_blocks} if system_prompt_blocks else {}),
     )
 
     log_path = run_dir / "curation_conversation.md"

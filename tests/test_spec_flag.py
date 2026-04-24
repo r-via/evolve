@@ -290,12 +290,8 @@ class TestRunPartyModeSpec:
         # Mock the agent to capture the prompt and create the proposal file
         captured_prompts = []
 
-        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None, system_prompt_blocks=None):
-            # With prompt caching, the full prompt is in system_prompt_blocks
-            if system_prompt_blocks:
-                captured_prompts.append(system_prompt_blocks[0]["text"])
-            else:
-                captured_prompts.append(prompt)
+        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None):
+            captured_prompts.append(prompt)
             # Simulate agent creating the proposal file
             if run_dir:
                 (run_dir / "SPEC_proposal.md").write_text("# Proposed Spec\n")
@@ -327,11 +323,8 @@ class TestRunPartyModeSpec:
         ui = MagicMock()
         captured_prompts = []
 
-        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None, system_prompt_blocks=None):
-            if system_prompt_blocks:
-                captured_prompts.append(system_prompt_blocks[0]["text"])
-            else:
-                captured_prompts.append(prompt)
+        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None):
+            captured_prompts.append(prompt)
 
         with patch("evolve.agent.run_claude_agent", mock_agent), \
              patch("evolve.agent._is_benign_runtime_error", return_value=False), \
@@ -355,7 +348,7 @@ class TestRunPartyModeSpec:
 
         ui = MagicMock()
 
-        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None, system_prompt_blocks=None):
+        async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None):
             # Simulate agent creating the proposal with the spec-derived name
             if run_dir:
                 (run_dir / "SPEC_proposal.md").write_text("# Proposal\n")
