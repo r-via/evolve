@@ -2154,9 +2154,25 @@ Docker, and remote SSH sessions identically.
 
 ---
 
-## Phase 5 — Party mode (post-convergence)
+## Phase 5 — Party mode (post-convergence, ``--forever`` only)
 
-After convergence, all agents from `agents/` brainstorm the next evolution.
+**When it fires.**  Party mode runs **only** when the session is in
+``--forever`` mode AND convergence was reached in the current cycle.
+Its sole purpose is to draft the next spec proposal so the forever
+loop has something to converge toward in the next cycle — without
+``--forever`` there is no next cycle, so running party mode would
+be wasted work (multi-persona Opus call with non-trivial cost).
+
+Concretely, the orchestrator's convergence handler:
+
+- In ``--forever``: calls ``_run_party_mode(…)`` → reads/writes
+  ``party_report.md`` + ``<spec>_proposal.md`` → ``_forever_restart``
+  adopts the proposal and starts the next cycle.
+- Without ``--forever``: skips party mode entirely, logs
+  ``convergence reached — skipping party mode`` at probe level,
+  exits with code 0 cleanly.
+
+When convergence occurs, all agents from `agents/` brainstorm the next evolution.
 
 **Inputs:**
 - Agent personas from `agents/*.md`

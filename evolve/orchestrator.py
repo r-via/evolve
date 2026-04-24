@@ -1720,8 +1720,25 @@ def _run_rounds(
                     estimated_cost_usd=_usage_cost,
                 )
 
-                # Launch party mode
-                _run_party_mode(project_dir, run_dir, ui, spec=spec)
+                # Launch party mode — ONLY in --forever mode.
+                #
+                # Party mode's sole purpose is to draft the next
+                # spec proposal (`<spec>_proposal.md`) so the forever
+                # loop has something to converge toward in the next
+                # cycle.  Without ``--forever``, the session ends on
+                # convergence (exit 0); there is no next cycle, so
+                # running party mode would be wasted work —
+                # potentially costly work (Opus call + multi-turn
+                # brainstorming).  Convergence in non-forever mode
+                # = stop, cleanly.
+                if forever:
+                    _run_party_mode(project_dir, run_dir, ui, spec=spec)
+                else:
+                    _probe(
+                        "convergence reached — skipping party mode "
+                        "(only runs in --forever mode; without forever, "
+                        "convergence = stop)"
+                    )
 
                 if forever:
                     # Auto-merge the spec proposal into the spec file, then
