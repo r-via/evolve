@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from evolve.agent import build_prompt
+from evolve.agent import _build_draft_prompt, build_prompt
 from evolve.orchestrator import _BACKLOG_VIOLATION_HEADER, _BACKLOG_VIOLATION_PREFIX
 from evolve.state import _detect_backlog_violation, _extract_unchecked_lines
 
@@ -196,7 +196,7 @@ class TestRule2AntiVariante:
     See SPEC.md § "Backlog discipline" Rule 2.
     """
 
-    PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
+    PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "draft.md"
 
     @staticmethod
     def _collapse_ws(text: str) -> str:
@@ -220,7 +220,7 @@ class TestRule2AntiVariante:
 
     def test_rule_2_is_rendered_into_build_prompt(self, tmp_path: Path) -> None:
         project_dir, run_dir = _make_project(tmp_path)
-        prompt = build_prompt(project_dir, run_dir=run_dir, round_num=1)
+        prompt = _build_draft_prompt(project_dir, run_dir, spec="README.md")
         assert "Rule 2" in prompt
         assert "Anti-variante" in prompt
         assert "extend the existing item" in self._collapse_ws(prompt)
@@ -232,7 +232,7 @@ class TestRule3PriorityAwareInsertion:
     Rule 3.
     """
 
-    PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
+    PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "draft.md"
 
     def test_system_md_documents_all_three_priorities(self) -> None:
         text = self.PROMPT_PATH.read_text()
@@ -247,7 +247,7 @@ class TestRule3PriorityAwareInsertion:
 
     def test_rule_3_is_rendered_into_build_prompt(self, tmp_path: Path) -> None:
         project_dir, run_dir = _make_project(tmp_path)
-        prompt = build_prompt(project_dir, run_dir=run_dir, round_num=1)
+        prompt = _build_draft_prompt(project_dir, run_dir, spec="README.md")
         assert "Rule 3" in prompt
         assert "Priority-aware" in prompt
         assert "[P1]" in prompt
@@ -312,7 +312,7 @@ class TestRule4AntiStutter:
     has both the rule and the evidence to apply it).
     """
 
-    PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
+    PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "draft.md"
 
     def test_system_md_contains_rule_4_text(self) -> None:
         text = self.PROMPT_PATH.read_text()
@@ -327,7 +327,7 @@ class TestRule4AntiStutter:
 
     def test_rule_4_is_rendered_into_build_prompt(self, tmp_path: Path) -> None:
         project_dir, run_dir = _make_project(tmp_path)
-        prompt = build_prompt(project_dir, run_dir=run_dir, round_num=4)
+        prompt = _build_draft_prompt(project_dir, run_dir, spec="README.md")
         assert "Rule 4" in prompt
         assert "Anti-stutter" in prompt
 
@@ -398,7 +398,7 @@ class TestAllFourRulesCoPresentInPrompt:
 
     def test_prompt_has_all_four_rule_headings(self, tmp_path: Path) -> None:
         project_dir, run_dir = _make_project(tmp_path)
-        prompt = build_prompt(project_dir, run_dir=run_dir, round_num=1)
+        prompt = _build_draft_prompt(project_dir, run_dir, spec="README.md")
         for label in (
             "Rule 1",
             "Rule 2",

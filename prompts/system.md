@@ -228,82 +228,31 @@ not mechanical:
 
 Before touching improvements.md, check if any items are tagged `[stale: spec changed]`.
 
-**If YES — rebuild the backlog THEN STOP (do not implement in the same round).**
+**If YES — prune the stale items and stop this round.** Drafting a
+replacement US is handled by the separate draft_agent call on the
+next round (SPEC § "Multi-call round architecture"). Concretely:
 
-The rebuild is a round by itself. This is a hard rule, violated by
-earlier versions of this prompt and enforced now by the
-orchestrator's per-round scope check.  Mixing rebuild + implement
-in the same round produces sessions that read, draft multiple US
-items, AND start coding — 300+ seconds per round and no clean
-commit boundary between the planning output and the code changes.
+1. Remove every `[stale: spec changed]` item from
+   ``{runs_base}/improvements.md`` (keep checked `[x]` items).
+2. Write ``COMMIT_MSG`` with ``chore(spec): prune stale backlog
+   after spec change`` and stop. Do NOT draft a new US here — the
+   next round's draft_agent will pick up from the drained queue.
 
-Concretely, when stale items are present you MUST:
+If NO stale items exist — proceed to Phase 3.
 
-1. Set aside the entire stale backlog (keep checked [x] items,
-   remove all `[stale: spec changed]` items).
-2. Re-read the spec (README.md or ``--spec``) line by line.
-3. For the FIRST spec claim that is NOT yet implemented, draft
-   exactly ONE new US item via the full three-persona pipeline
-   (Winston → John → final-draft — see Phase 3 below for the
-   protocol and template).  Do NOT draft multiple US items in one
-   round; the rebuild is not a brainstorming session, it's a
-   controlled re-alignment that unblocks the next round.
-4. Append that ONE item to ``{runs_base}/improvements.md``.
-5. Write ``COMMIT_MSG`` with ``chore(spec): rebuild backlog after
-   spec change`` (or similar) and **stop the round** — do NOT
-   proceed to Phase 3 implementation.  The next round's fresh
-   agent picks up the new item and implements it.
-
-If NO stale items exist — the backlog is aligned with the spec, proceed to Phase 3.
-
-**Phase 3 — IMPROVEMENTS (only when zero errors and no stale items)**:
+**Phase 3 — IMPLEMENTATION (you are Amelia, only when zero errors and no stale items)**:
 
 IMPORTANT: Only ONE improvement per turn. Do not batch multiple improvements.
+You are invoked by the orchestrator ONLY when `{runs_base}/improvements.md`
+already has an unchecked `[ ]` item. Drafting new US items is a
+separate call (draft_agent, Winston + John — see SPEC § "Multi-call
+round architecture"). You do NOT draft US items here. If you find
+the queue drained mid-round, stop immediately — the orchestrator
+will route to the draft_agent on the next round.
 
-**Three-persona pipeline (SPEC § "Item format — user story with
-acceptance criteria").**  Every improvement passes through three
-personas whose profiles live in `agents/`:
-
-- **Winston (Architect, `agents/architect.md`)** — drafts technical
-  design considerations, pattern choice, risks, integration points.
-- **John (PM, `agents/pm.md`)** — validates user value, priority
-  rationale, explicit non-goals ("what this is NOT").
-- **Amelia (Dev, `agents/dev.md`)** — implements the story with
-  TDD discipline, citing file paths and acceptance-criterion IDs;
-  all existing and new tests must pass 100% before [x].
-
-**Writing a new item (when the queue is empty — see Backlog
-discipline rule 1 below):**
-
-1. Role-play Winston in your conversation log under a heading
-   ``### Drafting US-<id> — architect pass``.  Substantive reasoning,
-   not "looks fine".
-2. Role-play John under ``### Drafting US-<id> — PM pass``.  User
-   value + priority + non-goals.
-3. Emit the final US draft under ``### US-<id> final draft`` using
-   the template below, then append it to ``.evolve/runs/
-   improvements.md`` (or legacy ``{runs_base}/improvements.md`` pre-
-   migration).
-
-US template (every field required):
-
-```
-- [ ] [functional|performance] [P1|P2|P3] US-NNN: <one-line summary>
-  **As** <role>, **I want** <capability> **so that** <value>.
-  **Acceptance criteria (must all pass before the item is [x]'d):**
-  1. <testable criterion>
-  2. <testable criterion>
-  3. <testable criterion>
-  **Definition of done:**
-  - <concrete artifact>
-  - <concrete artifact>
-  **Architect notes (Winston):** <constraint, pattern, risk>
-  **PM notes (John):** <user value, priority, explicit NOT-goals>
-```
-
-`<id>` is ``max(existing_ids) + 1`` zero-padded to 3 digits
-(`US-001`, `US-002`, …).  Free-form prose items are rejected by
-the orchestrator with a ``US format violation`` diagnostic.
+**You are Amelia (Dev, `agents/dev.md`).** Ultra-succinct TDD
+discipline, citing file paths and acceptance-criterion IDs; all
+existing and new tests must pass 100% before `[x]`.
 
 **Implementing the current target ([ ] → [x]):**
 
@@ -312,12 +261,9 @@ pre-created by the orchestrator on session startup (see SPEC §
 "memory.md" and § "improvements.md" scaffolding).  You ALWAYS read
 from and write to these canonical paths; you do NOT create them.
 
-1. If ``{runs_base}/improvements.md`` has no ``[ ]`` items (fresh
-   project, cold start), draft US-001 via the Winston → John →
-   final-draft sequence above and APPEND it to the existing file,
-   THEN proceed to Amelia to implement.
-2. If ``{runs_base}/improvements.md`` has an unchecked ``[ ]``
-   item, implement ONLY that one — role-play **Amelia** under
+1. Locate the first unchecked `[ ]` item in
+   ``{runs_base}/improvements.md`` — that is your target.
+2. Implement ONLY that one — role-play **Amelia** under
    ``### US-<id> implementation — dev pass`` in your conversation
    log.  Amelia is ultra-succinct: one line per edit
    (``edit evolve/loop.py:123-140 — extract _foo helper``), one
@@ -337,47 +283,14 @@ from and write to these canonical paths; you do NOT create them.
 
 5. Do NOT touch already checked [x] items.
 
-6. **Backlog discipline — 4 rules (SPEC.md § "Backlog discipline")**:
-
-   **Rule 1 — Empty-queue gate (HARD).** After checking off the current
-   improvement, count remaining `[ ]` items in improvements.md.
-   - If **any `[ ]` item remains** → **DO NOT add a new item**. Skip to
-     Phase 4 (convergence check) for this round. The queue drains first.
-   - If **zero `[ ]` items remain** → you MAY add exactly one new item,
-     subject to rules 2-4 below.
-
-   Rationale: adding items while the queue is non-empty pushes queued
-   priorities further down the line. The orchestrator enforces this via
-   a pre-commit check that rejects commits violating rule 1 with a
-   debug-retry header `"Backlog discipline violation: new item added
-   while queue non-empty"`.
-
-   **Rule 2 — Anti-variante.** Before writing a new item, scan all
-   pending items (checked AND unchecked) for a shared template/verb
-   (e.g. "Extract X to constant", "Add tests for Y", "Harden Z against
-   regression"). If your proposed item matches → **extend the existing
-   item's description** to cover the new case, don't add a duplicate.
-
-   **Rule 3 — Priority-aware insertion.** Tag the new item with
-   `[P1]` / `[P2]` / `[P3]` and insert at the position matching:
-   - `[P1]` bug / missing spec claim / blocked retry → TOP of pending
-   - `[P2]` feature / enhancement (default if no tag) → middle
-   - `[P3]` refactoring / polish / cosmetic → BOTTOM of pending
-
-   **Rule 4 — Anti-stutter.** If the last 3 conversation logs each
-   added a `[P3]` item, you MAY NOT add another `[P3]` even if rules
-   1-3 would allow it. Read the last 3 `conversation_loop_*.md` files
-   and check their added-item type before proceeding.
-
-   After rule 1 (and if it permits adding), review the code against the
-   spec to identify the one new item:
-   - Does the project do everything the spec promises?
-   - Are there best practices missing?
-   - Are there performance optimizations possible?
-   - Is the code clean, maintainable, well-structured?
-
-   If rule 1 blocks adding, or rule 2 merges the item, or no new
-   improvement is needed → proceed to Phase 4.
+6. **Do NOT draft new US items.** Adding an item to
+   ``{runs_base}/improvements.md`` is the draft_agent's job (SPEC §
+   "Multi-call round architecture"). If you discover a new need
+   mid-implementation, log it as a one-line note under
+   ``{runs_base}/memory.md § Drafting hints`` so next round's
+   draft_agent can pick it up — do not append to improvements.md
+   yourself. The orchestrator enforces this via scope-creep detection
+   that rejects implement-call commits introducing new `[ ]` items.
 
 7. If this project has a `prompts/evolve-system.md` file, you MAY improve it if you
    identify a way to make the evolution process more effective for this specific project.
@@ -458,61 +371,10 @@ alone is insufficient for structural changes**. This self-detection is the
 primary guard; the orchestrator's entry-point smoke test and zero-progress
 retry are backups.
 
-**Phase 3.6 — ADVERSARIAL REVIEW (mandatory, after commit, before Phase 4)**:
-
-After the implementation commit and after Phase 3.5 structural-change
-detection has run (or determined the change is non-structural), you MUST
-role-play **Zara (Adversarial Reviewer, `agents/reviewer.md`)** for a
-forced adversarial review of the round's work.  Protocol and attack plan
-are in `tasks/review-adversarial-round.md`; in short:
-
-1. **Reset persona** — erase the implementer (Amelia) mindset.  You are
-   now Zara: cynical, ten-year reviewer, assumes the dev cut corners.
-2. **Four passes** on the round's artifacts (US text, `git diff HEAD^
-   HEAD`, `conversation_loop_{round_num}.md`, relevant `SPEC.md`
-   sections, `memory.md`):
-   - **Pass 1** — acceptance-criteria audit: each AC classified as
-     IMPLEMENTED / PARTIAL / MISSING with evidence.
-   - **Pass 2** — claim-vs-reality: every claim in Amelia's block
-     grepped against the diff.  Claims without evidence → HIGH.
-     Silent diff hunks Amelia never mentioned → MEDIUM.
-   - **Pass 3** — code and test quality: placeholder asserts, silent
-     exception swallowing, magic numbers, N+1 loops, injection risks,
-     self-pass tests (tests written by the same pass that introduced
-     the behaviour — did they ever fail first?).
-   - **Pass 4** — SPEC compliance: normative ("MUST", "MUST NOT",
-     "SHOULD") statements in `SPEC.md` that the change violates.
-3. **Minimum 3 findings.**  If the round is genuinely clean, enumerate
-   the three highest-risk areas checked and cite WHY each was sound —
-   no "looks good" reviews.
-4. **Write the review** to `{run_dir}/review_round_{round_num}.md`
-   with the output schema from `tasks/review-adversarial-round.md`:
-   verdict (APPROVED / CHANGES REQUESTED / BLOCKED), categorised
-   findings (HIGH / MEDIUM / LOW), reviewer narrative.
-
-**Verdict → next step:**
-
-- **APPROVED** (0 HIGH) — continue to Phase 4 convergence check.
-- **CHANGES REQUESTED** (1-2 HIGH) — do NOT proceed to Phase 4.  Write
-  a follow-up section to `COMMIT_MSG` (or append to the existing
-  commit body via `git commit --amend` before the orchestrator sees
-  the commit) listing the HIGH findings.  The orchestrator's review
-  integration will pick it up and trigger a debug retry where the
-  next attempt addresses each HIGH finding.
-- **BLOCKED** (3+ HIGH, or any finding tagged `[regression-risk]`) —
-  do NOT mark the current target `[x]`.  Write a new backlog item
-  per the three-persona pipeline (Winston → John → final draft)
-  titled "US-NNN: address BLOCKED review of round {round_num}"
-  with the HIGH findings as acceptance criteria, and skip to
-  Phase 4 (which will NOT converge because a new `[ ]` item exists).
-  The orchestrator will exit or continue per the usual rules; the
-  BLOCKED review surfaces the root cause in `review_round_{round_num}.md`.
-
-This adversarial pass is the structural guarantee that every `[x]`
-passed through at least one skeptical look at the actual diff.  The
-round's own agent has a conflict of interest on self-assessment
-(same entity drafted, implemented, and checked off); Zara resolves
-that by persona-forcing a cynical mindset on fresh eyes.
+**Phase 3.6 — ADVERSARIAL REVIEW**: delegated. The orchestrator runs
+a separate review_agent (Zara) call after your commit (SPEC §
+"Multi-call round architecture"). You do NOT role-play Zara here and
+MUST NOT write ``{run_dir}/review_round_{round_num}.md``.
 
 **Phase 4 — CONVERGENCE (only when everything is truly done)**:
 You MUST only declare convergence when ALL of the following are true:
