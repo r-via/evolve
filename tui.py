@@ -7,8 +7,18 @@ Falls back gracefully to plain text when `rich` is not available.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+
+# Control characters invalid in XML 1.0 except ``\x1B`` (ANSI escape —
+# consumed by ``Text.from_ansi`` below) and ``\t \n \r`` (always valid).
+# Subprocess output (``pytest`` in particular) can occasionally emit
+# stray ``\x00`` / ``\x07`` / ``\x0B`` that would otherwise survive into
+# the recorded Rich buffer and break ``cairosvg`` when it parses the
+# SVG — "not well-formed (invalid token)".  Strip them on the way in.
+_XML_INVALID_CTRL = re.compile(r"[\x00-\x08\x0B-\x0C\x0E-\x1A\x1C-\x1F]")
 
 _log = logging.getLogger(__name__)
 
@@ -467,14 +477,30 @@ class RichTUI:
     def subprocess_output(self, line: str) -> None:
         """Forward a line of subprocess stdout through the Rich console.
 
-        Routing through ``console.out()`` (instead of raw ``sys.stdout``)
+        Routing through the Rich console (instead of raw ``sys.stdout``)
         is what makes subprocess output land in the record buffer so
-        frame capture includes it. ``highlight=False, markup=False`` keep
-        Rich from re-interpreting the subprocess's own styling — ANSI
-        codes emitted by the subprocess (when ``force_terminal=True``) are
-        passed through to the terminal verbatim.
+        frame capture can include it.  Two sanitisation steps:
+
+        1. Strip XML-invalid control chars (``\\x00``-``\\x08``,
+           ``\\x0B``-``\\x0C``, ``\\x0E``-``\\x1A``, ``\\x1C``-``\\x1F``).
+           ANSI escape (``\\x1B``) is preserved for step 2.
+        2. Parse the remaining ANSI escape sequences with
+           ``Text.from_ansi`` so that styled output survives in both the
+           terminal (Rich re-emits matching ANSI) AND the SVG frame
+           capture (Rich serialises the styles into ``<tspan>``
+           elements with ``fill``/``font`` attributes).
+
+        Previously, ``console.out`` passed raw subprocess bytes
+        verbatim — the ANSI escapes and stray control chars ended up
+        as literal characters in the Rich record buffer, which
+        ``save_svg`` then rendered as invalid XML text nodes.
+        ``cairosvg`` choked with "not well-formed (invalid token)" and
+        frame capture silently failed.
         """
-        self.console.out(line, end="", highlight=False)
+        from rich.text import Text
+
+        clean = _XML_INVALID_CTRL.sub("", line)
+        self.console.print(Text.from_ansi(clean), end="")
 
     def capture_frame(self, label: str) -> Path | None:
         """Snapshot the recorded Rich buffer as a PNG frame.
