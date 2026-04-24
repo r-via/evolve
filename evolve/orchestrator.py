@@ -1159,6 +1159,53 @@ def _run_rounds(
                     checked = _count_checked(improvements_path)
                     ui.progress_summary(checked, unchecked)
 
+                    # --- Adversarial review verdict routing ---
+                    # SPEC § "Adversarial round review (Phase 3.6)":
+                    # The agent writes review_round_N.md during Phase 3.6.
+                    # The orchestrator reads it and routes the verdict.
+                    review_verdict, review_findings = _check_review_verdict(
+                        run_dir, round_num
+                    )
+                    if review_verdict == "BLOCKED":
+                        _save_subprocess_diagnostic(
+                            run_dir, round_num, cmd, output,
+                            reason=(
+                                f"REVIEW: blocked — adversarial review found "
+                                f"3+ HIGH findings or a [regression-risk] tag. "
+                                f"Operator intervention required.\n"
+                                f"{review_findings}"
+                            ),
+                            attempt=attempt,
+                        )
+                        ui.round_failed(round_num, 2)
+                        _fire_hook(hooks, "on_error", run_dir, round_num, "review_blocked")
+                        return  # exit _run_rounds → caller exits with code 2
+                    elif review_verdict == "CHANGES REQUESTED":
+                        _save_subprocess_diagnostic(
+                            run_dir, round_num, cmd, output,
+                            reason=(
+                                f"REVIEW: changes requested — adversarial review "
+                                f"found 1-2 HIGH findings that must be addressed.\n"
+                                f"{review_findings}"
+                            ),
+                            attempt=attempt,
+                        )
+                        _attempt_sig = _failure_signature(
+                            "no-progress:REVIEW", returncode, review_findings
+                        )
+                        # Fall through to retry registration — the next attempt
+                        # will see the REVIEW: prefix and address the HIGH findings.
+                        # Skip the normal zero-progress checks for this attempt.
+                        if _attempt_sig:
+                            _failure_signatures.append(_attempt_sig)
+                            if _is_deterministic_loop(_failure_signatures):
+                                ui.warn(
+                                    f"Deterministic failure loop detected after "
+                                    f"{MAX_IDENTICAL_FAILURES} identical review failures."
+                                )
+                                return
+                            continue  # next attempt
+
                     # --- Zero-progress detection ---
                     # 1. Check if improvements.md is byte-identical to pre-round snapshot
                     imp_after = improvements_path.read_bytes() if improvements_path.is_file() else b""

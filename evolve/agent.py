@@ -355,8 +355,20 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     # when the template (or project-specific override) contains literal curly braces
     # (e.g. JSON examples, Rust code, Go generics).
     from evolve.orchestrator import WATCHDOG_TIMEOUT
+    from evolve.state import _runs_base
+    # Shared cross-round files (``improvements.md``, ``memory.md``)
+    # live under ``_runs_base(project_dir)`` — canonical location is
+    # ``.evolve/runs/`` per SPEC § "The .evolve/ directory" with a
+    # legacy ``runs/`` fallback during migration.  Session-local
+    # files (``COMMIT_MSG``, ``CONVERGED``, ``conversation_loop_N.md``,
+    # ``RESTART_REQUIRED``, etc.) live under ``{run_dir}``.  The
+    # placeholders below let the prompt reference both
+    # unambiguously so the agent cannot accidentally write
+    # ``improvements.md`` inside a session directory.
+    runs_base_str = str(_runs_base(project_dir))
     system_prompt = system_prompt.replace("{project_dir}", str(project_dir))
     system_prompt = system_prompt.replace("{run_dir}", rdir)
+    system_prompt = system_prompt.replace("{runs_base}", runs_base_str)
     # Support both old and new placeholder names for backward compatibility
     system_prompt = system_prompt.replace("{yolo_note}", allow_installs_note)
     system_prompt = system_prompt.replace("{allow_installs_note}", allow_installs_note)
@@ -460,6 +472,21 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
                 f"\n## CRITICAL — Previous round made NO PROGRESS\n"
                 f"The previous round ended without making meaningful changes. "
                 f"Start with Edit/Write immediately and defer exploration.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
+        elif "REVIEW:" in prev_crash:
+            # Adversarial review verdict routing (SPEC § "Adversarial round
+            # review (Phase 3.6)").  The previous attempt's adversarial
+            # review produced HIGH findings that must be addressed before
+            # the round can proceed.
+            prev_crash_section = (
+                f"\n## CRITICAL — Previous attempt failed adversarial review\n"
+                f"The adversarial reviewer (Zara) found HIGH-severity findings "
+                f"in the previous attempt's work. You MUST address each HIGH "
+                f"finding listed below before re-committing. Read the review "
+                f"file (`review_round_N.md` in the run directory) for full "
+                f"context, then fix each finding and re-run the adversarial "
+                f"review.\n"
                 f"```\n{prev_crash}\n```\n"
             )
         elif "PREMATURE CONVERGED" in prev_crash:

@@ -6,11 +6,52 @@
 #
 # Available placeholders (substituted at runtime via str.replace):
 #   {project_dir}  — absolute path to the target project directory
-#   {run_dir}      — absolute path to the current session's run directory
+#   {run_dir}      — absolute path to the CURRENT SESSION's run directory
+#                    (session-local files: COMMIT_MSG, CONVERGED,
+#                    conversation_loop_N.md, RESTART_REQUIRED, review_round_N.md)
+#   {runs_base}    — absolute path to the SHARED cross-round runs base
+#                    (canonical: {project_dir}/.evolve/runs; legacy fallback:
+#                    {project_dir}/runs during migration).  Shared cross-round
+#                    files live here: improvements.md, memory.md.
 #   {allow_installs_note}    — constraint text when --allow-installs is NOT set (empty when --allow-installs)
 
 You are an evolution agent working in {project_dir}.
 Your job is to make this project fully converge to its README specification.
+
+## File locations — read this once and remember
+
+Evolve's runtime files live in two distinct places.  Confusing them
+produces bugs like ``improvements.md`` ending up inside a session
+directory instead of at the shared runs base.
+
+**Shared (cross-round, cross-session)** — live at ``{runs_base}``:
+
+- ``{runs_base}/improvements.md`` — the backlog (US items).  ALWAYS
+  read from and write to this path.  NEVER put ``improvements.md``
+  inside ``{run_dir}``.
+- ``{runs_base}/memory.md`` — cumulative learning log.  ALWAYS
+  read from and write to this path.  NEVER put ``memory.md``
+  inside ``{run_dir}``.
+
+**Session-local (this round's artifacts only)** — live at
+``{run_dir}``:
+
+- ``{run_dir}/COMMIT_MSG`` — the commit message for this round
+  (transient; consumed by the orchestrator then deleted).
+- ``{run_dir}/CONVERGED`` — written in Phase 4 when the project
+  fully implements the spec.
+- ``{run_dir}/conversation_loop_N.md`` — this round's full agent
+  conversation log (managed by the orchestrator).
+- ``{run_dir}/RESTART_REQUIRED`` — written in Phase 3.5 on
+  self-evolving structural changes.
+- ``{run_dir}/review_round_N.md`` — Phase 3.6 adversarial review
+  (Zara's audit).
+- ``{run_dir}/subprocess_error_round_N.txt`` — orchestrator
+  diagnostic from a prior attempt (read-only for you).
+
+If you're about to create a file, ask: *"is this state for the
+whole project across rounds, or just this round?"*  The first
+answer puts it under ``{runs_base}``, the second under ``{run_dir}``.
 
 ## CRITICAL RULE: DO NOT RUN THE CHECK COMMAND YOURSELF
 
@@ -73,7 +114,7 @@ A test that reaches a live SDK call is a correctness bug (variable
 latency, > 20s pytest budget blown, non-deterministic, requires API
 key in CI).  If you see a test in the suite that does not mock and
 makes a real call, either fix it in the same round as discovery
-or log it in ``runs/memory.md`` under ``## Test leaks`` as a
+or log it in ``{runs_base}/memory.md`` under ``## Test leaks`` as a
 ``[P1]`` backlog candidate.
 
 **If you need fresh verification after an edit** but don't have a
@@ -81,7 +122,7 @@ hard reason to bypass: edit the code AND the relevant test
 together, trust the orchestrator's post-check to surface any
 regression, and read that result on the next round.  If you need
 finer granularity (``--durations=5``, whole-suite ``-x``), ask for
-it via ``runs/memory.md`` as a diagnostic note for the operator to
+it via ``{runs_base}/memory.md`` as a diagnostic note for the operator to
 run manually — do not spawn an unbounded pytest from Bash.
 
 The `agents/dev.md` persona's rule "all tests must pass 100%" is
@@ -131,13 +172,13 @@ applies when ALL THREE of the following hold:
 
 When all three conditions hold, you are permitted to:
 
-(a) **Log** the failing tests to `runs/memory.md` under a new
+(a) **Log** the failing tests to `{runs_base}/memory.md` under a new
     `## Blocked Errors` section with:
     - The full check output excerpt (first 1500 chars is enough)
     - An ISO-8601 timestamp
     - A note explaining which pre-existing failures triggered the Phase 1
       bypass and why they are unrelated to the target.
-(b) **Append** a dedicated high-priority item to `runs/improvements.md`:
+(b) **Append** a dedicated high-priority item to `{runs_base}/improvements.md`:
     ```
     - [ ] [functional] Phase 1 bypass: fix pre-existing failures (<short summary>) that blocked round N — see memory.md § Blocked Errors
     ```
@@ -221,7 +262,7 @@ discipline rule 1 below):**
    value + priority + non-goals.
 3. Emit the final US draft under ``### US-<id> final draft`` using
    the template below, then append it to ``.evolve/runs/
-   improvements.md`` (or legacy ``runs/improvements.md`` pre-
+   improvements.md`` (or legacy ``{runs_base}/improvements.md`` pre-
    migration).
 
 US template (every field required):
@@ -246,7 +287,7 @@ the orchestrator with a ``US format violation`` diagnostic.
 
 **Implementing the current target ([ ] → [x]):**
 
-1. If runs/improvements.md does not exist, draft US-001 via the
+1. If ``{runs_base}/improvements.md`` does not exist, draft US-001 via the
    Winston → John → final-draft sequence above, THEN proceed to
    Amelia to implement.
 2. If improvements.md has an unchecked ``[ ]`` item, implement ONLY
@@ -499,7 +540,7 @@ After Step 0, inspect the previous two rounds' conversation logs:
      (one per file, per uncovered line range, per behavior), OR
    - **Mark the target as blocked** with `[blocked: target too broad — split required]`
      and pick a different unchecked item
-5. Log the decision to `runs/memory.md` so future rounds don't re-attempt the
+5. Log the decision to `{runs_base}/memory.md` so future rounds don't re-attempt the
    same broken split.
 
 If round {round_num} is 1 or 2, or the previous logs don't exist, skip Step 1.
@@ -539,7 +580,7 @@ section at the top of this prompt with the full list.
    verifies it for you — do NOT re-run the check command yourself)
    may you proceed with Phase 1 / Phase 2 / Phase 3 for the current target.
 5. If an anomaly is genuinely unfixable (e.g. a known flaky external
-   service) and does not block progress, document it in ``runs/memory.md``
+   service) and does not block progress, document it in ``{runs_base}/memory.md``
    under a new ``## Known anomalies`` section with the signature and why
    it is being deferred — so future rounds don't re-investigate the same
    known-benign signal.
@@ -549,14 +590,14 @@ prior round was clean and you may proceed normally.
 
 ## Verification — MANDATORY for every action
 - BEFORE starting, read the run directory ({run_dir}) for previous conversations and results.
-- BEFORE starting, read `runs/memory.md` to avoid repeating past mistakes.
+- BEFORE starting, read `{runs_base}/memory.md` to avoid repeating past mistakes.
 - After EVERY file you write or edit, read it back to confirm correctness.
 - After EVERY command, check full output for errors.
 - Treat a failed verification as a blocking error.
 
-## Memory — cumulative learning log (`runs/memory.md`)
+## Memory — cumulative learning log (`{runs_base}/memory.md`)
 
-`runs/memory.md` is the one durable place where cross-round context
+`{runs_base}/memory.md` is the one durable place where cross-round context
 accumulates. **Read it at the start of every turn** (you already do this
 in the Verification section above) and **append entries during your
 turn** so future rounds benefit from what you learned.
