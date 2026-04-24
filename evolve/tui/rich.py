@@ -355,26 +355,33 @@ class RichTUI:
 
         Routing through the Rich console (instead of raw ``sys.stdout``)
         is what makes subprocess output land in the record buffer so
-        frame capture can include it.  Two sanitisation steps:
+        frame capture can include it.  Three steps:
 
-        1. Strip XML-invalid control chars (``\\x00``-``\\x08``,
+        1. Strip the trailing newline that ``for line in proc.stdout``
+           leaves on each line — ``console.print`` supplies its own
+           ``\\n`` via the default ``end="\\n"`` kwarg, and passing the
+           ``\\n`` through the ``Text`` content means a subsequent
+           ``end=""`` on ``print`` would silently collapse both into
+           zero newlines (Rich treats trailing newlines inside Text
+           the same as ``end``).
+        2. Strip XML-invalid control chars (``\\x00``-``\\x08``,
            ``\\x0B``-``\\x0C``, ``\\x0E``-``\\x1A``, ``\\x1C``-``\\x1F``).
-           ANSI escape (``\\x1B``) is preserved for step 2.
-        2. Parse remaining ANSI escape sequences with
+           ANSI escape (``\\x1B``) is preserved for step 3.
+        3. Parse remaining ANSI escape sequences with
            ``Text.from_ansi`` so styled output survives in both the
            terminal (Rich re-emits matching ANSI) AND the SVG frame
            capture (Rich serialises the styles into ``<tspan>``
            elements with ``fill``/``font`` attributes).
 
-        Without these steps, raw control chars and literal ANSI escapes
-        land in the Rich record buffer, ``save_svg`` renders them as
-        literal XML text, and ``cairosvg`` rejects the SVG with
-        "not well-formed (invalid token)".
+        Without the sanitisation, raw control chars and literal ANSI
+        escapes land in the Rich record buffer, ``save_svg`` renders
+        them as literal XML text, and ``cairosvg`` rejects the SVG
+        with "not well-formed (invalid token)".
         """
         from rich.text import Text
 
-        clean = _XML_INVALID_CTRL.sub("", line)
-        self.console.print(Text.from_ansi(clean), end="")
+        clean = _XML_INVALID_CTRL.sub("", line).rstrip("\n")
+        self.console.print(Text.from_ansi(clean))
 
     def capture_frame(self, label: str) -> Path | None:
         """Snapshot the recorded Rich buffer as a PNG frame.
