@@ -11,8 +11,38 @@ agent-side structural-change self-detection heuristic.
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+
+def _python_with_sdk() -> str:
+    """Return a Python interpreter path that has ``claude_agent_sdk``.
+
+    Prefer the current interpreter (``sys.executable``); otherwise fall
+    back to the project's ``.venv/bin/python`` if it exists. Skip the
+    test when neither has the SDK — the entry-point check is meaningful
+    only when the real dependencies are importable.
+    """
+    try:
+        import claude_agent_sdk  # noqa: F401
+        return sys.executable
+    except ImportError:
+        pass
+
+    # Project root is two levels up from this test file.
+    project_root = Path(__file__).resolve().parent.parent
+    venv_python = project_root / ".venv" / "bin" / "python"
+    if venv_python.is_file():
+        probe = subprocess.run(
+            [str(venv_python), "-c", "import claude_agent_sdk"],
+            capture_output=True,
+            timeout=10,
+        )
+        if probe.returncode == 0:
+            return str(venv_python)
+
+    pytest.skip("claude_agent_sdk not importable in any available interpreter")
 
 
 class TestEntryPointIntegrity:
@@ -20,8 +50,9 @@ class TestEntryPointIntegrity:
 
     def test_evolve_help(self):
         """``python -m evolve --help`` exits 0 and prints usage."""
+        python = _python_with_sdk()
         result = subprocess.run(
-            [sys.executable, "-m", "evolve", "--help"],
+            [python, "-m", "evolve", "--help"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -37,8 +68,9 @@ class TestEntryPointIntegrity:
 
     def test_evolve_round_help(self):
         """``python -m evolve _round --help`` exits 0 and prints usage."""
+        python = _python_with_sdk()
         result = subprocess.run(
-            [sys.executable, "-m", "evolve", "_round", "--help"],
+            [python, "-m", "evolve", "_round", "--help"],
             capture_output=True,
             text=True,
             timeout=10,

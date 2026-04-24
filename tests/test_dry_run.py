@@ -282,8 +282,12 @@ class TestRunDryRun:
             run_dry_run(tmp_path)
 
         output = capsys.readouterr().out
-        # Rich may wrap long paths across lines, so join before checking
-        assert "dry_run_report.md" in output.replace("\n", "")
+        # Rich may wrap long paths across lines AND inject ANSI escape
+        # codes mid-word (e.g. "d\x1b[0m\x1b[95mry_run_report.md"), so
+        # strip both newlines and ANSI sequences before checking.
+        import re
+        stripped = re.sub(r"\x1b\[[0-9;]*m", "", output.replace("\n", ""))
+        assert "dry_run_report.md" in stripped
         # Should NOT have WARN since report exists
         # (both messages could appear in different contexts)
 
