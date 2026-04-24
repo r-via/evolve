@@ -115,7 +115,10 @@ def _ensure_runs_layout(project_dir: Path) -> Path:
             # Fallback: plain rename (no git history, but works outside git repos)
             import shutil
             shutil.move(str(legacy), str(canonical))
-        print(f"[migrate] moved runs/ → .evolve/runs/")
+        # Yellow ``[migrate]`` prefix — ANSI is parsed by the parent
+        # Rich TUI (``Text.from_ansi``) and rendered as styled text;
+        # plain terminals see the raw escapes which are still readable.
+        print(f"\x1b[33m[migrate]\x1b[0m moved runs/ → .evolve/runs/", flush=True)
         return canonical
 
     # Case 1 — canonical (or fresh start)

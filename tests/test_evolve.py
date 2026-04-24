@@ -218,12 +218,12 @@ class TestInitConfig:
         assert (target / "evolve.toml").is_file()
 
     def test_creates_memory_md_with_four_sections(self, tmp_path: Path):
-        """_init_config pre-seeds runs/memory.md with the four typed section
+        """_init_config pre-seeds .evolve/runs/memory.md with the four typed section
         headers from SPEC.md § 'memory.md' so new projects start with the
         expected structure."""
         from evolve import _init_config
         _init_config(tmp_path)
-        memory = tmp_path / "runs" / "memory.md"
+        memory = tmp_path / ".evolve" / "runs" / "memory.md"
         assert memory.is_file()
         content = memory.read_text()
         # Header
@@ -263,7 +263,7 @@ class TestInitConfig:
         would contradict the constant-drift test's intent."""
         from evolve import _init_config
         _init_config(tmp_path, spec="README.md")
-        memory = (tmp_path / "runs" / "memory.md").read_text()
+        memory = (tmp_path / ".evolve" / "runs" / "memory.md").read_text()
         assert "your project's spec file" in memory
 
     def test_memory_md_substitutes_spec_filename(self, tmp_path: Path):
@@ -272,7 +272,7 @@ class TestInitConfig:
         self-documenting for projects with a dedicated spec."""
         from evolve import _init_config
         _init_config(tmp_path, spec="SPEC.md")
-        memory = (tmp_path / "runs" / "memory.md").read_text()
+        memory = (tmp_path / ".evolve" / "runs" / "memory.md").read_text()
         # The generic placeholder is replaced with the concrete name.
         assert "your project's spec file" not in memory
         assert "SPEC.md §" in memory
@@ -285,7 +285,7 @@ class TestInitConfig:
         substituted verbatim — the helper doesn't split the path."""
         from evolve import _init_config
         _init_config(tmp_path, spec="docs/specification.md")
-        memory = (tmp_path / "runs" / "memory.md").read_text()
+        memory = (tmp_path / ".evolve" / "runs" / "memory.md").read_text()
         assert "docs/specification.md §" in memory
         assert "your project's spec file" not in memory
 

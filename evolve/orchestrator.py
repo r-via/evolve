@@ -1117,9 +1117,7 @@ def _run_rounds(
                                 _detect_backlog_violation(pre_text, post_text)
                             )
                         except Exception as e:  # pragma: no cover — defensive
-                            print(
-                                f"[probe] backlog-violation check skipped: {e}"
-                            )
+                            _probe_warn(f"backlog-violation check skipped: {e}")
 
                     # Convergence rounds legitimately leave improvements.md
                     # unchanged (all items already checked).  When the agent
@@ -1282,8 +1280,8 @@ def _run_rounds(
             # Budget enforcement — pause session if cost exceeds --max-cost
             if max_cost is not None and _usage_cost is not None:
                 if _usage_cost >= max_cost:
-                    print(
-                        f"[probe] budget reached: "
+                    _probe_warn(
+                        f"budget reached: "
                         f"{format_cost(_usage_cost)} / {format_cost(max_cost)}"
                     )
                     ui.budget_reached(
@@ -1584,10 +1582,7 @@ def run_single_round(
     def _round_heartbeat():
         while not _round_heartbeat_stop.wait(30):
             elapsed = int(time.monotonic() - _round_start_time)
-            print(
-                f"[probe] round {round_num} alive — {elapsed}s elapsed",
-                flush=True,
-            )
+            _probe(f"round {round_num} alive — {elapsed}s elapsed (watchdog: {WATCHDOG_TIMEOUT}s silence)")
 
     _round_hb_thread = threading.Thread(target=_round_heartbeat, daemon=True)
     _round_hb_thread.start()

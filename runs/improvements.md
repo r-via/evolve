@@ -70,7 +70,7 @@
   - STRUCTURAL commit with RESTART_REQUIRED marker
   **Architect notes (Winston):** 24 import statements across 19 test files need updating. Patch targets already use `evolve.*` paths (476 occurrences) — no patch changes needed. File deletions trigger structural detection. DeprecationWarnings have been active for one release cycle per SPEC.
   **PM notes (John):** P2 — completes the 10-step migration strategy. NOT adding features. NOT changing behavior. Depends on US-014, US-015, US-016 all [x] (they are).
-- [ ] [functional] [P2] US-020: Implement .evolve/ directory layout and legacy runs/ migration
+- [x] [functional] [P2] US-020: Implement .evolve/ directory layout and legacy runs/ migration
   **As** an evolve operator, **I want** all evolve artifacts under `.evolve/runs/` **so that** the tool follows the dotfile convention per SPEC § "The .evolve/ directory" and doesn't pollute the target project's root.
   **Acceptance criteria (must all pass before the item is [x]'d):**
   1. New sessions create artifacts under `<project>/.evolve/runs/` not `<project>/runs/`

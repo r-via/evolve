@@ -333,12 +333,12 @@ class TestInitialMemoryTemplateScaffold:
         from evolve import _init_config
 
         target = tmp_path / "brand_new_project"
-        assert not (target / "runs" / "memory.md").exists()
+        assert not (target / ".evolve" / "runs" / "memory.md").exists()
 
         _init_config(target)
 
-        memory = target / "runs" / "memory.md"
-        assert memory.is_file(), "runs/memory.md must be created on cold start"
+        memory = target / ".evolve" / "runs" / "memory.md"
+        assert memory.is_file(), ".evolve/runs/memory.md must be created on cold start"
         content = memory.read_text()
         assert content.startswith("# Agent Memory\n")
         # All four typed sections, in documented order.
