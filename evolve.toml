@@ -2,7 +2,7 @@
 # See SPEC.md § Config resolution for the full list of supported fields.
 
 check = "pytest"
-rounds = 10
+rounds = 100
 timeout = 300
 model = "claude-opus-4-6"
 allow_installs = true
