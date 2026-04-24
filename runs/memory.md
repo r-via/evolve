@@ -17,6 +17,12 @@ Running orchestrator still uses old `_detect_premature_converged` (full-text mat
 
 ## Decisions
 
+### .evolve/runs cold-start tests: path must match _runs_base() — round 3 of 20260424_132929
+`_init_config` uses `_runs_base(project_dir)` → `.evolve/runs/` for fresh projects. Tests reading from `tmp_path / "runs" / "memory.md"` fail. Rule: cold-start tests (no pre-existing `runs/`) must use `.evolve/runs/`; legacy tests (pre-create `runs/`) get legacy path via fallback.
+
+### _ensure_runs_layout not yet wired into startup — round 3 of 20260424_132929
+`_ensure_runs_layout()` exists + tested but not called from `evolve_loop`. Migration works via `_runs_base` fallback only. Need follow-up to call `_ensure_runs_layout` at startup for explicit `git mv` migration per SPEC.
+
 ### Mechanism B: redundant warn suppression — round 1 of 20260423_142834
 `_forever_restart` → warn on missing README_proposal.md ONLY when spec_proposal adopted. Party-mode total failure → single SPEC-level warn; test asserts `ui.warn.call_args[0][0]` = last call, extra warn would break it.
 

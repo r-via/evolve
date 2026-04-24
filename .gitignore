@@ -13,3 +13,4 @@ runs/*/
 !runs/improvements.md
 .anatoly*/
 .coverage
+.evolve
