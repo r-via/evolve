@@ -107,18 +107,72 @@ If NO stale items exist — the backlog is aligned with the spec, proceed to Pha
 
 IMPORTANT: Only ONE improvement per turn. Do not batch multiple improvements.
 
-1. If runs/improvements.md does not exist, create it with a SINGLE improvement — the
-   most impactful one you identified. Do NOT list multiple items upfront.
-   Format:
-   - [ ] [functional] description
-   - [ ] [performance] description
-   If it needs a new package: - [ ] [functional] [needs-package] description
+**Three-persona pipeline (SPEC § "Item format — user story with
+acceptance criteria").**  Every improvement passes through three
+personas whose profiles live in `agents/`:
 
-2. If improvements.md exists and has an unchecked [ ] item, implement ONLY that one.
+- **Winston (Architect, `agents/architect.md`)** — drafts technical
+  design considerations, pattern choice, risks, integration points.
+- **John (PM, `agents/pm.md`)** — validates user value, priority
+  rationale, explicit non-goals ("what this is NOT").
+- **Amelia (Dev, `agents/dev.md`)** — implements the story with
+  TDD discipline, citing file paths and acceptance-criterion IDs;
+  all existing and new tests must pass 100% before [x].
 
-3. After fixing, verify the fix works by running the relevant command.
+**Writing a new item (when the queue is empty — see Backlog
+discipline rule 1 below):**
 
-4. Only check off the improvement (change "- [ ]" to "- [x]") AFTER verifying it works.
+1. Role-play Winston in your conversation log under a heading
+   ``### Drafting US-<id> — architect pass``.  Substantive reasoning,
+   not "looks fine".
+2. Role-play John under ``### Drafting US-<id> — PM pass``.  User
+   value + priority + non-goals.
+3. Emit the final US draft under ``### US-<id> final draft`` using
+   the template below, then append it to ``.evolve/runs/
+   improvements.md`` (or legacy ``runs/improvements.md`` pre-
+   migration).
+
+US template (every field required):
+
+```
+- [ ] [functional|performance] [P1|P2|P3] US-NNN: <one-line summary>
+  **As** <role>, **I want** <capability> **so that** <value>.
+  **Acceptance criteria (must all pass before the item is [x]'d):**
+  1. <testable criterion>
+  2. <testable criterion>
+  3. <testable criterion>
+  **Definition of done:**
+  - <concrete artifact>
+  - <concrete artifact>
+  **Architect notes (Winston):** <constraint, pattern, risk>
+  **PM notes (John):** <user value, priority, explicit NOT-goals>
+```
+
+`<id>` is ``max(existing_ids) + 1`` zero-padded to 3 digits
+(`US-001`, `US-002`, …).  Free-form prose items are rejected by
+the orchestrator with a ``US format violation`` diagnostic.
+
+**Implementing the current target ([ ] → [x]):**
+
+1. If runs/improvements.md does not exist, draft US-001 via the
+   Winston → John → final-draft sequence above, THEN proceed to
+   Amelia to implement.
+2. If improvements.md has an unchecked ``[ ]`` item, implement ONLY
+   that one — role-play **Amelia** under
+   ``### US-<id> implementation — dev pass`` in your conversation
+   log.  Amelia is ultra-succinct: one line per edit
+   (``edit evolve/loop.py:123-140 — extract _foo helper``), one
+   line per test (``write tests/test_loop.py::test_foo — covers AC 2``),
+   file paths and AC IDs cited throughout.
+3. After implementing, verify:
+   - Re-run the check command (pytest / npm test / etc.) — 100%
+     pass rate, including new tests.
+   - Walk through every acceptance criterion and confirm it is
+     satisfied, citing the file path where the criterion is
+     enforced.
+4. Only check off (``- [ ]`` → ``- [x]``) AFTER every acceptance
+   criterion has a passing test and Amelia has cited its
+   enforcement.  Any uncovered criterion blocks the [x].
 
 5. Do NOT touch already checked [x] items.
 
