@@ -1581,15 +1581,20 @@ def _run_rounds(
                         and round_start_head_sha != _head_after_round
                     )
                     _round_imp_changed = (imp_after != round_start_imp)
-                    # Only apply the escape hatch when THIS attempt
-                    # was itself clean (no new fallback commit, no
-                    # imp regression flag, no memory wipe, no
-                    # backlog violation).
-                    _attempt_is_clean = not (
-                        no_commit_msg or effective_imp_unchanged
-                        or memory_wiped or backlog_violated
+                    # The escape hatch fires when THIS attempt did not
+                    # introduce any NEW problems — a new fallback
+                    # commit, a memory wipe, a backlog-discipline
+                    # violation.  ``imp_unchanged`` is deliberately
+                    # excluded from this "new problem" set: that's
+                    # precisely the signal this hatch is meant to
+                    # neutralise.  When an earlier attempt committed
+                    # real work, THIS attempt finding nothing to add
+                    # to improvements.md is the round wrapping up,
+                    # not a failure.
+                    _attempt_had_no_new_issues = not (
+                        no_commit_msg or memory_wiped or backlog_violated
                     )
-                    if (_round_head_moved or _round_imp_changed) and _attempt_is_clean:
+                    if (_round_head_moved or _round_imp_changed) and _attempt_had_no_new_issues:
                         made_progress = True
                         round_succeeded = True
                         break
