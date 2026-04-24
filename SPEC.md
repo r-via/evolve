@@ -1408,6 +1408,38 @@ silently burn rounds until `max_rounds`. The debug retry now kicks in, and the
 agent receives a "CRITICAL — Previous round made NO PROGRESS" header
 instructing it to start with Edit/Write immediately and defer exploration.
 
+**Carve-out: scope creep (rebuild + implement in one round).**
+
+A round that adds new ``[ ]`` items to ``improvements.md`` AND
+modifies non-improvements files (code / tests / docs) in the
+same commit is mixing two round kinds: Phase 2 backlog rebuild
+and Phase 3 implementation.  Earlier versions of the system
+prompt explicitly encouraged this ("your round target becomes
+the FIRST of the newly rebuilt items") and the symptom reported
+by operators was exactly that pattern: a rebuild round that
+drafts multiple US items AND starts coding the first one, 300+
+seconds per round, no clean commit boundary between planning
+output and code changes.
+
+The orchestrator now detects the mix — ``backlog_new_items > 0``
+AND ``git diff-tree --name-only HEAD`` lists files outside
+``improvements.md`` / ``memory.md`` / the runs base — and emits
+a dedicated ``SCOPE CREEP:`` diagnostic.  ``build_prompt`` in
+``agent.py`` surfaces a ``## CRITICAL — Scope creep: rebuild
+mixed with implementation`` section instructing the retry to:
+
+1. ``git reset HEAD~1`` (if the commit went through).
+2. Stage ONLY the ``improvements.md`` rebuild.
+3. Discard the code / test / doc edits — the next round's fresh
+   agent will re-derive them from the rebuilt backlog.
+4. Write ``chore(spec): rebuild backlog after spec change`` (or
+   similar) and stop the round.
+
+The next round picks up the first new item and implements it
+cleanly.  Rebuild rounds produce a clean commit boundary
+between planning and coding; the git history shows them as
+distinct actions rather than one mashed-up commit.
+
 **Carve-out: backlog drained, ``CONVERGED`` skipped.**
 
 There is one case where ``imp_unchanged=True`` + ``no_commit_msg=True``

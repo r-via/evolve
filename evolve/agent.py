@@ -415,6 +415,37 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     if prev_crash:
         if "MEMORY WIPED" in prev_crash:
             prev_crash_section = _MEMORY_WIPED_HEADER_FMT.format(diagnostic=prev_crash)
+        elif "SCOPE CREEP" in prev_crash:
+            # Rebuild + implement in the same round — the Phase 2
+            # rebuild touched improvements.md AND the commit also
+            # modified non-improvements files.  The retry must split
+            # the work: commit ONLY the improvements.md rebuild this
+            # round; any implementation happens in the NEXT round's
+            # fresh agent.  See SPEC § "improvements.md" + Phase 2
+            # gate in prompts/system.md.
+            prev_crash_section = (
+                f"\n## CRITICAL — Scope creep: rebuild mixed with implementation\n"
+                f"The previous round added one or more new ``[ ]`` items "
+                f"to ``improvements.md`` AND modified non-improvements "
+                f"files (code / tests / docs) in the same commit.  That "
+                f"mixes two round kinds: Phase 2 backlog rebuild vs "
+                f"Phase 3 implementation.  Each is a round by itself.\n\n"
+                f"**This attempt MUST split the work:**\n\n"
+                f"1. ``git reset HEAD~1`` (if the commit went through; "
+                f"otherwise skip).\n"
+                f"2. Stage ONLY the ``improvements.md`` change (the "
+                f"rebuild / new US item).\n"
+                f"3. Discard the code / test / doc edits from the "
+                f"working tree — the NEXT round's fresh agent will "
+                f"re-derive them from the rebuilt backlog.\n"
+                f"4. Write ``COMMIT_MSG`` with ``chore(spec): rebuild "
+                f"backlog after spec change`` (or similar) and stop.\n\n"
+                f"Do NOT attempt to implement the new US item in this "
+                f"retry.  The rebuild round's purpose is to produce a "
+                f"clean commit boundary between planning and coding so "
+                f"the audit trail shows them as distinct actions.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
         elif "BACKLOG DRAINED" in prev_crash:
             # The previous round legitimately had nothing to implement
             # (every ``[ ]`` item already checked off) but the agent
