@@ -611,7 +611,8 @@ def _init_config(project_dir: Path, spec: str | None = None) -> None:
         print(f"Created {config_path}")
         config_created = True
 
-    memory_path = project_dir / "runs" / "memory.md"
+    from evolve.state import _runs_base
+    memory_path = _runs_base(project_dir) / "memory.md"
     if memory_path.is_file():
         if config_created:
             print(f"runs/memory.md already exists at {memory_path} — left untouched")
@@ -630,7 +631,8 @@ def _clean_sessions(project_dir: Path, keep: int = 5) -> None:
     """
     import shutil
 
-    runs_dir = project_dir / "runs"
+    from evolve.state import _runs_base
+    runs_dir = _runs_base(project_dir)
     if not runs_dir.is_dir():
         print("No runs directory found.")
         return
@@ -665,9 +667,10 @@ def _show_history(project_dir: Path) -> None:
     import re as _re
 
     from evolve.tui import get_tui
+    from evolve.state import _runs_base
     ui = get_tui()
 
-    runs_dir = project_dir / "runs"
+    runs_dir = _runs_base(project_dir)
     if not runs_dir.is_dir():
         ui.history_empty(str(project_dir))
         return
@@ -747,7 +750,8 @@ def _show_status(project_dir: Path):
     from evolve.tui import get_tui
     ui = get_tui()
 
-    runs_dir = project_dir / "runs"
+    from evolve.state import _runs_base
+    runs_dir = _runs_base(project_dir)
     improvements_path = runs_dir / "improvements.md"
     memory_path = runs_dir / "memory.md"
 

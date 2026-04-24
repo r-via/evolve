@@ -251,7 +251,7 @@ class TestInitConfig:
         prose from ``_DEFAULT_MEMORY_MD``."""
         from evolve import _init_config
         _init_config(tmp_path)  # spec defaults to None
-        memory = (tmp_path / "runs" / "memory.md").read_text()
+        memory = (tmp_path / ".evolve" / "runs" / "memory.md").read_text()
         assert "your project's spec file" in memory
         # Must not leak a specific spec filename when none was passed.
         assert "SPEC.md §" not in memory

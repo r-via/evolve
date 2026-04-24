@@ -83,7 +83,7 @@ def _ensure_runs_layout(project_dir: Path) -> Path:
         _RunsLayoutError: When both ``runs/`` and ``.evolve/runs/`` exist and
             the operator must resolve the ambiguity manually.
     """
-    canonical = _runs_base(project_dir)
+    canonical = project_dir / ".evolve" / "runs"
     legacy = project_dir / "runs"
 
     legacy_exists = legacy.is_dir()

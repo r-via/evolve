@@ -42,6 +42,40 @@ from evolve.state import (
 from evolve.tui import TUIProtocol, get_tui
 
 
+# ANSI-styled ``[probe]`` prefix.  The round subprocess writes to
+# stdout; the parent orchestrator captures each line and routes it
+# through ``RichTUI.subprocess_output`` which runs ``Text.from_ansi``
+# on it, so embedding escape codes here gives us styled probe output
+# in the Rich console without requiring a TUIProtocol method.  Dim
+# cyan is visually quiet (probe lines are frequent and shouldn't
+# compete with the agent's tool calls for attention) while still
+# standing apart from plain text.
+_PROBE_PREFIX = "\x1b[2;36m[probe]\x1b[0m"   # dim cyan
+_PROBE_WARN_PREFIX = "\x1b[33m[probe]\x1b[0m"  # yellow — timeouts, failures
+_PROBE_OK_PREFIX = "\x1b[32m[probe]\x1b[0m"    # green — PASSED, converged
+
+
+def _probe(msg: str) -> None:
+    """Emit a styled orchestrator probe line to stdout.
+
+    Used by every orchestrator-side trace print so the ``[probe]``
+    prefix renders consistently (dim cyan) in the Rich parent TUI
+    and stays recognisable in plain-text logs.  Always flushes so
+    the line arrives before the next tool call or subprocess event.
+    """
+    print(f"{_PROBE_PREFIX} {msg}", flush=True)
+
+
+def _probe_warn(msg: str) -> None:
+    """Probe line flagged as a warning (yellow prefix)."""
+    print(f"{_PROBE_WARN_PREFIX} {msg}", flush=True)
+
+
+def _probe_ok(msg: str) -> None:
+    """Probe line flagged as a success (green prefix)."""
+    print(f"{_PROBE_OK_PREFIX} {msg}", flush=True)
+
+
 def _auto_detect_check(project_dir: Path) -> str | None:
     """Auto-detect the test framework for a project.
 
@@ -230,7 +264,7 @@ def _enforce_convergence_backstop(
     if not is_premature:
         return False
     ui.error(f"Premature CONVERGED rejected: {reason}")
-    print(f"[probe] convergence-gate backstop rejected: {reason}")
+    _probe(f"convergence-gate backstop rejected: {reason}")
     converged_path.unlink()
     _save_subprocess_diagnostic(
         run_dir,
@@ -513,12 +547,12 @@ def evolve_loop(
         allow_installs = yolo
     improvements_path = _runs_base(project_dir) / "improvements.md"
 
-    print(f"[probe] evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
+    _probe(f"evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
 
     # Load event hooks from project config
     hooks = load_hooks(project_dir)
     if hooks:
-        print(f"[probe] loaded {len(hooks)} hook(s): {', '.join(hooks.keys())}")
+        _probe(f"loaded {len(hooks)} hook(s): {', '.join(hooks.keys())}")
 
     # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
     # check") — pure observability, runs once before the first round.
@@ -531,13 +565,13 @@ def evolve_loop(
             ui_early = get_tui()
             ui_early.info(f"  Auto-detected check command: {detected}")
             check_cmd = detected
-            print(f"[probe] auto-detected check command: {detected}")
+            _probe(f"auto-detected check command: {detected}")
 
     start_round = 1
 
     # In forever mode, create a separate branch and run indefinitely
     if forever:
-        print("[probe] forever mode enabled — creating dedicated branch")
+        _probe("forever mode enabled — creating dedicated branch")
         _setup_forever_branch(project_dir)
         # Use a very large max_rounds so the loop runs until convergence
         max_rounds = 999999
@@ -876,7 +910,7 @@ def _run_rounds(
         hooks = {}
     _rounds_start_time = time.monotonic()
     _started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    print(f"[probe] _run_rounds starting from round {start_round} to {max_rounds}")
+    _probe(f"_run_rounds starting from round {start_round} to {max_rounds}")
     # Circuit-breaker state: rolling list of failure fingerprints from rounds
     # whose retries all exhausted.  Cleared on every successful round so that
     # a single recovery resets the counter.  See SPEC § "Circuit breakers".
@@ -888,12 +922,12 @@ def _run_rounds(
             # rebuilds the backlog from the updated spec.
             spec_fresh = _check_spec_freshness(project_dir, improvements_path, spec=spec)
             if not spec_fresh:
-                print(f"[probe] spec freshness gate: spec is newer than improvements.md — backlog marked stale")
+                _probe(f"spec freshness gate: spec is newer than improvements.md — backlog marked stale")
 
             current = _get_current_improvement(improvements_path, allow_installs=allow_installs)
             checked = _count_checked(improvements_path)
             unchecked = _count_unchecked(improvements_path)
-            print(f"[probe] round {round_num}/{max_rounds} — checked={checked}, unchecked={unchecked}, target={current or '(none)'}")
+            _probe(f"round {round_num}/{max_rounds} — checked={checked}, unchecked={unchecked}, target={current or '(none)'}")
 
             # Compute session cost so far (from completed rounds) for TUI header
             _header_cost: float | None = None
@@ -944,7 +978,7 @@ def _run_rounds(
                 cmd += ["--effort", effort]
 
             # --- Debug retry loop: run the round, diagnose failures, retry ---
-            print(f"[probe] launching subprocess for round {round_num}")
+            _probe(f"launching subprocess for round {round_num}")
             round_succeeded = False
 
             def _register_and_check_circuit(sig: str) -> None:
@@ -1290,7 +1324,7 @@ def _run_rounds(
             # --forever does NOT bypass — structural changes always pause.
             restart_marker = _parse_restart_required(run_dir)
             if restart_marker is not None:
-                print(f"[probe] RESTART_REQUIRED detected: {restart_marker.get('reason', '?')}")
+                _probe_warn(f"RESTART_REQUIRED detected: {restart_marker.get('reason', '?')}")
 
                 # Fire on_structural_change hook with marker fields as env vars
                 structural_env = {
@@ -1324,7 +1358,7 @@ def _run_rounds(
                 spec_path = project_dir / spec_file
                 if converged_path.is_file() and spec_path.is_file() and improvements_path.is_file():
                     if spec_path.stat().st_mtime > improvements_path.stat().st_mtime:
-                        print("[probe] convergence rejected: spec is newer than improvements.md — removing CONVERGED marker")
+                        _probe("convergence rejected: spec is newer than improvements.md — removing CONVERGED marker")
                         converged_path.unlink()
 
                 # Convergence-gate orchestrator backstop — re-verify the
@@ -1348,7 +1382,7 @@ def _run_rounds(
                 )
             if converged_path.is_file():
                 reason = converged_path.read_text().strip()
-                print(f"[probe] CONVERGED at round {round_num}: {reason[:80]}")
+                _probe_ok(f"CONVERGED at round {round_num}: {reason[:80]}")
                 ui.converged(round_num, reason)
 
                 # Capture convergence frame
@@ -1448,7 +1482,7 @@ def _run_rounds(
             # for loop completed without break — max rounds reached
             unchecked = _count_unchecked(improvements_path)
             checked = _count_checked(improvements_path)
-            print(f"[probe] max rounds reached ({max_rounds}) — checked={checked}, unchecked={unchecked}")
+            _probe_warn(f"max rounds reached ({max_rounds}) — checked={checked}, unchecked={unchecked}")
 
             # Aggregate final usage for max_rounds state
             _mr_total, _mr_cost, _mr_rounds = aggregate_usage(
@@ -1531,7 +1565,7 @@ def run_single_round(
     improvements_path = _runs_base(project_dir) / "improvements.md"
     ui = get_tui()
 
-    print(f"[probe] round {round_num} starting — project={project_dir.name}, model={model}", flush=True)
+    _probe(f"round {round_num} starting — project={project_dir.name}, model={model}")
 
     # Round-wide heartbeat.  The parent orchestrator watches this
     # subprocess's stdout with a silence-based watchdog
@@ -1597,7 +1631,7 @@ def _run_single_round_body(
     # bounds the wait.
     check_output = ""
     if check_cmd:
-        print(f"[probe] running pre-check: {check_cmd}", flush=True)
+        _probe(f"running pre-check: {check_cmd} (max {timeout}s)")
         ui.check_result("check", check_cmd, passed=None)
         try:
             result = subprocess.run(
@@ -1611,21 +1645,21 @@ def _run_single_round_body(
                 check_output += f"stderr:\n{result.stderr[-2000:]}\n"
             ok = result.returncode == 0
             ui.check_result("check", check_cmd, passed=ok)
-            print(
-                f"[probe] pre-check {'PASSED' if ok else 'FAILED'} (exit {result.returncode})",
-                flush=True,
-            )
+            if ok:
+                _probe_ok(f"pre-check PASSED (exit {result.returncode})")
+            else:
+                _probe_warn(f"pre-check FAILED (exit {result.returncode})")
         except subprocess.TimeoutExpired:
             check_output = f"TIMEOUT after {timeout}s"
             ui.check_result("check", check_cmd, timeout=True)
-            print(f"[probe] pre-check TIMEOUT after {timeout}s", flush=True)
+            _probe_warn(f"pre-check TIMEOUT after {timeout}s (hit ceiling)")
     else:
         ui.no_check()
-        print("[probe] no check command configured", flush=True)
+        _probe("no check command configured")
 
     # 2. Let opus agent analyze and fix
     current = _get_current_improvement(improvements_path, allow_installs=allow_installs)
-    print(f"[probe] invoking agent — target: {current or '(initial analysis)'}")
+    _probe(f"invoking agent — target: {current or '(initial analysis)'}")
     ui.agent_working()
     analyze_and_fix(
         project_dir=project_dir,
@@ -1637,7 +1671,7 @@ def _run_single_round_body(
         spec=spec,
         check_timeout=timeout,
     )
-    print("[probe] agent finished")
+    _probe("agent finished")
 
     # 3. Git commit + push
     commit_msg_path = rdir / "COMMIT_MSG"
@@ -1650,12 +1684,12 @@ def _run_single_round_body(
             msg = f"feat(evolve): ✓ {current}"
         else:
             msg = f"chore(evolve): round {round_num}"
-    print(f"[probe] git commit: {msg[:80]}")
+    _probe(f"git commit: {msg[:80]}")
     _git_commit(project_dir, msg, ui)
 
     # 4. Re-run check after fixes
     if check_cmd:
-        print(f"[probe] running post-check: {check_cmd}")
+        _probe(f"running post-check: {check_cmd} (max {timeout}s)")
         ui.check_result("verify", check_cmd, passed=None)
         try:
             result = subprocess.run(
@@ -1664,7 +1698,10 @@ def _run_single_round_body(
             )
             ok = result.returncode == 0
             ui.check_result("verify", check_cmd, passed=ok)
-            print(f"[probe] post-check {'PASSED' if ok else 'FAILED'} (exit {result.returncode})")
+            if ok:
+                _probe_ok(f"post-check PASSED (exit {result.returncode})")
+            else:
+                _probe_warn(f"post-check FAILED (exit {result.returncode})")
 
             probe_path = rdir / f"check_round_{round_num}.txt"
             with open(probe_path, "w") as f:
@@ -1677,9 +1714,9 @@ def _run_single_round_body(
                     f.write(f"\nstderr:\n{result.stderr[-2000:]}\n")
         except subprocess.TimeoutExpired:
             ui.check_result("verify", check_cmd, timeout=True)
-            print(f"[probe] post-check TIMEOUT after {timeout}s")
+            _probe_warn(f"post-check TIMEOUT after {timeout}s (hit ceiling)")
 
-    print(f"[probe] round {round_num} complete")
+    _probe_ok(f"round {round_num} complete")
 
 
 def run_dry_run(
@@ -1708,7 +1745,7 @@ def run_dry_run(
     """
     ui = get_tui()
 
-    print(f"[probe] dry-run starting — project={project_dir.name}")
+    _probe(f"dry-run starting — project={project_dir.name}")
 
     # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
     # check") — pure observability, runs once at startup.
@@ -1727,7 +1764,7 @@ def run_dry_run(
     run_dir.mkdir(parents=True, exist_ok=True)
     ui.run_dir_info(str(run_dir))
     ui.info("  Mode: DRY RUN (read-only analysis, no file changes)")
-    print(f"[probe] dry-run session: {run_dir}")
+    _probe(f"dry-run session: {run_dir}")
 
     # 1. Run check command if provided
     check_output = ""
@@ -1800,7 +1837,7 @@ def run_validate(
     """
     ui = get_tui()
 
-    print(f"[probe] validate starting — project={project_dir.name}")
+    _probe(f"validate starting — project={project_dir.name}")
 
     # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
     # check") — pure observability, runs once at startup.
@@ -1819,7 +1856,7 @@ def run_validate(
     run_dir.mkdir(parents=True, exist_ok=True)
     ui.run_dir_info(str(run_dir))
     ui.info("  Mode: VALIDATE (spec compliance check, no file changes)")
-    print(f"[probe] validate session: {run_dir}")
+    _probe(f"validate session: {run_dir}")
 
     # 1. Run check command if provided
     check_output = ""
@@ -1873,11 +1910,11 @@ def run_validate(
 
     if failed > 0:
         ui.info(f"  Result: FAIL — {passed} passed, {failed} failed")
-        print(f"[probe] validate result: FAIL ({passed} passed, {failed} failed)")
+        _probe(f"validate result: FAIL ({passed} passed, {failed} failed)")
         return 1
     elif passed > 0:
         ui.info(f"  Result: PASS — {passed} claims validated")
-        print(f"[probe] validate result: PASS ({passed} claims validated)")
+        _probe(f"validate result: PASS ({passed} claims validated)")
         return 0
     else:
         # No markers found — likely an error in report generation
@@ -1908,7 +1945,7 @@ def run_diff(
     """
     ui = get_tui()
 
-    print(f"[probe] diff starting — project={project_dir.name}")
+    _probe(f"diff starting — project={project_dir.name}")
 
     # Validate spec file exists if --spec is set
     if spec:
@@ -1923,7 +1960,7 @@ def run_diff(
     run_dir.mkdir(parents=True, exist_ok=True)
     ui.run_dir_info(str(run_dir))
     ui.info("  Mode: DIFF (lightweight gap detection, no file changes)")
-    print(f"[probe] diff session: {run_dir}")
+    _probe(f"diff session: {run_dir}")
 
     # Launch agent in diff mode (restricted tools, effort low)
     from evolve.agent import run_diff_agent
@@ -1953,11 +1990,11 @@ def run_diff(
 
     if failed > 0:
         ui.info(f"  Result: GAPS FOUND — {passed} present, {failed} missing")
-        print(f"[probe] diff result: GAPS ({passed} present, {failed} missing)")
+        _probe(f"diff result: GAPS ({passed} present, {failed} missing)")
         return 1
     elif passed > 0:
         ui.info(f"  Result: COMPLIANT — {passed} sections present")
-        print(f"[probe] diff result: COMPLIANT ({passed} sections present)")
+        _probe(f"diff result: COMPLIANT ({passed} sections present)")
         return 0
     else:
         ui.warn("Could not determine compliance from diff_report.md")
@@ -2000,7 +2037,7 @@ def run_sync_readme(
     """
     ui = get_tui()
 
-    print(f"[probe] sync-readme starting — project={project_dir.name}")
+    _probe(f"sync-readme starting — project={project_dir.name}")
 
     # Refuse when the spec IS the README — no sync to perform.
     if spec is None or spec == "README.md":
@@ -2008,14 +2045,14 @@ def run_sync_readme(
             "  sync-readme is a no-op when --spec is unset or equals "
             "README.md (README is the spec)"
         )
-        print("[probe] sync-readme: no-op (README is the spec)")
+        _probe("sync-readme: no-op (README is the spec)")
         return 1
 
     # Validate spec exists.
     spec_path = project_dir / spec
     if not spec_path.is_file():
         ui.error(f"ERROR: spec file not found: {spec_path}")
-        print(f"[probe] sync-readme: ERROR — spec missing")
+        _probe(f"sync-readme: ERROR — spec missing")
         return 2
 
     # Create timestamped run directory for the conversation log + sentinel.
@@ -2025,7 +2062,7 @@ def run_sync_readme(
     ui.run_dir_info(str(run_dir))
     mode_label = "APPLY (will commit README.md)" if apply else "PROPOSAL (writes README_proposal.md)"
     ui.info(f"  Mode: SYNC-README — {mode_label}")
-    print(f"[probe] sync-readme session: {run_dir} (apply={apply})")
+    _probe(f"sync-readme session: {run_dir} (apply={apply})")
 
     # Snapshot README.md mtime before agent runs (used to detect whether
     # apply mode actually overwrote the file).
@@ -2048,7 +2085,7 @@ def run_sync_readme(
         )
     except Exception as e:
         ui.error(f"sync-readme agent failed: {e}")
-        print(f"[probe] sync-readme: ERROR — agent exception {e}")
+        _probe(f"sync-readme: ERROR — agent exception {e}")
         return 2
 
     # Inspect filesystem outputs to compute exit code.
@@ -2057,7 +2094,7 @@ def run_sync_readme(
 
     if sentinel.is_file():
         ui.info("  README already in sync — no proposal written")
-        print("[probe] sync-readme: no changes needed (exit 1)")
+        _probe("sync-readme: no changes needed (exit 1)")
         return 1
 
     if apply:
@@ -2074,17 +2111,17 @@ def run_sync_readme(
         _ensure_git(project_dir, ui=ui)
         _git_commit(project_dir, "docs(readme): sync to spec", ui=ui)
         ui.info(f"  README.md updated and committed")
-        print("[probe] sync-readme: applied + committed (exit 0)")
+        _probe("sync-readme: applied + committed (exit 0)")
         return 0
 
     # Default mode: agent should have written README_proposal.md.
     if proposal.is_file():
         ui.info(f"  README proposal written: {proposal}")
-        print("[probe] sync-readme: proposal written (exit 0)")
+        _probe("sync-readme: proposal written (exit 0)")
         return 0
 
     ui.warn("sync-readme: agent produced no README_proposal.md and no NO_SYNC_NEEDED sentinel")
-    print("[probe] sync-readme: ERROR — no agent output (exit 2)")
+    _probe("sync-readme: ERROR — no agent output (exit 2)")
     return 2
 
 
