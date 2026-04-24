@@ -140,7 +140,7 @@ Your job: orchestrate a multi-agent brainstorming session, then produce:
             print(f"[probe] party mode: attaching {len(frame_images)} TUI frame(s) as visual context")
 
     try:
-        from evolve.agent import run_claude_agent, _is_benign_runtime_error, _should_retry_rate_limit, _oneshot_system_prompt_blocks
+        from evolve.agent import run_claude_agent, _is_benign_runtime_error, _should_retry_rate_limit
         import asyncio
         import time
         import warnings

@@ -1088,12 +1088,25 @@ def analyze_and_fix(
     """
     if yolo is not None:
         allow_installs = yolo
-    blocks = build_prompt_blocks(
+    # Prompt caching rollback: the ``list[dict]`` ``system_prompt``
+    # format with ``cache_control`` is the Claude API native shape for
+    # prompt caching, but the currently-installed
+    # ``claude_agent_sdk.ClaudeAgentOptions`` does not accept that list
+    # shape — passing it silently produces an API call without the
+    # system prompt, and the model returns with zero tool calls (the
+    # symptom reported by the operator: two attempts in a row each
+    # logged ``[opus] done (0 tool calls)`` with no edits).
+    #
+    # Until an SDK path for caching is verified, concatenate the
+    # cached + uncached blocks into a single string and pass it as
+    # the user prompt (the legacy shape).  The caching-oriented
+    # ``build_prompt_blocks`` / ``_build_system_prompt_blocks``
+    # helpers stay in the codebase for the follow-up US; they just
+    # aren't called from the live code path right now.
+    full_prompt = build_prompt(
         project_dir, check_output, check_cmd, allow_installs, run_dir,
         spec=spec, round_num=round_num, check_timeout=check_timeout,
     )
-    sdk_blocks = _build_system_prompt_blocks(blocks)
-    user_message = blocks.uncached
 
     # Per-attempt conversation log filename.  Each orchestrator-level subprocess
     # attempt gets its own file (no overwrite), so a debug retry can read the
@@ -1104,9 +1117,8 @@ def analyze_and_fix(
 
     async def _run():
         await run_claude_agent(
-            user_message, project_dir,
+            full_prompt, project_dir,
             round_num=round_num, run_dir=run_dir, log_filename=attempt_log_fname,
-            system_prompt_blocks=sdk_blocks,
         )
 
     _run_agent_with_retries(
