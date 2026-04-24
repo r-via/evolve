@@ -227,12 +227,32 @@ not mechanical:
 **Phase 2 — SPEC FRESHNESS CHECK (gate, before any improvement work)**:
 
 Before touching improvements.md, check if any items are tagged `[stale: spec changed]`.
-If YES — the spec was updated since the backlog was built. You MUST:
-1. Set aside the entire stale backlog (keep checked [x] items, remove all `[stale: spec changed]` items)
-2. Re-read the README/spec line by line
-3. Rebuild improvements.md from scratch: one `- [ ]` item per README claim that is NOT
-   yet implemented. Keep all previously checked `[x]` items.
-4. Your round target becomes the FIRST of the newly rebuilt items.
+
+**If YES — rebuild the backlog THEN STOP (do not implement in the same round).**
+
+The rebuild is a round by itself. This is a hard rule, violated by
+earlier versions of this prompt and enforced now by the
+orchestrator's per-round scope check.  Mixing rebuild + implement
+in the same round produces sessions that read, draft multiple US
+items, AND start coding — 300+ seconds per round and no clean
+commit boundary between the planning output and the code changes.
+
+Concretely, when stale items are present you MUST:
+
+1. Set aside the entire stale backlog (keep checked [x] items,
+   remove all `[stale: spec changed]` items).
+2. Re-read the spec (README.md or ``--spec``) line by line.
+3. For the FIRST spec claim that is NOT yet implemented, draft
+   exactly ONE new US item via the full three-persona pipeline
+   (Winston → John → final-draft — see Phase 3 below for the
+   protocol and template).  Do NOT draft multiple US items in one
+   round; the rebuild is not a brainstorming session, it's a
+   controlled re-alignment that unblocks the next round.
+4. Append that ONE item to ``{runs_base}/improvements.md``.
+5. Write ``COMMIT_MSG`` with ``chore(spec): rebuild backlog after
+   spec change`` (or similar) and **stop the round** — do NOT
+   proceed to Phase 3 implementation.  The next round's fresh
+   agent picks up the new item and implements it.
 
 If NO stale items exist — the backlog is aligned with the spec, proceed to Phase 3.
 

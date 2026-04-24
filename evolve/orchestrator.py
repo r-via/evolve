@@ -991,6 +991,45 @@ def _check_review_verdict(run_dir: Path, round_num: int) -> tuple[str | None, st
     return verdict, "\n".join(high_findings)
 
 
+def _run_curation_pass(
+    project_dir: Path,
+    run_dir: Path,
+    round_num: int,
+    improvements_path: Path,
+    spec: str | None,
+    ui: TUIProtocol,
+) -> None:
+    """Run memory curation (Mira) between rounds if triggered.
+
+    SPEC § "Dedicated memory curation (Mira)".  Delegates to
+    ``agent.run_memory_curation`` which handles prompt building, SDK
+    invocation, shrinkage checks, and abort recovery.  This function
+    is a thin orchestrator-side wrapper that resolves paths and logs
+    the verdict.
+    """
+    from evolve.agent import run_memory_curation
+
+    memory_path = _runs_base(project_dir) / "memory.md"
+    spec_path = project_dir / (spec or "README.md") if spec else project_dir / "README.md"
+
+    verdict = run_memory_curation(
+        project_dir=project_dir,
+        run_dir=run_dir,
+        round_num=round_num,
+        memory_path=memory_path,
+        spec_path=spec_path,
+    )
+
+    if verdict == "SKIPPED":
+        return  # silent — no log needed
+    elif verdict == "CURATED":
+        _probe(f"memory curation: CURATED at round {round_num}")
+    elif verdict == "ABORTED":
+        _probe_warn(f"memory curation: ABORTED at round {round_num} (>80% shrink)")
+    elif verdict == "SDK_FAIL":
+        _probe_warn(f"memory curation: SDK_FAIL at round {round_num}")
+
+
 def _save_subprocess_diagnostic(
     run_dir: Path,
     round_num: int,
@@ -1351,6 +1390,58 @@ def _run_rounds(
                         except Exception as e:  # pragma: no cover — defensive
                             _probe_warn(f"backlog-violation check skipped: {e}")
 
+                    # "Scope creep" detection: rebuild + implement in one round.
+                    #
+                    # When improvements.md has new ``[ ]`` items added AND
+                    # the round's commit also touched non-improvements
+                    # files (code / tests / docs), the agent mixed two
+                    # round kinds into one — drafting and implementation.
+                    # This is the pattern the operator flagged as "evolve
+                    # enchaîne les US sans lancer de nouveau round": the
+                    # Phase 2 rebuild instruction used to say "your round
+                    # target becomes the FIRST of the newly rebuilt items"
+                    # which permitted the mix.  It's now forbidden — a
+                    # rebuild round commits only the improvements.md
+                    # change, and the next round's fresh agent picks up
+                    # the first new item.
+                    scope_creep = False
+                    scope_creep_other_files: list[str] = []
+                    if backlog_new_items:
+                        try:
+                            import subprocess as _sp
+                            diff_files = _sp.run(
+                                ["git", "diff-tree", "--no-commit-id",
+                                 "--name-only", "-r", "HEAD"],
+                                cwd=str(project_dir),
+                                capture_output=True,
+                                text=True,
+                                timeout=10,
+                            )
+                            if diff_files.returncode == 0:
+                                touched = [
+                                    ln.strip()
+                                    for ln in diff_files.stdout.splitlines()
+                                    if ln.strip()
+                                ]
+                                # Files that count as "implementation"
+                                # changes — anything not under runs/
+                                # state (improvements.md, memory.md,
+                                # conversation_loop_*.md, etc.) and not
+                                # the session's own artifacts.
+                                scope_creep_other_files = [
+                                    f for f in touched
+                                    if not (
+                                        f.endswith("/improvements.md")
+                                        or f.endswith("/memory.md")
+                                        or "runs/" in f
+                                        or ".evolve/" in f
+                                    )
+                                ]
+                                if scope_creep_other_files:
+                                    scope_creep = True
+                        except (_sp.TimeoutExpired, OSError):
+                            pass  # git unavailable → skip the check
+
                     # Convergence rounds legitimately leave improvements.md
                     # unchanged (all items already checked).  When the agent
                     # wrote CONVERGED, skip the imp_unchanged signal — the
@@ -1409,6 +1500,34 @@ def _run_rounds(
                         # they'd all fire as tautological consequences of
                         # an empty queue + no edits.
                     # Any condition alone triggers zero-progress / memory-wipe / backlog retry
+                    elif scope_creep:
+                        # Rebuild + implement in one round → dedicated
+                        # diagnostic that routes the retry to split the
+                        # work.  Prefix recognised by build_prompt to
+                        # emit a tailored "CRITICAL — Scope creep"
+                        # section on the next attempt.
+                        creep_summary = ", ".join(
+                            scope_creep_other_files[:5]
+                        )
+                        reason_str = (
+                            f"Phase 2 rebuild mixed with implementation: "
+                            f"{len(backlog_new_items)} new ``[ ]`` item(s) "
+                            f"added AND non-improvements files touched "
+                            f"({creep_summary}).  Per SPEC § 'Item format' "
+                            f"and Phase 2 rule, rebuild rounds commit ONLY "
+                            f"the improvements.md change; the next round "
+                            f"picks up the first new item."
+                        )
+                        _save_subprocess_diagnostic(
+                            run_dir, round_num, cmd, output,
+                            reason=f"SCOPE CREEP: {reason_str}",
+                            attempt=attempt,
+                        )
+                        _attempt_sig = _failure_signature(
+                            "no-progress:SCOPE CREEP",
+                            returncode,
+                            f"new={len(backlog_new_items)}|other={len(scope_creep_other_files)}",
+                        )
                     elif no_commit_msg or effective_imp_unchanged or memory_wiped or backlog_violated:
                         no_progress_reasons: list[str] = []
                         if no_commit_msg:
@@ -1595,6 +1714,15 @@ def _run_rounds(
             error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
             if error_log.is_file():
                 error_log.unlink()
+
+            # --- Memory curation (Mira) — SPEC § "Dedicated memory
+            # curation (Mira)".  Between rounds, after post-check,
+            # before the next round's pre-check.  Runs only when
+            # memory.md > 300 lines OR round is a multiple of 10.
+            _run_curation_pass(
+                project_dir, run_dir, round_num,
+                improvements_path, spec, ui,
+            )
 
             # --- Structural change detection (SPEC § "Structural change
             # self-detection" — orchestrator-side protocol).  The agent
