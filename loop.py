@@ -931,9 +931,25 @@ def _run_rounds(
             # --- Debug retry loop: run the round, diagnose failures, retry ---
             print(f"[probe] launching subprocess for round {round_num}")
             round_succeeded = False
-            # Signature of this round's most recent failed attempt — fed to
-            # the circuit breaker when retries are exhausted.  Reset per round.
-            _last_failure_signature: str | None = None
+
+            def _register_and_check_circuit(sig: str) -> None:
+                """Record a failed-attempt signature and exit 4 if the last
+                ``MAX_IDENTICAL_FAILURES`` in a row all match — SPEC.md §
+                "Circuit breakers".  Per-attempt registration catches
+                deterministic within-round loops (e.g. pytest hanging
+                identically on every debug retry) at their first
+                observable repetition rather than after N failed rounds.
+                """
+                _failure_signatures.append(sig)
+                if _is_circuit_breaker_tripped(_failure_signatures):
+                    ui.error(
+                        f"Same failure signature {MAX_IDENTICAL_FAILURES} "
+                        f"attempts in a row (sig={_failure_signatures[-1]}) "
+                        "— deterministic loop detected, exiting for "
+                        "supervisor restart"
+                    )
+                    sys.exit(4)
+
             for attempt in range(1, MAX_DEBUG_RETRIES + 2):  # 1..MAX_DEBUG_RETRIES+1
                 # Snapshot conversation log size before subprocess so we can detect new output
                 convo = run_dir / f"conversation_loop_{round_num}.md"
@@ -957,22 +973,27 @@ def _run_rounds(
                 )
 
                 # --- Diagnose subprocess outcome ---
+                # Signature of this attempt's failure, captured in each
+                # failure arm and fed to the circuit breaker at the end
+                # of the attempt (after the diagnostic file is saved, so
+                # exit 4 leaves behind a complete paper trail).
+                _attempt_sig: str | None = None
                 if stalled:
-                    _last_failure_signature = _failure_signature("stalled", returncode, output)
                     ui.round_failed(round_num, returncode)
                     _save_subprocess_diagnostic(
                         run_dir, round_num, cmd, output,
                         reason=f"stalled ({WATCHDOG_TIMEOUT}s without output, killed)",
                         attempt=attempt,
                     )
+                    _attempt_sig = _failure_signature("stalled", returncode, output)
                 elif returncode != 0:
-                    _last_failure_signature = _failure_signature("crashed", returncode, output)
                     ui.round_failed(round_num, returncode)
                     _save_subprocess_diagnostic(
                         run_dir, round_num, cmd, output,
                         reason=f"crashed (exit code {returncode})",
                         attempt=attempt,
                     )
+                    _attempt_sig = _failure_signature("crashed", returncode, output)
                 else:
                     # Subprocess exited OK — check for actual progress
                     prev_checked = checked
@@ -1097,13 +1118,13 @@ def _run_rounds(
                             prefix = _BACKLOG_VIOLATION_PREFIX
                         else:
                             prefix = "NO PROGRESS"
-                        _last_failure_signature = _failure_signature(
-                            f"no-progress:{prefix}", returncode, reason_str
-                        )
                         _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
                             reason=f"{prefix}: {reason_str}",
                             attempt=attempt,
+                        )
+                        _attempt_sig = _failure_signature(
+                            f"no-progress:{prefix}", returncode, reason_str
                         )
                     else:
                         made_progress = (
@@ -1115,15 +1136,24 @@ def _run_rounds(
                             round_succeeded = True
                             break
 
-                        _last_failure_signature = _failure_signature(
-                            "no-progress:silent", returncode, output
-                        )
                         # No progress — save diagnostic for retry
                         _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
                             reason="no progress (agent ran but changed nothing)",
                             attempt=attempt,
                         )
+                        _attempt_sig = _failure_signature(
+                            "no-progress:silent", returncode, output
+                        )
+
+                # Register this attempt's signature with the circuit
+                # breaker — fires sys.exit(4) when the last
+                # ``MAX_IDENTICAL_FAILURES`` attempts share one
+                # fingerprint.  Running this after the diagnostic save
+                # means the final attempt's paper trail is on disk
+                # before we exit.
+                if _attempt_sig is not None:
+                    _register_and_check_circuit(_attempt_sig)
 
                 # Capture error frame before retry
                 ui.capture_frame(f"error_round_{round_num}")
@@ -1138,26 +1168,16 @@ def _run_rounds(
                         "— re-running with diagnostic context"
                     )
                 else:
-                    # All retries exhausted — register this round's failure
-                    # signature with the circuit breaker (SPEC § "Circuit
-                    # breakers").  ``MAX_IDENTICAL_FAILURES`` consecutive
-                    # rounds with the same fingerprint means the pathology
-                    # is deterministic; exit with code 4 so an outer
-                    # supervisor can restart from a clean slate rather
-                    # than burn rounds on a loop that cannot self-heal.
-                    _failure_signatures.append(_last_failure_signature or "unknown")
-                    if _is_circuit_breaker_tripped(_failure_signatures):
-                        sig = _failure_signatures[-1]
-                        ui.error(
-                            f"Same failure signature {MAX_IDENTICAL_FAILURES} "
-                            f"rounds in a row (sig={sig}) — deterministic loop "
-                            "detected, exiting for supervisor restart"
-                        )
-                        sys.exit(4)
+                    # All retries exhausted.  The per-attempt circuit
+                    # breaker above already fired sys.exit(4) when the
+                    # three attempts shared a signature, so reaching
+                    # this branch means the failures were heterogeneous
+                    # — a classic "retries exhausted with mixed
+                    # diagnostics" case, which stays exit 2 (non-
+                    # forever) or skip-to-next-round (forever).
                     ui.no_progress()
                     if not forever:
                         sys.exit(2)
-                    # In forever mode, don't exit — move on to next round
                     ui.warn(
                         f"Round {round_num} failed after {MAX_DEBUG_RETRIES + 1} attempts "
                         "— skipping to next round"
@@ -1501,28 +1521,52 @@ def run_single_round(
     # 1. Run check command if provided
     check_output = ""
     if check_cmd:
-        print(f"[probe] running pre-check: {check_cmd}")
+        print(f"[probe] running pre-check: {check_cmd}", flush=True)
         ui.check_result("check", check_cmd, passed=None)
+        # Emit a heartbeat every 30s so the parent orchestrator's
+        # watchdog (``_run_monitored_subprocess``, 120s silence limit)
+        # stays quiet while the pre-check hangs silently — otherwise
+        # a pytest that collects slowly would trigger SIGKILL on the
+        # whole round before its own ``timeout`` fires, and the agent
+        # would never get a chance to see the hang in ``check_output``.
+        # The pre-check's own ``timeout`` still bounds the wait; the
+        # heartbeat just prevents the wrong actor from killing us.
+        _heartbeat_stop = threading.Event()
+
+        def _precheck_heartbeat():
+            elapsed = 0
+            while not _heartbeat_stop.wait(30):
+                elapsed += 30
+                print(
+                    f"[probe] pre-check still running... {elapsed}s/{timeout}s",
+                    flush=True,
+                )
+
+        _hb_thread = threading.Thread(target=_precheck_heartbeat, daemon=True)
+        _hb_thread.start()
         try:
-            result = subprocess.run(
-                check_cmd, shell=True, cwd=str(project_dir),
-                capture_output=True, text=True, timeout=timeout,
-            )
-            check_output = f"Exit code: {result.returncode}\n"
-            if result.stdout:
-                check_output += f"stdout:\n{result.stdout[-2000:]}\n"
-            if result.stderr:
-                check_output += f"stderr:\n{result.stderr[-2000:]}\n"
-            ok = result.returncode == 0
-            ui.check_result("check", check_cmd, passed=ok)
-            print(f"[probe] pre-check {'PASSED' if ok else 'FAILED'} (exit {result.returncode})")
-        except subprocess.TimeoutExpired:
-            check_output = f"TIMEOUT after {timeout}s"
-            ui.check_result("check", check_cmd, timeout=True)
-            print(f"[probe] pre-check TIMEOUT after {timeout}s")
+            try:
+                result = subprocess.run(
+                    check_cmd, shell=True, cwd=str(project_dir),
+                    capture_output=True, text=True, timeout=timeout,
+                )
+                check_output = f"Exit code: {result.returncode}\n"
+                if result.stdout:
+                    check_output += f"stdout:\n{result.stdout[-2000:]}\n"
+                if result.stderr:
+                    check_output += f"stderr:\n{result.stderr[-2000:]}\n"
+                ok = result.returncode == 0
+                ui.check_result("check", check_cmd, passed=ok)
+                print(f"[probe] pre-check {'PASSED' if ok else 'FAILED'} (exit {result.returncode})", flush=True)
+            except subprocess.TimeoutExpired:
+                check_output = f"TIMEOUT after {timeout}s"
+                ui.check_result("check", check_cmd, timeout=True)
+                print(f"[probe] pre-check TIMEOUT after {timeout}s", flush=True)
+        finally:
+            _heartbeat_stop.set()
     else:
         ui.no_check()
-        print("[probe] no check command configured")
+        print("[probe] no check command configured", flush=True)
 
     # 2. Let opus agent analyze and fix
     current = _get_current_improvement(improvements_path, allow_installs=allow_installs)

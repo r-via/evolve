@@ -131,15 +131,50 @@ class TestCircuitBreakerIntegration:
             )
         assert exc.value.code == 4
 
-    def test_non_forever_preserves_exit_2(self, tmp_path: Path):
-        """Non-forever exits 2 on first round's retries exhaustion — the
-        circuit breaker never reaches its 3-rounds threshold because the
-        loop terminates after one failed round.
+    def test_heterogeneous_failures_preserve_exit_2(self, tmp_path: Path):
+        """Three *different* failure signatures in a round → exit 2,
+        not exit 4.  The circuit breaker is specifically for
+        deterministic loops; mixed diagnostics (one stall + one crash
+        + one no-progress) are the classic "retries exhausted with
+        varied output" signal that exit 2 has always covered.
         """
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
 
+        call_count = 0
+
+        def heterogeneous(cmd, cwd, ui_, round_num, watchdog_timeout=120):
+            nonlocal call_count
+            call_count += 1
+            # Three distinct failure modes — signatures differ across
+            # all three attempts of the single round.
+            if call_count == 1:
+                return -9, "stall attempt 1", True
+            if call_count == 2:
+                return 1, "crash attempt 2", False
+            return 2, "crash attempt 3 different exit code", False
+
+        with patch("loop._run_monitored_subprocess", side_effect=heterogeneous), \
+             patch("loop._save_subprocess_diagnostic"), \
+             patch("loop._generate_evolution_report"), \
+             pytest.raises(SystemExit) as exc:
+            _run_rounds(
+                project_dir, run_dir, imp_path, self.ui,
+                start_round=1, max_rounds=1, check_cmd="pytest",
+                allow_installs=False, timeout=300, model="claude-opus-4-6",
+                forever=False,
+            )
+        assert exc.value.code == 2
+
+    def test_identical_failures_trip_on_first_round(self, tmp_path: Path):
+        """Non-forever mode also exits 4 when all three attempts of the
+        first (and only) round share a signature — the circuit breaker
+        is per-attempt, not per-round, so it fires immediately rather
+        than waiting for multiple rounds that non-forever would never
+        reach."""
+        project_dir, run_dir, imp_path = self._setup_project(tmp_path)
+
         def always_stall(cmd, cwd, ui_, round_num, watchdog_timeout=120):
-            return 0, "stall", True
+            return 0, "identical stall output", True
 
         with patch("loop._run_monitored_subprocess", side_effect=always_stall), \
              patch("loop._save_subprocess_diagnostic"), \
@@ -151,5 +186,5 @@ class TestCircuitBreakerIntegration:
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
                 forever=False,
             )
-        assert exc.value.code == 2
+        assert exc.value.code == 4
 

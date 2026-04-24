@@ -1293,6 +1293,29 @@ the next round's subprocess crash triggers the zero-progress retry and
 then the Phase 1 escape hatch. The structural-change protocol is the
 preventive layer; the retry/escape guards are the reactive layer.
 
+### Pre-check heartbeat
+
+`run_single_round` executes the check command (`pytest`, `npm test`, …)
+inside each round subprocess *before* invoking the agent.  The parent
+orchestrator watches that subprocess with a silence-based watchdog
+(kills on `WATCHDOG_TIMEOUT` seconds of no stdout).  Without
+intervention, a check command that hangs silently — a collection
+deadlock, a stuck fixture, a `--lf` pass that stalls on a bad import —
+would burn through the watchdog and get SIGKILL'd before its own
+`--timeout` fires, *and the agent would never run*.  That's the worst
+possible state: no diagnostic, no chance for the agent to investigate,
+and the debug retry re-enters the same hang deterministically.
+
+To prevent that, the pre-check runs under a heartbeat thread that
+prints `[probe] pre-check still running... Ns/Ts` every 30s.  The
+heartbeat keeps the parent watchdog quiet while the pre-check's own
+`subprocess.run(..., timeout=timeout)` bounds the wait.  When the
+pre-check's timeout fires, `check_output` becomes `"TIMEOUT after Ns"`,
+the agent is invoked normally, and receives the timeout message in
+its prompt — so it can investigate (skip a flaky test, fix a slow
+fixture, adjust the check command) rather than watching the round
+get murdered.
+
 ### Circuit breakers
 
 The debug-retry loop retries each failure up to `MAX_DEBUG_RETRIES` times
@@ -1305,8 +1328,15 @@ unchecked, forever mode would spin on a deterministic failure forever,
 burning tokens without recovery.
 
 **The rule.** When the same failure signature repeats across
-`MAX_IDENTICAL_FAILURES` (=3) consecutive failed rounds, the orchestrator
-exits with **exit code 4** — "deterministic failure loop detected".
+`MAX_IDENTICAL_FAILURES` (=3) consecutive failed *attempts* — whether
+those attempts are the three debug retries of a single round or span
+multiple rounds in `--forever` — the orchestrator exits with **exit
+code 4** ("deterministic failure loop detected").  Per-attempt (not
+per-round) registration is deliberate: the classic pathology is a
+pre-check command (e.g. `pytest`) that hangs identically on every
+retry, and the first round already exposes three identical failures
+that deserve a fast bail-out rather than burning two more rounds
+before firing.
 
 **Failure signature.** A short SHA-256 digest of:
 1. Failure kind — `"stalled"`, `"crashed"`, or `"no-progress:<prefix>"`
@@ -1323,13 +1353,18 @@ resets the threshold. This makes the breaker specific to *sustained*
 deterministic failures — it does not fire on occasional repeats
 interleaved with progress.
 
-**Relation to exit code 2.** Exit code 2 fires when a single round's
-retries are exhausted (non-`--forever` mode always exits on the first
-failed round). Exit code 4 is the escape hatch for `--forever` sessions
-that would otherwise keep cycling. A supervisor (systemd unit,
-`while true; do evolve start --forever; done`, operator tmux loop) can
-distinguish the two and take different action: restart cleanly on 4,
-alert-and-stop on 2 (or vice versa, depending on deployment).
+**Relation to exit code 2.** Exit code 2 fires when a round's retries
+are exhausted with *heterogeneous* failure signatures — e.g. attempt 1
+crashes, attempt 2 stalls, attempt 3 makes no progress.  Mixed
+failures are not strong evidence of a deterministic loop (they might
+just be flaky infrastructure), so non-`--forever` still exits 2 and
+`--forever` still skips to the next round.  Exit code 4 is reserved
+for the *homogeneous* case — three attempts with the same signature,
+which is the real signal that retrying further cannot help.  A
+supervisor (systemd unit, `while true; do evolve start --forever;
+done`, operator tmux loop) can distinguish the two and react
+differently: restart cleanly on 4, alert-and-stop on 2 (or vice
+versa, depending on deployment).
 
 **What to do when you see exit 4.**
 1. Check `runs/<session>/subprocess_error_round_*.txt` for the three

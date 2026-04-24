@@ -375,7 +375,9 @@ class TestRunRounds:
         assert exc.value.code == 1
 
     def test_stalled_round_exhausts_retries(self, tmp_path: Path):
-        """Stalled subprocess exhausting retries exits with code 2."""
+        """Three identical stalls trip the circuit breaker → exit 4
+        (SPEC § "Circuit breakers": homogeneous failures fire exit 4
+        for deterministic-loop detection, not exit 2)."""
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
         ui = self.ui
 
@@ -391,7 +393,7 @@ class TestRunRounds:
                 start_round=1, max_rounds=1, check_cmd="pytest",
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
-        assert exc.value.code == 2
+        assert exc.value.code == 4  # circuit breaker — identical signatures across attempts
 
     def test_crashed_round_retries_then_succeeds(self, tmp_path: Path):
         """Crashed subprocess recovers on retry."""
@@ -436,7 +438,7 @@ class TestRunRounds:
                 start_round=1, max_rounds=1, check_cmd=None,
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
-        assert exc.value.code == 2
+        assert exc.value.code == 4  # circuit breaker — identical signatures across attempts
 
     def test_zero_progress_improvements_unchanged(self, tmp_path: Path):
         """Zero-progress when improvements.md is byte-identical to pre-round state."""
@@ -462,7 +464,7 @@ class TestRunRounds:
                 start_round=1, max_rounds=1, check_cmd=None,
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
-        assert exc.value.code == 2
+        assert exc.value.code == 4  # circuit breaker — identical signatures across attempts
         # All retries should report improvements.md unchanged
         assert any("improvements.md byte-identical" in d for d in diagnostics)
         assert any("NO PROGRESS" in d for d in diagnostics)
@@ -504,6 +506,10 @@ class TestRunRounds:
                 start_round=1, max_rounds=1, check_cmd=None,
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
+        # Heterogeneous signatures (attempt 1 sees backlog violation,
+        # attempts 2-3 see only no_commit_msg once the item already
+        # exists in the growing imp) → circuit breaker does NOT fire →
+        # classic exit 2.
         assert exc.value.code == 2
         # Should detect fallback commit message
         assert any("no COMMIT_MSG written" in d for d in diagnostics)
@@ -544,7 +550,7 @@ class TestRunRounds:
                 start_round=1, max_rounds=1, check_cmd=None,
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
-        assert exc.value.code == 2
+        assert exc.value.code == 4  # circuit breaker — identical signatures across attempts
         # Both conditions should be present in the diagnostic
         assert any("no COMMIT_MSG written" in d and "improvements.md byte-identical" in d for d in diagnostics)
 
@@ -612,7 +618,7 @@ class TestRunRounds:
                 start_round=1, max_rounds=1, check_cmd=None,
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
-        assert exc.value.code == 2
+        assert exc.value.code == 4  # circuit breaker — identical signatures across attempts
         # Should have MAX_DEBUG_RETRIES + 1 attempts (1 original + 2 retries)
         from loop import MAX_DEBUG_RETRIES
         assert len(attempt_log) == MAX_DEBUG_RETRIES + 1
@@ -642,7 +648,7 @@ class TestRunRounds:
                 start_round=1, max_rounds=1, check_cmd=None,
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
             )
-        assert exc.value.code == 2
+        assert exc.value.code == 4  # circuit breaker — identical signatures across attempts
         # Should still detect byte-identical even without git
         assert any("improvements.md byte-identical" in d for d in diagnostics)
         # Should NOT contain "no COMMIT_MSG" since git log would fail
@@ -1579,19 +1585,28 @@ class TestForeverRestartInRunRounds:
                 (run_dir / "CONVERGED").write_text("All done")
                 imp_path.write_text("- [x] [functional] do something\n")
                 return 0, "output", False
-            # Second call (after restart): just complete normally, no convergence
-            # The run_dir changes on restart, so conversation goes to new dir
-            # Just create a conversation file wherever the cwd points
+            # Second iteration (after restart): write conversation into the
+            # new run_dir AND mark the next task done so the zero-progress
+            # circuit breaker doesn't fire on three identical "imp unchanged"
+            # attempts.
             for d in Path(cwd).glob("runs/*/"):
                 if d.is_dir() and d.name != "session":
                     (d / f"conversation_loop_{round_num}.md").write_text("# Round after restart")
                     break
+            imp_path.write_text("- [x] [functional] next task\n")
             return 0, "output", False
+
+        # Real _forever_restart resets improvements.md so the next cycle has
+        # unchecked backlog items to work on.  The mock must mimic that to
+        # avoid the second iteration tripping the zero-progress circuit
+        # breaker on the identical "all done" state.
+        def mock_restart_side(*args, **kwargs):
+            imp_path.write_text("- [ ] [functional] next task\n")
 
         with patch("loop._run_monitored_subprocess", side_effect=mock_monitored), \
              patch("loop._generate_evolution_report"), \
              patch("loop._run_party_mode"), \
-             patch("loop._forever_restart") as mock_restart, \
+             patch("loop._forever_restart", side_effect=mock_restart_side) as mock_restart, \
              patch("loop._git_commit") as mock_commit, \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
