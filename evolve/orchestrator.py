@@ -1211,6 +1211,27 @@ def _run_rounds(
             if effort:
                 cmd += ["--effort", effort]
 
+            # Snapshot git HEAD and improvements.md at ROUND start so
+            # later attempts can tell whether EARLIER attempts in the
+            # same round already produced real progress — in which
+            # case a subsequent attempt that finds "nothing to do"
+            # is NOT a failure, it's the round wrapping up.
+            try:
+                _r0 = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=str(project_dir), capture_output=True,
+                    text=True, timeout=5,
+                )
+                round_start_head_sha = (
+                    _r0.stdout.strip() if _r0.returncode == 0 else ""
+                )
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                round_start_head_sha = ""
+            round_start_imp = (
+                improvements_path.read_bytes()
+                if improvements_path.is_file() else b""
+            )
+
             # --- Debug retry loop: run the round, diagnose failures, retry ---
             _probe(f"launching subprocess for round {round_num}")
             round_succeeded = False
@@ -1250,6 +1271,31 @@ def _run_rounds(
                 # SPEC.md § "memory.md" — "Byte-size sanity gate".
                 memory_path = _runs_base(project_dir) / "memory.md"
                 mem_size_before = memory_path.stat().st_size if memory_path.is_file() else 0
+
+                # Snapshot git HEAD before the attempt so the
+                # "fallback commit message" detection below can
+                # distinguish "THIS attempt used the fallback" (bug
+                # worth flagging) from "a PRIOR attempt used the
+                # fallback and this attempt just found nothing new
+                # to commit" (legitimate — the work was done earlier).
+                # Previously the no_commit_msg check inspected HEAD
+                # globally and false-positive'd on any attempt that
+                # landed on a stale fallback commit, which exhausted
+                # retries and exited the round even when the agent
+                # had already done substantive work in an earlier
+                # attempt.
+                try:
+                    _head_before = subprocess.run(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=str(project_dir), capture_output=True,
+                        text=True, timeout=5,
+                    )
+                    head_sha_before = (
+                        _head_before.stdout.strip()
+                        if _head_before.returncode == 0 else ""
+                    )
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                    head_sha_before = ""
 
                 returncode, output, stalled = _run_monitored_subprocess(
                     cmd, str(project_dir), ui, round_num,
@@ -1337,17 +1383,40 @@ def _run_rounds(
                     imp_after = improvements_path.read_bytes() if improvements_path.is_file() else b""
                     imp_unchanged = (imp_after == imp_snapshot_before)
 
-                    # 2. Check if agent committed without COMMIT_MSG (fallback commit)
+                    # 2. Check if agent committed without COMMIT_MSG (fallback commit).
+                    #
+                    # The flag fires ONLY when THIS attempt produced a new
+                    # HEAD whose message matches the fallback template.
+                    # If HEAD didn't move during the attempt (nothing to
+                    # commit because earlier attempts already did the
+                    # work), the flag stays False — a stale fallback
+                    # commit from a prior attempt is not THIS attempt's
+                    # bug.
                     no_commit_msg = False
                     try:
-                        git_log_result = subprocess.run(
-                            ["git", "log", "-1", "--format=%s"],
-                            cwd=str(project_dir), capture_output=True, text=True, timeout=10,
+                        head_after_res = subprocess.run(
+                            ["git", "rev-parse", "HEAD"],
+                            cwd=str(project_dir), capture_output=True,
+                            text=True, timeout=5,
                         )
-                        if git_log_result.returncode == 0:
-                            last_commit_msg = git_log_result.stdout.strip()
-                            if last_commit_msg == f"chore(evolve): round {round_num}":
-                                no_commit_msg = True
+                        head_sha_after = (
+                            head_after_res.stdout.strip()
+                            if head_after_res.returncode == 0 else ""
+                        )
+                        head_moved = (
+                            bool(head_sha_before)
+                            and bool(head_sha_after)
+                            and head_sha_before != head_sha_after
+                        )
+                        if head_moved:
+                            git_log_result = subprocess.run(
+                                ["git", "log", "-1", "--format=%s"],
+                                cwd=str(project_dir), capture_output=True, text=True, timeout=10,
+                            )
+                            if git_log_result.returncode == 0:
+                                last_commit_msg = git_log_result.stdout.strip()
+                                if last_commit_msg == f"chore(evolve): round {round_num}":
+                                    no_commit_msg = True
                     except (subprocess.TimeoutExpired, FileNotFoundError):
                         pass
 
@@ -1483,6 +1552,48 @@ def _run_rounds(
                         and imp_unchanged
                         and not converged_written
                     )
+                    # Round-level "already-done" escape hatch.  When
+                    # THIS attempt's subprocess exited cleanly and
+                    # EARLIER attempts in the same round already
+                    # landed real work (HEAD moved or imp changed
+                    # since round-start), AND this attempt itself
+                    # did NOT produce a new fallback commit AND is
+                    # NOT a zero-improvements / no-commit-msg bug,
+                    # treat the round as succeeded — the agent is
+                    # just wrapping up.  This avoids false-positive
+                    # retries where attempt 3 is idle because
+                    # attempt 2 already finished the work.
+                    try:
+                        _r_end = subprocess.run(
+                            ["git", "rev-parse", "HEAD"],
+                            cwd=str(project_dir), capture_output=True,
+                            text=True, timeout=5,
+                        )
+                        _head_after_round = (
+                            _r_end.stdout.strip()
+                            if _r_end.returncode == 0 else ""
+                        )
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        _head_after_round = ""
+                    _round_head_moved = (
+                        bool(round_start_head_sha)
+                        and bool(_head_after_round)
+                        and round_start_head_sha != _head_after_round
+                    )
+                    _round_imp_changed = (imp_after != round_start_imp)
+                    # Only apply the escape hatch when THIS attempt
+                    # was itself clean (no new fallback commit, no
+                    # imp regression flag, no memory wipe, no
+                    # backlog violation).
+                    _attempt_is_clean = not (
+                        no_commit_msg or effective_imp_unchanged
+                        or memory_wiped or backlog_violated
+                    )
+                    if (_round_head_moved or _round_imp_changed) and _attempt_is_clean:
+                        made_progress = True
+                        round_succeeded = True
+                        break
+
                     if backlog_drained_no_converged:
                         # Override the default "no progress" framing so the
                         # diagnostic is actionable (agent goes to Phase 4)
