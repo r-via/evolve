@@ -5,6 +5,7 @@ Each round runs as a separate subprocess so code changes are picked up immediate
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -604,6 +605,12 @@ MAX_DEBUG_RETRIES = 2
 # Seconds of silence before the watchdog considers a subprocess stalled.
 WATCHDOG_TIMEOUT = 120
 
+# Circuit breaker: when the same failure signature repeats across this many
+# consecutive failed rounds, the loop exits with code 4 so an outer supervisor
+# can restart from a clean slate.  Single source of truth for the threshold —
+# see SPEC.md § "Circuit breakers".
+MAX_IDENTICAL_FAILURES = 3
+
 # Memory-wipe sanity gate constants — keep the runtime check aligned with
 # SPEC.md § "memory.md" — "Byte-size sanity gate".  Changing either value
 # here is the single source of truth for both the detection logic in
@@ -715,6 +722,41 @@ def _run_monitored_subprocess(
     return rc, output, stalled
 
 
+def _failure_signature(kind: str, returncode: int, output: str) -> str:
+    """Fingerprint a failed round attempt for circuit-breaker detection.
+
+    Two attempts with the same fingerprint are treated as the same failure
+    — evidence that retrying is futile.  Only the trailing 500 bytes of
+    ``output`` are hashed so mostly-deterministic failures with varying
+    prefixes (timestamps, progress counters) still match.
+
+    Args:
+        kind: Failure category — ``"stalled"``, ``"crashed"``, or
+            ``"no-progress"``.
+        returncode: Subprocess exit code (may be negative for signals).
+        output: Captured subprocess output (stdout+stderr merged).
+
+    Returns:
+        A 16-char hex digest suitable for equality comparison and logging.
+    """
+    tail = output[-500:].strip() if output else ""
+    payload = f"{kind}|{returncode}|{tail}".encode("utf-8", errors="replace")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _is_circuit_breaker_tripped(signatures: list[str]) -> bool:
+    """Return True when the last ``MAX_IDENTICAL_FAILURES`` signatures match.
+
+    Implements the threshold test for SPEC § "Circuit breakers".  A caller
+    appends each failed-round signature to ``signatures`` (and clears the
+    list on any successful round), then queries this helper to decide
+    whether the loop has entered a deterministic failure cycle.
+    """
+    if len(signatures) < MAX_IDENTICAL_FAILURES:
+        return False
+    return len(set(signatures[-MAX_IDENTICAL_FAILURES:])) == 1
+
+
 def _save_subprocess_diagnostic(
     run_dir: Path,
     round_num: int,
@@ -820,6 +862,10 @@ def _run_rounds(
     _rounds_start_time = time.monotonic()
     _started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"[probe] _run_rounds starting from round {start_round} to {max_rounds}")
+    # Circuit-breaker state: rolling list of failure fingerprints from rounds
+    # whose retries all exhausted.  Cleared on every successful round so that
+    # a single recovery resets the counter.  See SPEC § "Circuit breakers".
+    _failure_signatures: list[str] = []
     while True:
         for round_num in range(start_round, max_rounds + 1):
             # Phase 2 — Spec freshness gate: if spec is newer than
@@ -885,6 +931,9 @@ def _run_rounds(
             # --- Debug retry loop: run the round, diagnose failures, retry ---
             print(f"[probe] launching subprocess for round {round_num}")
             round_succeeded = False
+            # Signature of this round's most recent failed attempt — fed to
+            # the circuit breaker when retries are exhausted.  Reset per round.
+            _last_failure_signature: str | None = None
             for attempt in range(1, MAX_DEBUG_RETRIES + 2):  # 1..MAX_DEBUG_RETRIES+1
                 # Snapshot conversation log size before subprocess so we can detect new output
                 convo = run_dir / f"conversation_loop_{round_num}.md"
@@ -909,6 +958,7 @@ def _run_rounds(
 
                 # --- Diagnose subprocess outcome ---
                 if stalled:
+                    _last_failure_signature = _failure_signature("stalled", returncode, output)
                     ui.round_failed(round_num, returncode)
                     _save_subprocess_diagnostic(
                         run_dir, round_num, cmd, output,
@@ -916,6 +966,7 @@ def _run_rounds(
                         attempt=attempt,
                     )
                 elif returncode != 0:
+                    _last_failure_signature = _failure_signature("crashed", returncode, output)
                     ui.round_failed(round_num, returncode)
                     _save_subprocess_diagnostic(
                         run_dir, round_num, cmd, output,
@@ -1046,6 +1097,9 @@ def _run_rounds(
                             prefix = _BACKLOG_VIOLATION_PREFIX
                         else:
                             prefix = "NO PROGRESS"
+                        _last_failure_signature = _failure_signature(
+                            f"no-progress:{prefix}", returncode, reason_str
+                        )
                         _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
                             reason=f"{prefix}: {reason_str}",
@@ -1061,6 +1115,9 @@ def _run_rounds(
                             round_succeeded = True
                             break
 
+                        _last_failure_signature = _failure_signature(
+                            "no-progress:silent", returncode, output
+                        )
                         # No progress — save diagnostic for retry
                         _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
@@ -1081,7 +1138,22 @@ def _run_rounds(
                         "— re-running with diagnostic context"
                     )
                 else:
-                    # All retries exhausted
+                    # All retries exhausted — register this round's failure
+                    # signature with the circuit breaker (SPEC § "Circuit
+                    # breakers").  ``MAX_IDENTICAL_FAILURES`` consecutive
+                    # rounds with the same fingerprint means the pathology
+                    # is deterministic; exit with code 4 so an outer
+                    # supervisor can restart from a clean slate rather
+                    # than burn rounds on a loop that cannot self-heal.
+                    _failure_signatures.append(_last_failure_signature or "unknown")
+                    if _is_circuit_breaker_tripped(_failure_signatures):
+                        sig = _failure_signatures[-1]
+                        ui.error(
+                            f"Same failure signature {MAX_IDENTICAL_FAILURES} "
+                            f"rounds in a row (sig={sig}) — deterministic loop "
+                            "detected, exiting for supervisor restart"
+                        )
+                        sys.exit(4)
                     ui.no_progress()
                     if not forever:
                         sys.exit(2)
@@ -1094,6 +1166,10 @@ def _run_rounds(
 
             if not round_succeeded:
                 continue  # skip convergence check, move to next round
+
+            # Round succeeded — reset the circuit breaker so that a single
+            # recovery clears the deterministic-failure counter.
+            _failure_signatures.clear()
 
             # Fire on_round_end hook for successful round
             fire_hook(hooks, "on_round_end", session=session_name, round_num=round_num, status="success")

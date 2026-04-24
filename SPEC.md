@@ -1290,6 +1290,56 @@ the next round's subprocess crash triggers the zero-progress retry and
 then the Phase 1 escape hatch. The structural-change protocol is the
 preventive layer; the retry/escape guards are the reactive layer.
 
+### Circuit breakers
+
+The debug-retry loop retries each failure up to `MAX_DEBUG_RETRIES` times
+within a round, and in `--forever` mode the orchestrator skips to the next
+round if retries are exhausted. That design is right for **transient**
+failures (a flaky test, an agent timeout that clears on retry) but wrong
+for **deterministic** ones (a pre-check command that hangs on every round,
+an irrecoverable bug that produces the same stack trace every time). Left
+unchecked, forever mode would spin on a deterministic failure forever,
+burning tokens without recovery.
+
+**The rule.** When the same failure signature repeats across
+`MAX_IDENTICAL_FAILURES` (=3) consecutive failed rounds, the orchestrator
+exits with **exit code 4** — "deterministic failure loop detected".
+
+**Failure signature.** A short SHA-256 digest of:
+1. Failure kind — `"stalled"`, `"crashed"`, or `"no-progress:<prefix>"`
+   where `<prefix>` is one of `NO PROGRESS`, `MEMORY WIPED`, `BACKLOG
+   VIOLATION`, or `silent`.
+2. Subprocess returncode (negative values indicate kill signals).
+3. The trailing 500 bytes of subprocess output (stripped), so that
+   mostly-deterministic failures with varying prefixes (timestamps,
+   round counters) still hash-match on their stable tail.
+
+**When the counter resets.** Any successful round clears the accumulated
+signatures, so a single recovery between otherwise-identical failures
+resets the threshold. This makes the breaker specific to *sustained*
+deterministic failures — it does not fire on occasional repeats
+interleaved with progress.
+
+**Relation to exit code 2.** Exit code 2 fires when a single round's
+retries are exhausted (non-`--forever` mode always exits on the first
+failed round). Exit code 4 is the escape hatch for `--forever` sessions
+that would otherwise keep cycling. A supervisor (systemd unit,
+`while true; do evolve start --forever; done`, operator tmux loop) can
+distinguish the two and take different action: restart cleanly on 4,
+alert-and-stop on 2 (or vice versa, depending on deployment).
+
+**What to do when you see exit 4.**
+1. Check `runs/<session>/subprocess_error_round_*.txt` for the three
+   most recent rounds — they will contain the same failure reason.
+2. If the failure is in a pre-check command (`pytest`, `npm test`),
+   fix the command or its environment before restarting.
+3. If the failure is structural (the agent itself is broken), use
+   `git log` to find the last round that committed a change, revert
+   if needed, and restart.
+4. A supervisor restart is safe only after root-cause remediation —
+   evolve cannot break its own deterministic loop without human or
+   scripted intervention.
+
 ---
 
 ## Event hooks
@@ -1566,6 +1616,7 @@ Types: `fix`, `feat`, `refactor`, `perf`, `docs`, `test`, `chore`
 | 1 | Max rounds reached or budget reached — improvements remain |
 | 2 | Error — agent failure, missing deps, or invalid args |
 | 3 | Structural change — manual restart required (see § "Structural change self-detection") |
+| 4 | Deterministic failure loop — same failure signature repeated across multiple rounds (see § "Circuit breakers") |
 
 ```bash
 # Use in CI

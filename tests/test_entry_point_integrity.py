@@ -16,31 +16,42 @@ from pathlib import Path
 import pytest
 
 
+def _probe_interpreter_has_sdk(python: str) -> bool:
+    """Return True iff ``python -c 'import claude_agent_sdk'`` exits 0.
+
+    Must be a subprocess probe (not an in-process ``import``) — tests
+    run under a conftest that installs a ``claude_agent_sdk`` stub in
+    ``sys.modules`` when the real SDK is absent, so the in-process
+    import would always succeed and wrongly hand back ``sys.executable``
+    for the subprocess that actually needs the real package.
+    """
+    try:
+        result = subprocess.run(
+            [python, "-c", "import claude_agent_sdk"],
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
 def _python_with_sdk() -> str:
     """Return a Python interpreter path that has ``claude_agent_sdk``.
 
-    Prefer the current interpreter (``sys.executable``); otherwise fall
-    back to the project's ``.venv/bin/python`` if it exists. Skip the
-    test when neither has the SDK — the entry-point check is meaningful
-    only when the real dependencies are importable.
+    Prefer ``sys.executable``; otherwise fall back to the project's
+    ``.venv/bin/python`` if it exists.  Skip the test when neither has
+    the SDK — the entry-point check is meaningful only when the real
+    dependencies are importable.
     """
-    try:
-        import claude_agent_sdk  # noqa: F401
+    if _probe_interpreter_has_sdk(sys.executable):
         return sys.executable
-    except ImportError:
-        pass
 
     # Project root is two levels up from this test file.
     project_root = Path(__file__).resolve().parent.parent
     venv_python = project_root / ".venv" / "bin" / "python"
-    if venv_python.is_file():
-        probe = subprocess.run(
-            [str(venv_python), "-c", "import claude_agent_sdk"],
-            capture_output=True,
-            timeout=10,
-        )
-        if probe.returncode == 0:
-            return str(venv_python)
+    if venv_python.is_file() and _probe_interpreter_has_sdk(str(venv_python)):
+        return str(venv_python)
 
     pytest.skip("claude_agent_sdk not importable in any available interpreter")
 

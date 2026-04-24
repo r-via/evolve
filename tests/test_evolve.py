@@ -6,6 +6,8 @@ import textwrap
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+import pytest
+
 
 class TestCLIParsing:
     """Test that CLI arguments are parsed correctly."""
@@ -704,6 +706,19 @@ class TestEffortFlag:
         This verifies the plumbing from loop.py's ``run_single_round`` (and
         sibling entry points) to ``agent.EFFORT`` to the SDK option.
         """
+        # Real SDK is required — ``inspect.signature`` on the stub's
+        # ``MagicMock`` attribute is meaningless.
+        pytest.importorskip(
+            "claude_agent_sdk",
+            reason="requires real claude_agent_sdk to inspect ClaudeAgentOptions signature",
+        )
+        # Conftest installs a MagicMock stub when the SDK isn't installed;
+        # importorskip above only covers the module presence, so also
+        # confirm the real package is on the path by checking the stub
+        # wasn't taken.
+        import claude_agent_sdk as _sdk
+        if isinstance(_sdk, MagicMock):
+            pytest.skip("conftest installed a claude_agent_sdk stub — real SDK not available")
         from claude_agent_sdk import ClaudeAgentOptions
         import inspect
         sig = inspect.signature(ClaudeAgentOptions)
@@ -726,6 +741,13 @@ class TestEffortFlag:
     def test_explicit_effort_low_sets_module_global(self):
         """An explicit 'low' CLI propagates all the way to agent.EFFORT
         after run_single_round assigns it."""
+        pytest.importorskip(
+            "claude_agent_sdk",
+            reason="requires real claude_agent_sdk to verify ClaudeAgentOptions.effort attribute",
+        )
+        import claude_agent_sdk as _sdk
+        if isinstance(_sdk, MagicMock):
+            pytest.skip("conftest installed a claude_agent_sdk stub — real SDK not available")
         import agent as _agent_mod
         original = _agent_mod.EFFORT
         try:

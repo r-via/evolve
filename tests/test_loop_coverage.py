@@ -2482,7 +2482,10 @@ class TestPartyModeEndToEnd:
 
         mock_ui = MagicMock()
 
-        with patch("loop.get_tui", return_value=mock_ui), \
+        # ``_run_party_mode`` was extracted to ``evolve/party.py``, which
+        # imports ``get_tui`` from ``tui``.  Patch at the import site used
+        # by the extracted module, not the legacy ``loop.get_tui`` alias.
+        with patch("evolve.party.get_tui", return_value=mock_ui), \
              patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
              patch.object(_asyncio, 'run', side_effect=lambda c: c.close()):
             _run_party_mode(tmp_path, run_dir, ui=None)
