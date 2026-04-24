@@ -261,7 +261,7 @@ class TestEnsureGit:
         mock_ui = MagicMock()
         mock_result = MagicMock(returncode=1)
         with patch("loop.subprocess.run", return_value=mock_result), \
-             patch("loop.get_tui") as mock_get_tui:
+             patch("evolve.git.get_tui") as mock_get_tui:
             with pytest.raises(SystemExit):
                 _ensure_git(tmp_path, ui=mock_ui)
         # get_tui should NOT be called when ui is provided
@@ -274,7 +274,7 @@ class TestEnsureGit:
         mock_ui = MagicMock()
         mock_result = MagicMock(returncode=1)
         with patch("loop.subprocess.run", return_value=mock_result), \
-             patch("loop.get_tui", return_value=mock_ui):
+             patch("evolve.git.get_tui", return_value=mock_ui):
             with pytest.raises(SystemExit):
                 _ensure_git(tmp_path)
         mock_ui.error.assert_called_once()

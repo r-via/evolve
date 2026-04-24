@@ -121,3 +121,6 @@ agent has 2 outputs: write `<project>/README_proposal.md` (or `README.md` in app
 
 ### --effort plumbing: 3-attempt pattern — module global + grep-count test — round 5 of 20260423_171103
 `agent.EFFORT` module global overwritten by loop entry points (`run_single_round` etc.) — NOT threaded through every function signature. `ClaudeAgentOptions(...)` opened in 3 agent sites; test greps `agent.py.count("effort=EFFORT") >= 3` instead of mocking each site. Attempts 1+2 did the code but skipped checkoff+COMMIT_MSG → zero-progress twice. Rule: on retry, finish bookkeeping BEFORE any new code.
+
+### Module extraction: patch target split — round 3 of 20260423_213701
+`patch("loop.subprocess.run")` survives extraction (shared module obj). `patch("loop.datetime")` / `patch("loop.get_tui")` break — module-level name replacements don't cross module boundaries. Rule: after function extraction, fix patches that mock module-level names (datetime, get_tui), leave patches on dotted attrs (subprocess.run) alone.
