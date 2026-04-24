@@ -343,6 +343,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
@@ -367,6 +368,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
@@ -387,6 +389,7 @@ class TestRunRounds:
             return 0, "output", True  # always stalls
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic"), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
@@ -414,6 +417,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic"), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
@@ -432,6 +436,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic"), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
@@ -458,6 +463,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
@@ -500,6 +506,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
@@ -544,6 +551,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
@@ -581,6 +589,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
@@ -612,6 +621,7 @@ class TestRunRounds:
             attempt_log.append(attempt)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
@@ -642,6 +652,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
@@ -685,6 +696,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
@@ -747,6 +759,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
@@ -796,6 +809,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
@@ -841,6 +855,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
@@ -874,6 +889,7 @@ class TestRunRounds:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
@@ -960,6 +976,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
@@ -992,6 +1009,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
@@ -1020,6 +1038,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._save_subprocess_diagnostic"), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
@@ -1062,6 +1081,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
@@ -1086,6 +1106,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
@@ -1111,6 +1132,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
@@ -1139,6 +1161,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
@@ -1167,6 +1190,7 @@ class TestRunRounds:
                 return 0, "output", False
 
             with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
                  patch("evolve.orchestrator._generate_evolution_report"), \
                  pytest.raises(SystemExit):
                 _run_rounds(
@@ -1224,6 +1248,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
@@ -1272,6 +1297,7 @@ class TestRunRounds:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
@@ -1606,6 +1632,7 @@ class TestForeverRestartInRunRounds:
             imp_path.write_text("- [ ] [functional] next task\n")
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              patch("evolve.orchestrator._forever_restart", side_effect=mock_restart_side) as mock_restart, \
@@ -1650,6 +1677,7 @@ class TestForeverRestartInRunRounds:
         new_dirs_before = set(d.name for d in (project_dir / "runs").iterdir() if d.is_dir())
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              patch("evolve.orchestrator._forever_restart"), \
@@ -3315,6 +3343,7 @@ class TestRunRoundsRestartRequired:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
@@ -3344,6 +3373,7 @@ class TestRunRoundsRestartRequired:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
@@ -3375,6 +3405,7 @@ class TestRunRoundsRestartRequired:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator.fire_hook") as mock_fire_hook, \
              pytest.raises(SystemExit) as exc:
@@ -3420,6 +3451,7 @@ class TestRunRoundsRestartRequired:
         # _run_rounds always calls sys.exit(3) on RESTART_REQUIRED.
         # This verifies _run_rounds does NOT skip the exit.
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
@@ -3442,6 +3474,7 @@ class TestRunRoundsRestartRequired:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit) as exc:

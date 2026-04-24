@@ -1557,6 +1557,32 @@ To prevent silent self-breakage, the agent detects **structural changes**
 before committing and explicitly hands control back to the operator
 rather than continuing.
 
+**Scope: self-evolution only.**  ``RESTART_REQUIRED`` is a
+*self-evolution* safety protocol.  Its purpose is to protect the
+**running orchestrator's Python imports** from going stale after a
+rename / `__init__.py` edit / entry-point move.  That is only a
+problem when the project being evolved IS evolve's own source tree
+— i.e. ``python -m evolve start /path/to/evolve`` where
+``/path/to/evolve`` is the same repository that provides the
+orchestrator's running code.
+
+When evolve is driving a third-party project (the common case —
+``python -m evolve start /path/to/foo``), structural changes in
+``foo/`` never touch ``evolve/``'s module layout.  The round
+subprocess spawns a fresh Python interpreter per round anyway
+(``python -m evolve _round …``), so target-project renames would
+be visible on the next round's first `import` regardless.  The
+agent is therefore instructed to **skip the RESTART_REQUIRED
+write** when ``{project_dir}`` is not the same repository as
+evolve's own source tree.
+
+The orchestrator implements the same check as defense-in-depth
+(``_is_self_evolving`` in ``evolve/orchestrator.py``): even if an
+agent mistakenly writes ``RESTART_REQUIRED`` on a third-party
+project, the orchestrator silently ignores the marker — the file
+stays on disk as an audit trail but no exit-3 fires, no operator
+is paged.
+
 **What counts as structural.** Any of the following, detected via
 `git diff` / `git status` against the pre-round state:
 

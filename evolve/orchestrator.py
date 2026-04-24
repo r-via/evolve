@@ -76,6 +76,45 @@ def _probe_ok(msg: str) -> None:
     print(f"{_PROBE_OK_PREFIX} {msg}", flush=True)
 
 
+def _is_self_evolving(project_dir: Path) -> bool:
+    """Return True when evolve is evolving its own source tree.
+
+    The ``RESTART_REQUIRED`` structural-change protocol protects the
+    running orchestrator from stale imports after a rename, __init__.py
+    edit, or entry-point move.  That only matters when the project
+    being evolved IS the orchestrator's own code — typically, when
+    ``project_dir`` resolves to the directory that contains the
+    currently-imported ``evolve/`` package (this module's own parent).
+
+    When evolve is driving a third-party project (the common case —
+    ``python -m evolve start /path/to/foo``), structural changes in
+    ``foo/`` never touch ``evolve/`` and the orchestrator's imports
+    stay valid.  RESTART_REQUIRED in that case would be pure theatre:
+    the marker still gets written as an audit trail, but the
+    orchestrator keeps running.
+
+    Comparison is done on resolved absolute paths to survive symlinks
+    and relative invocations.
+
+    Args:
+        project_dir: Root directory of the project being evolved.
+
+    Returns:
+        True iff ``project_dir`` resolves to the same directory as the
+        project that contains the currently-imported ``evolve`` package.
+    """
+    try:
+        evolve_package_dir = Path(__file__).resolve().parent  # .../evolve
+        evolve_project_root = evolve_package_dir.parent       # .../ (repo root)
+        return project_dir.resolve() == evolve_project_root
+    except (OSError, RuntimeError):
+        # If we can't resolve (e.g. symlink loop, stale parent dir),
+        # err on the side of caution — treat as self-evolving so the
+        # safety protocol still fires.  A false positive is a harmless
+        # exit 3; a false negative could leave a stale orchestrator.
+        return True
+
+
 def _auto_detect_check(project_dir: Path) -> str | None:
     """Auto-detect the test framework for a project.
 
@@ -1342,7 +1381,24 @@ def _run_rounds(
             # writes RESTART_REQUIRED when it detects a structural commit.
             # We check AFTER state.json + budget, BEFORE convergence.
             # --forever does NOT bypass — structural changes always pause.
+            #
+            # Scope: RESTART_REQUIRED is a *self-evolution* concept — it
+            # only matters when evolve is evolving its own source tree
+            # (the running orchestrator's imports become stale on rename
+            # / __init__.py edits / entry-point moves).  When evolve is
+            # evolving a third-party project, the target's structural
+            # changes don't touch the orchestrator's module layout, so
+            # restarting the orchestrator would be theatre.  Ignore the
+            # marker in that case — the marker stays on disk as audit
+            # trail, but we do not exit.
             restart_marker = _parse_restart_required(run_dir)
+            if restart_marker is not None and not _is_self_evolving(project_dir):
+                _probe(
+                    f"RESTART_REQUIRED marker present but project is not "
+                    f"evolve itself — ignoring (target's structural change "
+                    f"does not affect the orchestrator)"
+                )
+                restart_marker = None
             if restart_marker is not None:
                 _probe_warn(f"RESTART_REQUIRED detected: {restart_marker.get('reason', '?')}")
 

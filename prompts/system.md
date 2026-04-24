@@ -334,7 +334,34 @@ does NOT catch them (subprocess is mocked):
 - Creation or deletion of a `__main__.py` anywhere
 - Changes to `conftest.py` or `tests/conftest.py` that affect test collection
 
-**If ANY of the above is true**, your commit is structural. You MUST:
+**If ANY of the above is true**, your commit is structural.
+
+**Scope gate (read this before writing RESTART_REQUIRED).**
+``RESTART_REQUIRED`` is a *self-evolution* protocol — it protects
+the running orchestrator's Python imports from going stale after
+a rename / entry-point move.  That only matters when this round
+is evolving **evolve's own source tree**.
+
+Check: does ``{project_dir}`` point at the same repository that
+provides the currently-running ``evolve/`` package?  (The
+orchestrator's ``_is_self_evolving`` helper does the precise
+resolved-path comparison; when in doubt, the agent can look at
+``{project_dir}`` and ask: "am I editing files under the same
+directory that contains the ``evolve/`` package I'm running
+from?".)
+
+- **Yes → self-evolving**: follow the full protocol below
+  (STRUCTURAL prefix + RESTART_REQUIRED marker + skip Phase 4 +
+  exit 3).
+- **No → third-party project**: the target's structural changes
+  don't touch the orchestrator's imports.  Still add the
+  ``STRUCTURAL:`` prefix to COMMIT_MSG (it's a useful audit
+  signal in any project's git history) but **do NOT write the
+  RESTART_REQUIRED marker**, do NOT skip Phase 4, and let the
+  round proceed normally.  The next round's fresh subprocess
+  will pick up the target's new layout automatically.
+
+**Full protocol (self-evolving case only).** You MUST:
 
 1. Prefix the first line of `COMMIT_MSG` with `STRUCTURAL: ` —
    e.g. `STRUCTURAL: feat(git): extract git operations from loop.py`
@@ -351,6 +378,13 @@ does NOT catch them (subprocess is mocked):
    backlog is empty. The next run after operator restart handles convergence.
 4. Return cleanly — the orchestrator will honor the marker, commit, show a
    review panel, and exit with code 3.
+
+**Defense in depth.**  If you mistakenly write
+``RESTART_REQUIRED`` on a third-party project, the orchestrator
+silently ignores the marker (``_is_self_evolving`` returns False)
+— the file stays on disk as an audit trail but no exit-3 fires.
+You cannot break a third-party run by over-triggering the
+protocol.
 
 The pytest suite passes the mocked-subprocess tests, so **relying on tests
 alone is insufficient for structural changes**. This self-detection is the
