@@ -2228,21 +2228,43 @@ def _run_single_round_body(
         ui.no_check()
         _probe("no check command configured")
 
-    # 2. Let opus agent analyze and fix
+    # 2. Pick the right call for this round's state.
+    #
+    # Multi-call round architecture (SPEC § "Multi-call round
+    # architecture"):
+    #
+    # - Backlog has ≥1 unchecked ``[ ]`` item → ``implement`` call
+    #   (Amelia — Opus, full ``analyze_and_fix``).
+    # - Backlog drained → ``draft`` call (Winston + John — Sonnet,
+    #   narrow scope, writes ONE new US to improvements.md).
+    #
+    # The orchestrator picks; the agent doesn't have to decide.
     current = _get_current_improvement(improvements_path, allow_installs=allow_installs)
-    _probe(f"invoking agent — target: {current or '(initial analysis)'}")
-    ui.agent_working()
-    analyze_and_fix(
-        project_dir=project_dir,
-        check_output=check_output,
-        check_cmd=check_cmd,
-        allow_installs=allow_installs,
-        round_num=round_num,
-        run_dir=rdir,
-        spec=spec,
-        check_timeout=timeout,
-    )
-    _probe("agent finished")
+    if current:
+        _probe(f"invoking implement agent — target: {current}")
+        ui.agent_working()
+        from evolve.agent import analyze_and_fix as _analyze_and_fix
+        _analyze_and_fix(
+            project_dir=project_dir,
+            check_output=check_output,
+            check_cmd=check_cmd,
+            allow_installs=allow_installs,
+            round_num=round_num,
+            run_dir=rdir,
+            spec=spec,
+            check_timeout=timeout,
+        )
+        _probe("implement agent finished")
+    else:
+        _probe("backlog drained — invoking draft agent (Winston + John, Sonnet low)")
+        ui.agent_working()
+        from evolve.agent import run_draft_agent as _run_draft_agent
+        _run_draft_agent(
+            project_dir=project_dir,
+            run_dir=rdir,
+            spec=spec,
+        )
+        _probe("draft agent finished")
 
     # 3. Git commit + push
     commit_msg_path = rdir / "COMMIT_MSG"
@@ -2286,6 +2308,30 @@ def _run_single_round_body(
         except subprocess.TimeoutExpired:
             ui.check_result("verify", check_cmd, timeout=True)
             _probe_warn(f"post-check TIMEOUT after {timeout}s (hit ceiling)")
+
+    # 5. Run the dedicated review agent (Zara — Sonnet low effort).
+    #
+    # Multi-call round architecture: review is a separate SDK call
+    # after the implement commit + post-check.  Writes
+    # ``review_round_N.md`` which the parent orchestrator's
+    # ``_check_review_verdict`` parses and routes to retry / exit /
+    # proceed.  Runs unconditionally — even "approved" rounds need
+    # the review file written so the verdict is observable.
+    try:
+        from evolve.agent import run_review_agent as _run_review_agent
+        _probe("invoking review agent (Zara, Sonnet low)")
+        _run_review_agent(
+            project_dir=project_dir,
+            run_dir=rdir,
+            round_num=round_num,
+            spec=spec,
+        )
+        _probe("review agent finished")
+    except Exception as exc:
+        # Review failures should not sink the round — log and continue.
+        # The verdict parser treats a missing/malformed file as
+        # ``verdict=None``, which falls through the normal flow.
+        _probe_warn(f"review agent error: {exc}")
 
     _probe_ok(f"round {round_num} complete")
 

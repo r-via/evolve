@@ -215,6 +215,159 @@ does not write a `.gitignore` entry automatically.
 
 ---
 
+## Multi-call round architecture
+
+A round is **not** a single Claude agent session.  It is a pipeline
+of **three narrowly-scoped SDK calls**, each with its own persona,
+model, effort level, turn budget, and single deliverable.  The
+orchestrator drives the pipeline and routes each call's output to
+the next step.
+
+**Rationale.**  Earlier versions asked one Opus call to do
+everything: run Phase 1 (errors-first), Phase 2 (freshness gate),
+Phase 3 (draft + implement), Phase 3.5 (structural self-detection),
+Phase 3.6 (Zara adversarial review), Phase 4 (convergence).
+Within that one call the agent had to role-play four personas
+(Winston, John, Amelia, Zara) and decide when to stop.  Symptoms:
+
+- 300+ second rounds with the agent drifting between phases.
+- Personas mixing — Amelia's implementation contaminated by
+  Winston's drafting mid-turn.
+- "Stop the round" verbal instruction that the model could
+  interpret as "keep doing tool calls" because there was no
+  structural exit point.
+- Opaque failures — when a round failed, no clear signal pointing
+  at which phase broke down.
+
+Splitting the work restores clarity: one call = one persona = one
+deliverable = one exit point.
+
+**Three calls per round.**
+
+| Call          | Persona       | Model         | Effort | Max turns | Deliverable                          |
+|---------------|---------------|---------------|--------|-----------|--------------------------------------|
+| draft_agent   | Winston + John| Sonnet 4.6    | low    | 8         | ONE new US in improvements.md        |
+| implement     | Amelia        | Opus 4.7      | medium | 40        | Code + tests + ``[x]`` + COMMIT_MSG  |
+| review_agent  | Zara          | Sonnet 4.6    | low    | 5         | ``review_round_N.md`` with verdict   |
+
+Each call receives a prompt tailored to its single responsibility
+(``prompts/draft.md``, ``prompts/system.md`` for implement,
+``prompts/review.md``) — the prompts no longer carry every phase's
+instructions in one file.
+
+**Pipeline flow.**
+
+```
+┌─ pre-check (subprocess pytest, 20s cap) ────────────────────┐
+│                                                              │
+├─ if improvements.md has ≥1 unchecked [ ] item:              │
+│     call implement_agent(target_US)                          │
+│       → Amelia edits code + tests                            │
+│       → checks off [ ] → [x]                                 │
+│       → writes COMMIT_MSG                                    │
+│       → RETURN                                               │
+│                                                              │
+│   else:                                                      │
+│     call draft_agent(spec, backlog, memory)                  │
+│       → Winston + John pipeline (telegraphic role-play)      │
+│       → append ONE new US to improvements.md                 │
+│       → write COMMIT_MSG "chore(spec): draft US-NNN"         │
+│       → RETURN                                               │
+│                                                              │
+├─ orchestrator stages + commits COMMIT_MSG                    │
+│                                                              │
+├─ post-check (subprocess pytest, 20s cap)                     │
+│                                                              │
+├─ call review_agent(round_num, US, diff)                     │
+│     → Zara four-pass attack plan                             │
+│     → write review_round_N.md with verdict + findings        │
+│     → RETURN                                                 │
+│                                                              │
+├─ orchestrator parses review_round_N.md                       │
+│     APPROVED → proceed to Phase 4 convergence check          │
+│     CHANGES REQUESTED → retry with REVIEW: diagnostic        │
+│     BLOCKED → exit 2                                         │
+│                                                              │
+└─ Phase 4 convergence (deterministic, no agent)               │
+```
+
+**What each prompt file contains.**
+
+- ``prompts/draft.md`` (~100 lines) — Winston + John pipeline, US
+  template, ID allocation rule, single-item constraint.  No
+  implementation instructions, no review attack plan, no Phase 1
+  errors-first rule (draft doesn't touch code).
+- ``prompts/system.md`` (~250 lines, down from ~700) — Amelia's
+  focused implementation prompt.  Phase 1 errors-first stays
+  (code changes can fail tests).  Phase 3.5 structural-change
+  self-detection stays (relevant to code commits).  Phase 2
+  rebuild, Phase 3 drafting, Phase 3.6 review — removed,
+  delegated.
+- ``prompts/review.md`` (~120 lines) — Zara's adversarial review
+  four-pass protocol, verdict schema, minimum-findings rule.  No
+  role-play of other personas.
+
+**Cost and latency projections.**
+
+| Call          | Typical cost       | Typical duration |
+|---------------|--------------------|------------------|
+| draft_agent   | ~$0.002 / round    | 20-40 s          |
+| implement     | ~$0.02 / round     | 60-180 s         |
+| review_agent  | ~$0.002 / round    | 15-30 s          |
+| **Total**     | **~$0.025 / round**| **~120-240 s**   |
+
+Compared to the single-call round at ~$0.05+ and 200-400+ s with
+heavy drift, the pipeline is roughly 2× cheaper and more
+predictable.  The prompt-caching gains compound: each agent's
+prompt prefix is deterministic across rounds of the same kind,
+so Sonnet's cache-hit rate on draft/review calls approaches
+100% after the first round.
+
+**Orchestrator contract (evolve/orchestrator.py).**
+
+``_run_single_round_body(project_dir, round_num, check_cmd, ...)``
+follows the pipeline literally:
+
+1. Run pre-check.
+2. Inspect ``{runs_base}/improvements.md``:
+   - If any ``[ ]`` item present → ``analyze_and_fix(...)``
+     (implement path, Amelia).
+   - Else → ``run_draft_agent(...)`` (draft path, Winston + John).
+3. Stage + commit ``COMMIT_MSG`` (or confirm agent already did).
+4. Run post-check.
+5. ``run_review_agent(round_num, run_dir, project_dir)``.
+6. ``_check_review_verdict(run_dir, round_num)`` — route the
+   verdict to retry / exit / proceed as before.
+7. Phase 4 convergence check (deterministic).
+
+**Retry semantics within a round** are unchanged: if any of the
+three calls crashes, stalls, or produces a no-progress outcome,
+the orchestrator retries the FAILED call (not the whole round).
+Scope-creep and backlog-violation detections still apply to the
+implement call's commit.  Circuit breaker still fires on three
+identical failure signatures.
+
+**Migration strategy.**
+
+Rather than a single large refactor, the migration lands as three
+independent US items, each touching one call:
+
+- Extract ``review_agent`` (Zara) — lowest risk, Zara is already
+  conceptually separate.
+- Extract ``draft_agent`` (Winston + John) — medium risk, replaces
+  Phase 2 rebuild logic.
+- Slim ``implement_agent`` (Amelia) — highest risk, touches the
+  core ``analyze_and_fix`` path.
+
+Each extraction's acceptance criteria include: (a) the new agent
+runs as a separate SDK call, (b) its prompt file is dedicated,
+(c) the main ``prompts/system.md`` is slimmed by the
+corresponding section, (d) existing tests are updated to match,
+(e) a session-level integration test proves the pipeline executes
+all three calls in order on a typical round.
+
+---
+
 ## Round lifecycle
 
 Each round — one improvement at a time:
