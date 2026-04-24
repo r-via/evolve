@@ -8,7 +8,7 @@ import shutil
 import time
 from pathlib import Path
 
-from loop import _is_needs_package
+from evolve.state import _is_needs_package
 from evolve.tui import get_tui
 
 
@@ -292,7 +292,7 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     # Interpolate using str.replace() instead of .format() to avoid KeyError
     # when the template (or project-specific override) contains literal curly braces
     # (e.g. JSON examples, Rust code, Go generics).
-    from loop import WATCHDOG_TIMEOUT
+    from evolve.orchestrator import WATCHDOG_TIMEOUT
     system_prompt = system_prompt.replace("{project_dir}", str(project_dir))
     system_prompt = system_prompt.replace("{run_dir}", rdir)
     # Support both old and new placeholder names for backward compatibility

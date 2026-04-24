@@ -395,7 +395,7 @@ def main():
                 sys.exit(2)
 
         if args.validate:
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             sys.exit(run_validate(
                 project_dir=project_path,
                 check_cmd=args.check,
@@ -405,7 +405,7 @@ def main():
                 effort=getattr(args, "effort", "medium"),
             ))
         elif args.dry_run:
-            from loop import run_dry_run
+            from evolve.orchestrator import run_dry_run
             run_dry_run(
                 project_dir=project_path,
                 check_cmd=args.check,
@@ -415,7 +415,7 @@ def main():
                 effort=getattr(args, "effort", "medium"),
             )
         else:
-            from loop import evolve_loop
+            from evolve.orchestrator import evolve_loop
             evolve_loop(
                 project_dir=project_path,
                 max_rounds=args.rounds,
@@ -446,7 +446,7 @@ def main():
         # EVOLVE_MODEL env vars and evolve.toml are honored exactly like
         # they are for `evolve start`.
         args = _resolve_config(args, project_path)
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
         sys.exit(run_sync_readme(
             project_dir=project_path,
             spec=getattr(args, "spec", None),
@@ -473,7 +473,7 @@ def main():
             if not spec_path.is_file():
                 print(f"ERROR: spec file not found: {spec_path}")
                 sys.exit(2)
-        from loop import run_diff
+        from evolve.orchestrator import run_diff
         sys.exit(run_diff(
             project_dir=project_path,
             spec=spec,
@@ -482,7 +482,7 @@ def main():
         ))
 
     elif args.command == "_round":
-        from loop import run_single_round
+        from evolve.orchestrator import run_single_round
         run_single_round(
             project_dir=Path(args.project_dir).resolve(),
             round_num=args.round_num,
@@ -758,7 +758,7 @@ def _show_status(project_dir: Path):
         import re
         checked = len(re.findall(r"^- \[x\]", content, re.MULTILINE))
         unchecked = len(re.findall(r"^- \[ \]", content, re.MULTILINE))
-        from loop import _count_blocked
+        from evolve.state import _count_blocked
         blocked = _count_blocked(improvements_path)
         ui.status_improvements(checked, unchecked, blocked)
     else:
