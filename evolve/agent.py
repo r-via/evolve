@@ -21,6 +21,44 @@ from evolve.tui import get_tui
 PromptBlocks = namedtuple("PromptBlocks", ["cached", "uncached"])
 
 
+def _build_system_prompt_blocks(blocks: PromptBlocks) -> list[dict]:
+    """Convert :class:`PromptBlocks` into the SDK's two-block system_prompt list.
+
+    The first block (cached) carries ``cache_control={"type": "ephemeral"}``
+    so the Anthropic API caches it across calls within the TTL window.
+
+    Returns a list of two dicts suitable for ``ClaudeAgentOptions(system_prompt=...)``.
+    """
+    return [
+        {
+            "type": "text",
+            "text": blocks.cached,
+            "cache_control": {"type": "ephemeral"},
+        },
+        {
+            "type": "text",
+            "text": blocks.uncached,
+        },
+    ]
+
+
+def _build_system_prompt_from_text(text: str) -> list[dict]:
+    """Build a two-block system_prompt from a single text string.
+
+    Used by read-only agents (dry-run, validate, diff, sync-readme,
+    curation) where the prompt is built as a single string rather than
+    via :func:`build_prompt_blocks`.  The entire text is placed in a
+    single cached block.
+    """
+    return [
+        {
+            "type": "text",
+            "text": text,
+            "cache_control": {"type": "ephemeral"},
+        },
+    ]
+
+
 def _detect_current_attempt(run_dir: Path | None, round_num: int) -> int:
     """Return the current attempt number (1-based) for *round_num*.
 
@@ -269,7 +307,7 @@ def _detect_prior_round_anomalies(
     return anomalies
 
 
-def build_prompt(
+def build_prompt_blocks(
     project_dir: Path,
     check_output: str = "",
     check_cmd: str | None = None,
@@ -279,11 +317,17 @@ def build_prompt(
     round_num: int = 1,
     yolo: bool | None = None,
     check_timeout: int = 20,
-) -> str:
-    """Build the system prompt for the opus agent from project context.
+) -> PromptBlocks:
+    """Build a two-block prompt for the opus agent (prompt caching).
 
-    Assembles README, improvements list, memory, check results, and crash
-    logs into a single prompt string that guides the agent's behavior.
+    Returns a :class:`PromptBlocks` with ``cached`` (static per session —
+    system template + SPEC/README) and ``uncached`` (per-round variable —
+    check results, memory, attempt marker, prior audit, crash logs).  The
+    cached block is deterministic for the session so that the SDK's
+    ``cache_control={"type": "ephemeral"}`` achieves cache hits on
+    subsequent rounds.
+
+    See SPEC.md § "Prompt caching" for the contract.
 
     Args:
         project_dir: Root directory of the project being evolved.
@@ -294,9 +338,10 @@ def build_prompt(
         spec: Path to the spec file relative to project_dir (default: README.md).
         round_num: Current evolution round number (used for stuck-loop detection).
         yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
+        check_timeout: Maximum seconds for the check command.
 
     Returns:
-        The fully interpolated prompt string.
+        A PromptBlocks(cached, uncached) named tuple.
     """
     if yolo is not None:
         allow_installs = yolo
@@ -413,7 +458,10 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
             "**CURRENT ATTEMPT: 1 of 3** — Standard Phase 1 applies. The\n"
             "Phase 1 escape hatch is NOT permitted on the first attempt.\n"
         )
-    system_prompt = system_prompt.replace("{attempt_marker}", attempt_marker)
+    # Substitute attempt_marker with empty string in the template so the
+    # cached block is deterministic per session.  The real attempt_marker
+    # text goes into the uncached block.  See SPEC.md § "Prompt caching".
+    system_prompt = system_prompt.replace("{attempt_marker}", "")
 
     # Build sections
     readme_section = f"## README (specification)\n{readme}" if readme else "## README\n(no README found)"
@@ -658,10 +706,15 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
             f"Run the project's main commands manually after each fix to verify they work.\n"
         )
 
-    return f"""\
+    # --- Cached block: static per session (system template + SPEC/README) ---
+    cached = f"""\
 {system_prompt}
 
-{readme_section}
+{readme_section}"""
+
+    # --- Uncached block: per-round variable content ---
+    uncached = f"""\
+{attempt_marker}
 
 {improvements_section}
 
@@ -672,6 +725,45 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
 {memory_section}
 {prev_check_section}
 {check_section}"""
+
+    return PromptBlocks(cached=cached, uncached=uncached)
+
+
+def build_prompt(
+    project_dir: Path,
+    check_output: str = "",
+    check_cmd: str | None = None,
+    allow_installs: bool = False,
+    run_dir: Path | None = None,
+    spec: str | None = None,
+    round_num: int = 1,
+    yolo: bool | None = None,
+    check_timeout: int = 20,
+) -> str:
+    """Build the system prompt for the opus agent from project context.
+
+    Backward-compatible wrapper around :func:`build_prompt_blocks` that
+    returns a single concatenated string.
+
+    Args:
+        project_dir: Root directory of the project being evolved.
+        check_output: Output from the most recent check command run.
+        check_cmd: Shell command used to verify the project (e.g. 'pytest').
+        allow_installs: If True, allow improvements tagged [needs-package].
+        run_dir: Session run directory containing round artifacts.
+        spec: Path to the spec file relative to project_dir (default: README.md).
+        round_num: Current evolution round number (used for stuck-loop detection).
+        yolo: Deprecated alias for *allow_installs*. Will be removed in a future version.
+        check_timeout: Maximum seconds for the check command.
+
+    Returns:
+        The fully interpolated prompt string.
+    """
+    blocks = build_prompt_blocks(
+        project_dir, check_output, check_cmd, allow_installs, run_dir,
+        spec=spec, round_num=round_num, yolo=yolo, check_timeout=check_timeout,
+    )
+    return f"{blocks.cached}\n\n{blocks.uncached}"
 
 
 def _patch_sdk_parser() -> None:
@@ -750,6 +842,7 @@ async def run_claude_agent(
     run_dir: Path | None = None,
     log_filename: str | None = None,
     images: list[Path] | None = None,
+    system_prompt_blocks: list[dict] | None = None,
 ) -> None:
     """Run Claude Code agent with the given prompt. Logs conversation to run_dir/.
 
@@ -757,13 +850,20 @@ async def run_claude_agent(
     Markdown conversation log.  Tool calls are shown live in the TUI.
 
     Args:
-        prompt: The assembled system prompt for the agent.
+        prompt: The assembled system prompt for the agent (used as the
+            user message when *system_prompt_blocks* is provided, or as
+            the sole prompt when it is ``None``).
         project_dir: Root directory of the project (used as cwd).
         round_num: Current evolution round number (for log naming).
         run_dir: Directory to write the conversation log into.
         log_filename: Override the default log filename.
         images: Optional list of image file paths to attach as multimodal
             content blocks alongside the text prompt.
+        system_prompt_blocks: Two-block system prompt list with
+            ``cache_control`` for prompt caching (SPEC.md § "Prompt
+            caching").  When provided, this is set on
+            ``ClaudeAgentOptions(system_prompt=...)`` and *prompt*
+            becomes the initial user message.
     """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -776,6 +876,7 @@ async def run_claude_agent(
         disallowed_tools=["Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
         effort=EFFORT,
+        **({"system_prompt": system_prompt_blocks} if system_prompt_blocks else {}),
     )
 
     # Log file
