@@ -14,17 +14,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import loop
-from loop import (
+import evolve.orchestrator as _orch
+from evolve.git import _git_show_at
+from evolve.orchestrator import (
     _auto_detect_check,
     _generate_evolution_report,
-    _get_current_improvement,
-    _git_show_at,
+    _run_rounds,
     evolve_loop,
     run_dry_run,
     run_single_round,
     run_validate,
 )
+from evolve.state import _get_current_improvement
 
 
 def _close_coro(coro):
@@ -59,7 +60,7 @@ class TestGitShowAtSubprocessError:
     def test_subprocess_error_returns_none(self, tmp_path: Path):
         """SubprocessError during git show returns None."""
         with patch(
-            "loop.subprocess.run",
+            "evolve.orchestrator.subprocess.run",
             side_effect=subprocess.SubprocessError("boom"),
         ):
             assert _git_show_at(tmp_path, "HEAD", "runs/improvements.md") is None
@@ -67,7 +68,7 @@ class TestGitShowAtSubprocessError:
     def test_filenotfound_returns_none(self, tmp_path: Path):
         """FileNotFoundError (git binary missing) returns None."""
         with patch(
-            "loop.subprocess.run",
+            "evolve.orchestrator.subprocess.run",
             side_effect=FileNotFoundError("no git"),
         ):
             assert _git_show_at(tmp_path, "HEAD", "runs/improvements.md") is None
@@ -439,7 +440,7 @@ class TestRunRoundsIntegrationBranches:
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit):
-            loop._run_rounds(
+            _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
@@ -473,7 +474,7 @@ class TestRunRoundsIntegrationBranches:
              patch("evolve.orchestrator._run_party_mode"), \
              patch("evolve.orchestrator.subprocess.run", side_effect=flaky_run), \
              pytest.raises(SystemExit):
-            loop._run_rounds(
+            _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
@@ -512,7 +513,7 @@ class TestRunRoundsIntegrationBranches:
              patch("evolve.orchestrator._save_subprocess_diagnostic"), \
              patch("evolve.orchestrator.subprocess.run", side_effect=flaky_run), \
              pytest.raises(SystemExit):
-            loop._run_rounds(
+            _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
@@ -548,7 +549,7 @@ class TestRunRoundsIntegrationBranches:
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit):
-            loop._run_rounds(
+            _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
@@ -575,7 +576,7 @@ class TestRunRoundsIntegrationBranches:
              patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=spy_save), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
-            loop._run_rounds(
+            _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
                 allow_installs=False, timeout=300, model="claude-opus-4-6",
@@ -612,7 +613,7 @@ class TestRunRoundsIntegrationBranches:
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              pytest.raises(SystemExit):
-            loop._run_rounds(
+            _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
                 start_round=1, max_rounds=1, check_cmd="pytest",
                 allow_installs=False, timeout=300, model="claude-opus-4-6",

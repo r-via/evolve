@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from loop import (
+from evolve.orchestrator import (
     MAX_IDENTICAL_FAILURES,
     _failure_signature,
     _is_circuit_breaker_tripped,

@@ -15,13 +15,13 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from agent import (
+from evolve.agent import (
     _load_project_context,
     build_prompt,
     build_validate_prompt,
     build_dry_run_prompt,
 )
-from loop import _forever_restart, _run_party_mode
+from evolve.party import _forever_restart, _run_party_mode
 
 
 # ---------------------------------------------------------------------------

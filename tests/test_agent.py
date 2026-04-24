@@ -4,7 +4,7 @@ import textwrap
 from pathlib import Path
 from unittest.mock import patch
 
-from agent import (
+from evolve.agent import (
     build_prompt,
     _build_check_section,
     _is_benign_runtime_error,

@@ -4,7 +4,7 @@ import textwrap
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from agent import (
+from evolve.agent import (
     build_prompt,
     _is_benign_runtime_error,
     _should_retry_rate_limit,

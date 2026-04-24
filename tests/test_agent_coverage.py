@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from agent import (
+from evolve.agent import (
     run_claude_agent,
     analyze_and_fix,
     _patch_sdk_parser,

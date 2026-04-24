@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from agent import build_diff_prompt, run_diff_agent
+from evolve.agent import build_diff_prompt, run_diff_agent
 
 
 # ---------------------------------------------------------------------------

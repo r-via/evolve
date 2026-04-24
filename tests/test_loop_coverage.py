@@ -8,21 +8,22 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from loop import (
-    run_single_round,
-    evolve_loop,
-    _run_rounds,
+from evolve.git import _ensure_git, _git_commit
+from evolve.orchestrator import (
+    MAX_DEBUG_RETRIES,
+    _MEMORY_COMPACTION_MARKER,
+    _MEMORY_WIPE_THRESHOLD,
     _generate_evolution_report,
-    _run_party_mode,
-    _ensure_git,
-    _git_commit,
+    _run_rounds,
+    evolve_loop,
+    run_single_round,
+)
+from evolve.party import _run_party_mode
+from evolve.state import (
     _count_checked,
     _count_unchecked,
     _get_current_improvement,
     _parse_restart_required,
-    MAX_DEBUG_RETRIES,
-    _MEMORY_COMPACTION_MARKER,
-    _MEMORY_WIPE_THRESHOLD,
 )
 
 

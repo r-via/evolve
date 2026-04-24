@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from loop import (
+from evolve.orchestrator import (
     _DEFAULT_README_STALE_THRESHOLD_DAYS,
     _README_STALE_ADVISORY_FMT,
     _emit_stale_readme_advisory,

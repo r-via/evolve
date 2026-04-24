@@ -21,7 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from agent import (
+from evolve.agent import (
     _detect_current_attempt,
     analyze_and_fix,
     build_prompt,

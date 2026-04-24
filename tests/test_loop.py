@@ -5,18 +5,18 @@ import textwrap
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from loop import (
-    _is_needs_package,
+from evolve.git import _setup_forever_branch
+from evolve.orchestrator import _auto_detect_check
+from evolve.party import _forever_restart
+from evolve.state import (
+    _check_spec_freshness,
+    _count_blocked,
     _count_checked,
     _count_unchecked,
-    _count_blocked,
     _get_current_improvement,
-    _auto_detect_check,
+    _is_needs_package,
     _parse_check_output,
-    _setup_forever_branch,
-    _forever_restart,
     _write_state_json,
-    _check_spec_freshness,
 )
 
 

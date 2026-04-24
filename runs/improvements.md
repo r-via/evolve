@@ -41,13 +41,13 @@
   - STRUCTURAL commit with RESTART_REQUIRED marker
   **Architect notes (Winston):** Largest move — __init__.py is 800+ lines of CLI. Risk: entry point change in pyproject.toml is structural. Must verify `pip install -e .` + `evolve --help` still works.
   **PM notes (John):** P2 infrastructure. Blocks step 9. NOT refactoring CLI internals — pure move.
-- [ ] [functional] [P2] US-016: Move loop.py into evolve/orchestrator.py (migration step 9)
+- [x] [functional] [P2] US-016: Move loop.py into evolve/orchestrator.py (migration step 9)
   **As** an evolve operator, **I want** the orchestrator module at `evolve/orchestrator.py` **so that** the package layout matches SPEC § Architecture and all core logic lives inside `evolve/`.
   **Acceptance criteria (must all pass before the item is [x]'d):**
-  1. `evolve/orchestrator.py` exists and contains all code currently in root `loop.py`
-  2. Root `loop.py` becomes a backward-compat shim with DeprecationWarning on import
-  3. `pytest tests/` passes 100% with zero new failures
-  4. `python -m evolve --help` returns exit code 0
+  1. `evolve/orchestrator.py` exists and contains all code currently in root `loop.py` — DONE (2093 lines)
+  2. Root `loop.py` becomes a backward-compat shim with DeprecationWarning on import — DONE (77-line shim)
+  3. `pytest tests/` passes 100% with zero new failures — DONE (1079 pass)
+  4. `python -m evolve --help` returns exit code 0 — DONE
   **Definition of done:**
   - `evolve/orchestrator.py` created with full module contents
   - Root `loop.py` converted to shim
@@ -55,31 +55,34 @@
   - STRUCTURAL commit with RESTART_REQUIRED marker
   **Architect notes (Winston):** loop.py is ~2093 lines, the largest module. Heavy cross-imports with agent.py. After agent.py is in-package (US-014), internal imports become `from evolve.agent import ...`. Test patches must be updated for new module path.
   **PM notes (John):** P2 infrastructure. Blocks step 10 (shim removal). NOT refactoring orchestrator internals.
-- [ ] [functional] [P3] US-017: Remove root-level backward-compat shims (migration step 10)
-  **As** an evolve operator, **I want** the root-level shim files removed **so that** the project is clean with all code inside `evolve/` per SPEC § Architecture.
+- [ ] [functional] [P2] US-019: Remove root-level backward-compat shims (migration step 10)
+  **As** an evolve operator, **I want** the root-level shim files removed **so that** the project is clean with all code inside `evolve/` per SPEC § Architecture and the project root is uncluttered.
   **Acceptance criteria (must all pass before the item is [x]'d):**
-  1. Root-level `agent.py`, `loop.py`, `tui.py`, `hooks.py`, `costs.py` are removed
-  2. `pyproject.toml` no longer lists them in `py-modules`
-  3. All test imports use `evolve.*` paths (no root module imports)
+  1. Root-level `agent.py`, `loop.py`, `tui.py`, `hooks.py`, `costs.py` are deleted
+  2. `pyproject.toml` `py-modules` key removed from `[tool.setuptools]`
+  3. All test imports use `from evolve.X import` paths — no root module imports remain
   4. `pytest tests/` passes 100% with zero new failures
+  5. `python -m evolve --help` returns exit code 0
   **Definition of done:**
   - All 5 root shim files deleted
-  - `pyproject.toml` `py-modules` removed
+  - `pyproject.toml` `[tool.setuptools]` `py-modules` removed
   - All test `from X import` updated to `from evolve.X import`
   - STRUCTURAL commit with RESTART_REQUIRED marker
-  **Architect notes (Winston):** Breaking change for anyone importing root modules. DeprecationWarnings have been active for one release cycle. Must update every test import. Risk: large diff touching many files.
-  **PM notes (John):** P3 polish — all functionality already in-package. NOT adding new features. Depends on US-014, US-015, US-016 all being [x].
-- [ ] [functional] [P2] US-018: Implement .evolve/ directory layout and legacy runs/ migration
+  **Architect notes (Winston):** 24 import statements across 19 test files need updating. Patch targets already use `evolve.*` paths (476 occurrences) — no patch changes needed. File deletions trigger structural detection. DeprecationWarnings have been active for one release cycle per SPEC.
+  **PM notes (John):** P2 — completes the 10-step migration strategy. NOT adding features. NOT changing behavior. Depends on US-014, US-015, US-016 all [x] (they are).
+- [ ] [functional] [P2] US-020: Implement .evolve/ directory layout and legacy runs/ migration
   **As** an evolve operator, **I want** all evolve artifacts under `.evolve/runs/` **so that** the tool follows the dotfile convention per SPEC § "The .evolve/ directory" and doesn't pollute the target project's root.
   **Acceptance criteria (must all pass before the item is [x]'d):**
   1. New sessions create artifacts under `<project>/.evolve/runs/` not `<project>/runs/`
   2. Legacy `runs/` detected on startup triggers `git mv runs .evolve/runs` migration with `[migrate]` notice
   3. Both `runs/` and `.evolve/runs/` existing triggers a clear error refusing to start
-  4. `pytest tests/` passes 100% with zero new failures
+  4. All path resolution uses a centralized helper, no scattered `"runs"` literals
+  5. `pytest tests/` passes 100% with zero new failures
   **Definition of done:**
-  - All path resolution in orchestrator uses `.evolve/runs/`
+  - Centralized `_runs_base(project_dir)` helper returning `.evolve/runs/`
+  - All path resolution in orchestrator, agent, party, state uses helper
   - Migration logic in startup for legacy `runs/`
   - Ambiguous-state detection and error
-  - Tests covering all three cases (new, legacy-migrate, ambiguous)
-  **Architect notes (Winston):** Touches every path resolution in loop.py/orchestrator.py, agent.py, state.py. Risk: existing sessions break if migration is incomplete. Must update prompts/system.md run_dir references.
-  **PM notes (John):** P2 — user-facing improvement (cleaner project roots). NOT changing artifact format, only location. Depends on steps 7-9 ideally but can be done independently.
+  - Tests covering new, legacy-migrate, and ambiguous cases
+  **Architect notes (Winston):** ~30 path references across 4 source modules, ~400 in tests. Introduce centralized helper to minimize future drift. STRUCTURAL change — must write RESTART_REQUIRED.
+  **PM notes (John):** P2 — user-facing improvement (cleaner project roots). NOT changing artifact format, only location.

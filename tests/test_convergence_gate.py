@@ -28,11 +28,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent import build_prompt
-from loop import (
-    _detect_premature_converged,
-    _enforce_convergence_backstop,
-)
+from evolve.agent import build_prompt
+from evolve.orchestrator import _enforce_convergence_backstop
+from evolve.state import _detect_premature_converged
 
 
 # ---------------------------------------------------------------------------

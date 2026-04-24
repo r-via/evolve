@@ -23,7 +23,6 @@ evolve = "evolve.cli:main"
 
 [tool.setuptools]
 packages = ["evolve"]
-py-modules = ["loop", "agent", "tui", "hooks", "costs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -18,18 +18,19 @@ def _make_import_blocker(*blocked_names):
     return mock_import
 
 
-from loop import (
-    _count_checked,
-    _count_unchecked,
-    _count_blocked,
-    _get_current_improvement,
-    _ensure_git,
-    _git_commit,
-    _run_party_mode,
-    _run_monitored_subprocess,
-    _save_subprocess_diagnostic,
+from evolve.git import _ensure_git, _git_commit
+from evolve.orchestrator import (
     _generate_evolution_report,
     _parse_report_summary,
+    _run_monitored_subprocess,
+    _save_subprocess_diagnostic,
+)
+from evolve.party import _run_party_mode
+from evolve.state import (
+    _count_blocked,
+    _count_checked,
+    _count_unchecked,
+    _get_current_improvement,
 )
 
 

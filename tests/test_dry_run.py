@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from agent import build_dry_run_prompt, run_dry_run_agent
+from evolve.agent import build_dry_run_prompt, run_dry_run_agent
 
 
 # ---------------------------------------------------------------------------

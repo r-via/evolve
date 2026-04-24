@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from agent import build_validate_prompt, run_validate_agent
+from evolve.agent import build_validate_prompt, run_validate_agent
 
 
 # ---------------------------------------------------------------------------

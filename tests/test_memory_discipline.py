@@ -25,7 +25,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from loop import (
+from evolve.orchestrator import (
     _MEMORY_COMPACTION_MARKER,
     _MEMORY_WIPE_THRESHOLD,
     _run_rounds,
