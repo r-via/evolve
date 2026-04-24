@@ -49,12 +49,14 @@ MODEL = "claude-opus-4-6"
 
 #: Reasoning effort level passed to ``ClaudeAgentOptions(effort=...)``.
 #: Accepted values: ``"low" | "medium" | "high" | "max"`` (or ``None`` to
-#: fall back to the SDK default).  Default is ``"max"`` per SPEC.md §
-#: "The --effort flag" — evolve's targets are typically non-trivial and
-#: the quality gain of ``max`` dominates the cost/latency delta on a
-#: per-round basis.  The value is overwritten by ``loop.py`` (and the
-#: sync-readme / dry-run / validate entry points) at the start of each
-#: session based on the resolved CLI → env → config → default chain.
+#: fall back to the SDK default).  Default is ``"medium"`` per SPEC.md §
+#: "The --effort flag" — medium gives the best cost/quality/latency
+#: ratio for the typical evolve round (small fixes, tests, incremental
+#: refactors).  Bump to ``high``/``max`` per session when the backlog
+#: contains hard architectural work.  The value is overwritten by
+#: ``loop.py`` (and the sync-readme / dry-run / validate entry points)
+#: at the start of each session based on the resolved CLI → env →
+#: config → default chain.
 EFFORT: str | None = "medium"
 
 
