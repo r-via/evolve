@@ -24,7 +24,7 @@ class TestCLIParsing:
             start_p.add_argument("--rounds", type=int, default=10)
             start_p.add_argument("--check", default=None)
             start_p.add_argument("--allow-installs", action="store_true", dest="allow_installs")
-            start_p.add_argument("--timeout", type=int, default=300)
+            start_p.add_argument("--timeout", type=int, default=20)
             start_p.add_argument("--model", default=None)
             start_p.add_argument("--resume", action="store_true")
             args = ap.parse_args(["start", "/tmp/project"])
@@ -33,7 +33,7 @@ class TestCLIParsing:
             assert args.rounds == 10
             assert args.check is None
             assert args.allow_installs is False
-            assert args.timeout == 300
+            assert args.timeout == 20
             assert args.model is None
             assert args.resume is False
 
@@ -200,7 +200,7 @@ class TestInitConfig:
         content = config.read_text()
         assert 'check = ""' in content
         assert "rounds = 10" in content
-        assert "timeout = 300" in content
+        assert "timeout = 20" in content
         assert 'model = "claude-opus-4-6"' in content
         assert "allow_installs = false" in content
 
@@ -418,7 +418,7 @@ class TestResolveConfig:
                 result = _resolve_config(args, tmp_path)
         assert result.check is None
         assert result.rounds == 10
-        assert result.timeout == 300
+        assert result.timeout == 20
         assert result.model == "claude-opus-4-6"
         assert result.allow_installs is False
 

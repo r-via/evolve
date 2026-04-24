@@ -112,7 +112,7 @@ def _resolve_config(args, project_dir: Path) -> argparse.Namespace:
     fields = [
         ("check", "EVOLVE_CHECK", None, "str"),
         ("rounds", "EVOLVE_ROUNDS", 10, "int"),
-        ("timeout", "EVOLVE_TIMEOUT", 300, "int"),
+        ("timeout", "EVOLVE_TIMEOUT", 20, "int"),
         ("model", "EVOLVE_MODEL", "claude-opus-4-6", "str"),
         ("allow_installs", "EVOLVE_ALLOW_INSTALLS", False, "bool"),
         ("spec", "EVOLVE_SPEC", None, "str"),
@@ -283,7 +283,7 @@ def main():
                          help="Allow adding new packages/binaries for [needs-package] items")
     start_p.add_argument("--yolo", action="store_true", dest="_yolo_deprecated",
                          help=argparse.SUPPRESS)  # deprecated alias
-    start_p.add_argument("--timeout", type=int, default=300, help="Timeout per check command in seconds (default: 300)")
+    start_p.add_argument("--timeout", type=int, default=20, help="Timeout per check command in seconds (default: 20 — kills slow tests for analysis)")
     start_p.add_argument("--model", default=None, help="Claude model to use (default: claude-opus-4-6, or EVOLVE_MODEL env var)")
     start_p.add_argument("--resume", action="store_true", help="Resume the most recent interrupted session")
     start_p.add_argument("--forever", action="store_true", help="Autonomous forever mode — evolve indefinitely on a separate branch until convergence")
@@ -513,7 +513,7 @@ def _parse_round_args():
     p.add_argument("project_dir")
     p.add_argument("--round-num", type=int, required=True)
     p.add_argument("--check", default=None)
-    p.add_argument("--timeout", type=int, default=300)
+    p.add_argument("--timeout", type=int, default=20)
     p.add_argument("--run-dir", default=None)
     p.add_argument("--allow-installs", action="store_true", dest="allow_installs")
     p.add_argument("--yolo", action="store_true", dest="allow_installs")  # deprecated alias
@@ -531,7 +531,7 @@ _DEFAULT_EVOLVE_TOML = """\
 
 check = ""
 rounds = 10
-timeout = 300
+timeout = 20
 model = "claude-opus-4-6"
 allow_installs = false
 spec = "README.md"

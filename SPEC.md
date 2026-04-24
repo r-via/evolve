@@ -372,12 +372,69 @@ round for objective verification.
 
 ### The --timeout flag
 
-Maximum time (seconds) the check command is allowed to run before being
-killed. Defaults to 300 seconds. Increase for slow test suites:
+Maximum time (seconds) the check command (pre-check and post-check)
+is allowed to run before being killed.  **Default: 20 seconds** —
+deliberately aggressive.
 
 ```bash
---timeout 600    # 10 minutes
+--timeout 20     # Default — hard ceiling on the full test suite
+--timeout 60     # Bump only when genuinely large
 ```
+
+**Why 20 seconds as the default.**  A fast test suite is a
+quality invariant, not a target.  When tests run in ≤ 20 s the
+agent can run, verify, fix, verify, iterate — all within a
+reasonable round budget.  When they creep past 20 s, the evolve
+loop degrades: heartbeats stretch, the agent waits longer between
+edit-and-verify cycles, the watchdog overhead grows, and overall
+throughput drops.  The 20-second ceiling forces the agent to
+investigate slowness (mark a flaky/slow test, tighten a fixture,
+drop an expensive integration dep) rather than silently paper
+over it with a bigger budget.
+
+**What happens on TIMEOUT.**
+
+The pre-check / post-check ``subprocess.run(check_cmd, timeout=20)``
+raises ``TimeoutExpired``.  The orchestrator writes
+``check_output = "TIMEOUT after 20s"`` and passes that into the
+agent's next prompt.  The agent recognises the TIMEOUT token and
+switches into slowness-investigation mode: run `pytest
+--durations=5` *outside* the watchdog (typically by asking the
+operator), identify the offending test, apply the appropriate
+remedy (mark, fix, or exclude), verify the suite comes back under
+20 s, then resume the original target.
+
+**Single-source-of-truth: agents must NOT run the check command
+themselves.**
+
+The orchestrator is the only actor that invokes the check command
+— once in pre-check (before the agent runs) and once in post-check
+(after the agent commits).  The agent receives both outputs in its
+prompt and is **forbidden** from running the check command via its
+own Bash tool.  Two reasons:
+
+1. **Cost and time explosion.**  Each agent-side run is another
+   full test-suite execution layered on top of the orchestrator's
+   two.  A chatty agent that runs pytest after every edit turns one
+   round's budget of ``2×20s`` into ``10×20s`` trivially.
+2. **Watchdog / heartbeat budget.**  The agent's Bash calls run
+   inside the round subprocess where the round-wide heartbeat
+   keeps the parent watchdog quiet; a long agent-side pytest
+   (especially piped through ``| tail``) still consumes real wall
+   time, eating into the ``--max-cost`` budget and the operator's
+   patience.
+3. **Single authoritative signal.**  Two independent pytest runs
+   can disagree (flaky test, different CWD, environment drift).
+   One orchestrator-controlled run is the source of truth.
+
+The agent reasons from the orchestrator's pre-check output
+(``## Check results`` section in the prompt), makes targeted edits,
+and trusts the orchestrator's post-check to verify.  If the agent
+needs finer granularity (single-file test, ``--durations=5``,
+``-x``), it MUST edit the test file or fixtures and let the
+orchestrator's next round re-run — not spawn a separate suite.
+The system prompt in ``prompts/system.md`` encodes this as a hard
+constraint.
 
 ### The --model flag
 

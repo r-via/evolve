@@ -22,7 +22,7 @@ class TestParseRoundArgs:
             assert args.project_dir == "/tmp/proj"
             assert args.round_num == 3
             assert args.check is None
-            assert args.timeout == 300
+            assert args.timeout == 20
             assert args.run_dir is None
             assert args.allow_installs is False
             assert args.model == "claude-opus-4-6"

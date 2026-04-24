@@ -3,7 +3,12 @@
 
 check = "pytest"
 rounds = 100
-timeout = 300
+# Hard 20-second ceiling on the test suite.  If pytest takes longer
+# the round fires its post-check diagnostic and the agent is
+# instructed to investigate slowness (mark the slow test, tighten a
+# fixture) rather than bump the budget.  The suite staying fast is a
+# quality invariant — see SPEC.md § "The --timeout flag".
+timeout = 20
 model = "claude-opus-4-6"
 allow_installs = true
 capture_frames = true
