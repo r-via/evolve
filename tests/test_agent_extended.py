@@ -162,7 +162,7 @@ class TestAnalyzeAndFix:
         (tmp_path / "runs").mkdir()
         mock_ui = MagicMock()
         with patch.dict("sys.modules", {"claude_agent_sdk": None}), \
-             patch("agent.get_tui", return_value=mock_ui):
+             patch("evolve.agent.get_tui", return_value=mock_ui):
             analyze_and_fix(tmp_path)
         mock_ui.warn.assert_called_once_with(
             "claude-agent-sdk not installed, skipping agent"

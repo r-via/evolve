@@ -728,7 +728,7 @@ class TestEffortFlag:
         )
 
         # Verify agent.py passes EFFORT=... to each of its SDK invocation sites.
-        agent_src = (Path(__file__).parent.parent / "agent.py").read_text()
+        agent_src = (Path(__file__).parent.parent / "evolve" / "agent.py").read_text()
         # Count invocations: analyze_and_fix (run_claude_agent), _run_readonly_claude_agent,
         # _run_party_agent_async (via run_claude_agent), _run_sync_readme_claude_agent.
         # Each ClaudeAgentOptions(...) block must include effort=EFFORT.

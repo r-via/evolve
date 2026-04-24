@@ -82,7 +82,7 @@ class TestRunClaudeAgent:
     def _run_agent(self, tmp_path, run_dir, mock_sdk, **kwargs):
         """Run the agent with the given SDK mock and standard patches."""
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
+             patch("evolve.agent._patch_sdk_parser"):
             _run_async(run_claude_agent(
                 kwargs.pop("prompt", "test"), tmp_path,
                 round_num=kwargs.pop("round_num", 1),
@@ -322,7 +322,7 @@ class TestRunClaudeAgent:
         mock_sdk.ResultMessage = self.RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent._patch_sdk_parser"):
+             patch("evolve.agent._patch_sdk_parser"):
             _run_async(run_claude_agent("prompt", tmp_path, round_num=1, run_dir=None))
 
         assert (tmp_path / "runs" / "conversation_loop_1.md").is_file()
@@ -355,9 +355,9 @@ class TestAnalyzeAndFixRetry:
             coro.close()  # prevent "coroutine was never awaited" warning
             raise RuntimeError("cancel scope blah")
 
-        with patch("agent.get_tui", return_value=self.mock_ui), \
+        with patch("evolve.agent.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
-             patch("agent.asyncio.run", side_effect=mock_asyncio_run):
+             patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run):
             analyze_and_fix(tmp_path)
 
         self.mock_ui.warn.assert_not_called()
@@ -375,10 +375,10 @@ class TestAnalyzeAndFixRetry:
             if call_count < 3:
                 raise Exception("rate_limit_exceeded")
 
-        with patch("agent.get_tui", return_value=self.mock_ui), \
+        with patch("evolve.agent.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
-             patch("agent.asyncio.run", side_effect=mock_asyncio_run), \
-             patch("agent.time.sleep"):
+             patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+             patch("evolve.agent.time.sleep"):
             analyze_and_fix(tmp_path, max_retries=5)
 
         assert call_count == 3
@@ -392,9 +392,9 @@ class TestAnalyzeAndFixRetry:
             coro.close()  # prevent "coroutine was never awaited" warning
             raise Exception("some random error")
 
-        with patch("agent.get_tui", return_value=self.mock_ui), \
+        with patch("evolve.agent.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
-             patch("agent.asyncio.run", side_effect=mock_asyncio_run):
+             patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run):
             analyze_and_fix(tmp_path, max_retries=3)
 
         self.mock_ui.warn.assert_called_once()
@@ -628,9 +628,9 @@ class TestAnalyzeAndFixRunInner:
 
         mock_sdk = MagicMock()
 
-        with patch("agent.get_tui", return_value=mock_ui), \
+        with patch("evolve.agent.get_tui", return_value=mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent.run_claude_agent", side_effect=mock_run_agent):
+             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
             analyze_and_fix(tmp_path, round_num=3, run_dir=run_dir)
 
         assert len(captured_calls) == 1
@@ -668,10 +668,10 @@ class TestAnalyzeAndFixRunInner:
 
         mock_sdk = MagicMock()
 
-        with patch("agent.get_tui", return_value=mock_ui), \
+        with patch("evolve.agent.get_tui", return_value=mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent.run_claude_agent", side_effect=mock_run_agent), \
-             patch("agent.time.sleep"):
+             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent), \
+             patch("evolve.agent.time.sleep"):
             analyze_and_fix(tmp_path, round_num=5, run_dir=run_dir, max_retries=5)
 
         assert len(captured_calls) == 3
@@ -702,9 +702,9 @@ class TestAnalyzeAndFixRunInner:
 
         mock_sdk = MagicMock()
 
-        with patch("agent.get_tui", return_value=mock_ui), \
+        with patch("evolve.agent.get_tui", return_value=mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("agent.run_claude_agent", side_effect=mock_run_agent):
+             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
             analyze_and_fix(tmp_path, round_num=7, run_dir=run_dir)
 
         assert captured_calls[0]["log_filename"] == "conversation_loop_7_attempt_2.md"

@@ -70,7 +70,7 @@ class TestPrevAttemptLogFmt:
 
     def test_call_site_no_longer_holds_duplicate_literal(self):
         """agent.py must use the constant — not re-inline ``## Previous attempt log``."""
-        src = (REPO_ROOT / "agent.py").read_text()
+        src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         # The constant's definition contributes exactly one occurrence of
         # ``\n## Previous attempt log\n`` at module scope; the call site
         # must route through .format() rather than duplicating the header.
@@ -152,7 +152,7 @@ class TestMemoryWipedHeaderFmt:
 
     def test_call_site_no_longer_holds_duplicate_literal(self):
         """agent.py must branch via the constant, not re-inline the header."""
-        src = (REPO_ROOT / "agent.py").read_text()
+        src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         count = src.count("silently wiped memory.md")
         assert count <= 1, (
             f"agent.py contains {count} literal 'silently wiped memory.md' "
@@ -203,7 +203,7 @@ class TestMemorySectionRuntimeHeader:
     """
 
     def test_agent_source_no_longer_quotes_old_header(self):
-        src = (REPO_ROOT / "agent.py").read_text()
+        src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         assert "errors from previous rounds" not in src, (
             "agent.py still carries the pre-broadening memory section "
             "header — update to 'cumulative learning log — read, then "
@@ -211,7 +211,7 @@ class TestMemorySectionRuntimeHeader:
         )
 
     def test_agent_source_carries_broadened_header(self):
-        src = (REPO_ROOT / "agent.py").read_text()
+        src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         assert "cumulative learning log" in src
 
 

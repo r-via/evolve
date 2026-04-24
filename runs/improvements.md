@@ -11,4 +11,75 @@
 - [x] [functional] [P2] Continue package restructuring step 3: extract git.py from loop.py into evolve/git.py (self-contained git operations — _ensure_git, _git_commit, _git_push, branch management), update imports, add backward-compat shim at root. BLOCKED on the three P1 items above — DO NOT start this until structural-change self-detection + orchestrator RESTART_REQUIRED handling + entry-point integrity tests are all [x], because this item WILL trigger self-detection (creates evolve/git.py + mutates loop.py imports, both structural signals). Once the P1 guards exist, this produces a STRUCTURAL commit + RESTART_REQUIRED marker, the run stops cleanly at exit 3, operator verifies `python -m evolve --help` still works, then resumes with `--resume`
 - [x] [functional] [P2] Continue package restructuring step 4: extract state.py from loop.py into evolve/state.py (state management — state.json, improvements parsing, convergence gates, backlog discipline), update imports, keep backward-compat via loop.py re-exports
 - [x] [functional] [P2] Continue package restructuring: move costs.py into evolve/costs.py, update imports in loop.py and agent.py, add backward-compat shim at root with DeprecationWarning — per SPEC § "Architecture" package structure
-- [ ] [stale: spec changed] [functional] [P2] Continue package restructuring step 6: split tui.py into evolve/tui/ subpackage (evolve/tui/__init__.py with TUIProtocol + get_tui factory, evolve/tui/rich.py with RichTUI, evolve/tui/plain.py with PlainTUI, evolve/tui/json.py with JsonTUI), update imports in loop.py and agent.py, add backward-compat shim at root tui.py with DeprecationWarning — per SPEC § "Architecture" package structure step 6
+- [x] [functional] [P2] Continue package restructuring step 6: split tui.py into evolve/tui/ subpackage (evolve/tui/__init__.py with TUIProtocol + get_tui factory, evolve/tui/rich.py with RichTUI, evolve/tui/plain.py with PlainTUI, evolve/tui/json.py with JsonTUI), update imports in loop.py and agent.py, add backward-compat shim at root tui.py with DeprecationWarning — per SPEC § "Architecture" package structure step 6
+- [x] [functional] [P2] US-014: Move agent.py into evolve/agent.py (migration step 7)
+  **As** an evolve operator, **I want** the agent module inside the evolve package **so that** `pip install .` produces a clean package layout per SPEC § Architecture.
+  **Acceptance criteria (must all pass before the item is [x]'d):**
+  1. `evolve/agent.py` exists and contains all code currently in root `agent.py`
+  2. Root `agent.py` becomes a backward-compat shim with DeprecationWarning on import
+  3. `pytest tests/` passes 100% with zero new failures
+  4. `python -m evolve --help` returns exit code 0
+  **Definition of done:**
+  - `evolve/agent.py` created with full module contents
+  - Root `agent.py` converted to shim with DeprecationWarning
+  - All imports updated or working via shim
+  - STRUCTURAL commit with RESTART_REQUIRED marker
+  **Architect notes (Winston):** Same shim pattern as hooks.py/costs.py. ~1573 lines, heavy imports from loop.py. Test imports via shim keep working.
+  **PM notes (John):** P2 infrastructure. Blocks steps 8-10. NOT removing shim (step 10). NOT changing public API.
+- [ ] [functional] [P2] US-015: Move CLI into evolve/cli.py and update entry point (migration step 8)
+  **As** an evolve operator, **I want** the CLI entry point at `evolve.cli:main` **so that** the package layout matches SPEC § Architecture and `evolve/__init__.py` is a clean package marker.
+  **Acceptance criteria (must all pass before the item is [x]'d):**
+  1. `evolve/cli.py` exists with all CLI parsing, config resolution, and `main()` function
+  2. `evolve/__init__.py` is a package marker with re-exports for backward compat, not the CLI itself
+  3. `pyproject.toml` entry point is `evolve.cli:main`
+  4. `pytest tests/` passes 100% with zero new failures
+  5. `python -m evolve --help` returns exit code 0
+  **Definition of done:**
+  - `evolve/cli.py` created from current `evolve/__init__.py` CLI code
+  - `evolve/__init__.py` trimmed to package marker + re-exports
+  - `pyproject.toml` entry point updated
+  - STRUCTURAL commit with RESTART_REQUIRED marker
+  **Architect notes (Winston):** Largest move — __init__.py is 800+ lines of CLI. Risk: entry point change in pyproject.toml is structural. Must verify `pip install -e .` + `evolve --help` still works.
+  **PM notes (John):** P2 infrastructure. Blocks step 9. NOT refactoring CLI internals — pure move.
+- [ ] [functional] [P2] US-016: Move loop.py into evolve/orchestrator.py (migration step 9)
+  **As** an evolve operator, **I want** the orchestrator module at `evolve/orchestrator.py` **so that** the package layout matches SPEC § Architecture and all core logic lives inside `evolve/`.
+  **Acceptance criteria (must all pass before the item is [x]'d):**
+  1. `evolve/orchestrator.py` exists and contains all code currently in root `loop.py`
+  2. Root `loop.py` becomes a backward-compat shim with DeprecationWarning on import
+  3. `pytest tests/` passes 100% with zero new failures
+  4. `python -m evolve --help` returns exit code 0
+  **Definition of done:**
+  - `evolve/orchestrator.py` created with full module contents
+  - Root `loop.py` converted to shim
+  - All imports updated or working via shim
+  - STRUCTURAL commit with RESTART_REQUIRED marker
+  **Architect notes (Winston):** loop.py is ~2093 lines, the largest module. Heavy cross-imports with agent.py. After agent.py is in-package (US-014), internal imports become `from evolve.agent import ...`. Test patches must be updated for new module path.
+  **PM notes (John):** P2 infrastructure. Blocks step 10 (shim removal). NOT refactoring orchestrator internals.
+- [ ] [functional] [P3] US-017: Remove root-level backward-compat shims (migration step 10)
+  **As** an evolve operator, **I want** the root-level shim files removed **so that** the project is clean with all code inside `evolve/` per SPEC § Architecture.
+  **Acceptance criteria (must all pass before the item is [x]'d):**
+  1. Root-level `agent.py`, `loop.py`, `tui.py`, `hooks.py`, `costs.py` are removed
+  2. `pyproject.toml` no longer lists them in `py-modules`
+  3. All test imports use `evolve.*` paths (no root module imports)
+  4. `pytest tests/` passes 100% with zero new failures
+  **Definition of done:**
+  - All 5 root shim files deleted
+  - `pyproject.toml` `py-modules` removed
+  - All test `from X import` updated to `from evolve.X import`
+  - STRUCTURAL commit with RESTART_REQUIRED marker
+  **Architect notes (Winston):** Breaking change for anyone importing root modules. DeprecationWarnings have been active for one release cycle. Must update every test import. Risk: large diff touching many files.
+  **PM notes (John):** P3 polish — all functionality already in-package. NOT adding new features. Depends on US-014, US-015, US-016 all being [x].
+- [ ] [functional] [P2] US-018: Implement .evolve/ directory layout and legacy runs/ migration
+  **As** an evolve operator, **I want** all evolve artifacts under `.evolve/runs/` **so that** the tool follows the dotfile convention per SPEC § "The .evolve/ directory" and doesn't pollute the target project's root.
+  **Acceptance criteria (must all pass before the item is [x]'d):**
+  1. New sessions create artifacts under `<project>/.evolve/runs/` not `<project>/runs/`
+  2. Legacy `runs/` detected on startup triggers `git mv runs .evolve/runs` migration with `[migrate]` notice
+  3. Both `runs/` and `.evolve/runs/` existing triggers a clear error refusing to start
+  4. `pytest tests/` passes 100% with zero new failures
+  **Definition of done:**
+  - All path resolution in orchestrator uses `.evolve/runs/`
+  - Migration logic in startup for legacy `runs/`
+  - Ambiguous-state detection and error
+  - Tests covering all three cases (new, legacy-migrate, ambiguous)
+  **Architect notes (Winston):** Touches every path resolution in loop.py/orchestrator.py, agent.py, state.py. Risk: existing sessions break if migration is incomplete. Must update prompts/system.md run_dir references.
+  **PM notes (John):** P2 — user-facing improvement (cleaner project roots). NOT changing artifact format, only location. Depends on steps 7-9 ideally but can be done independently.

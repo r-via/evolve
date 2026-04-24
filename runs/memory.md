@@ -124,3 +124,15 @@ agent has 2 outputs: write `<project>/README_proposal.md` (or `README.md` in app
 
 ### Module extraction: patch target split — round 3 of 20260423_213701
 `patch("loop.subprocess.run")` survives extraction (shared module obj). `patch("loop.datetime")` / `patch("loop.get_tui")` break — module-level name replacements don't cross module boundaries. Rule: after function extraction, fix patches that mock module-level names (datetime, get_tui), leave patches on dotted attrs (subprocess.run) alone.
+
+### Package move shim: `from X import *` skips private names — round 1 of 20260424_120253
+Moving `agent.py` → `evolve/agent.py` with `from evolve.agent import *` in shim does NOT re-export `_private` names. Tests importing `from agent import _run_validate_claude_agent` etc. fail with ImportError. Fix: add explicit `from evolve.agent import (_detect_current_attempt, _patch_sdk_parser, ...)` block in shim for every `_private` name used by tests.
+
+### Package move: patch targets must follow the real module — round 1 of 20260424_120253
+After moving `agent.py` → `evolve/agent.py`, `patch("agent.get_tui")` patches the shim's namespace but code in `evolve.agent` uses its own `get_tui`. All `patch("agent.X")` for module-level names must become `patch("evolve.agent.X")`. Dotted attrs (`agent.asyncio.run`) also updated for consistency. Same pattern as prior loop.py extraction.
+
+### Package move: Path(__file__) resolution shift — round 1 of 20260424_120253
+`Path(__file__).parent / "prompts" / "system.md"` resolves to `evolve/prompts/system.md` after move (doesn't exist). Fix: `Path(__file__).resolve().parent.parent / "prompts" / "system.md"` to go up to project root. Any module doing file-relative path resolution must be audited when moved into a subdirectory.
+
+### Source-reading tests: update paths after package move — round 1 of 20260424_120253
+Tests like `test_constant_drift.py` that `read_text()` the source file to count literal occurrences need path updates (root `agent.py` → `evolve/agent.py`). The shim is ~35 lines and won't contain the constants/patterns being tested. Same for `test_evolve.py` effort-flag grep.
