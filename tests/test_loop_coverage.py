@@ -229,6 +229,7 @@ class TestEvolveLoop:
         (tmp_path / "runs").mkdir()
 
         with patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._run_rounds") as mock_run:
             evolve_loop(tmp_path, max_rounds=5)
 
@@ -2586,6 +2587,7 @@ class TestEvolveLoopForeverIntegration:
 
         with patch("evolve.orchestrator._setup_forever_branch") as mock_branch, \
              patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode") as mock_party, \
@@ -2645,6 +2647,7 @@ class TestEvolveLoopForeverIntegration:
 
         with patch("evolve.orchestrator._setup_forever_branch"), \
              patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
@@ -2684,6 +2687,7 @@ class TestEvolveLoopForeverIntegration:
 
         with patch("evolve.orchestrator._setup_forever_branch"), \
              patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
@@ -2771,6 +2775,7 @@ class TestEvolveLoopForeverIntegration:
 
         with patch("evolve.orchestrator._setup_forever_branch"), \
              patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
              patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
@@ -2811,6 +2816,7 @@ class TestEvolveLoopForeverIntegration:
 
         with patch("evolve.orchestrator._setup_forever_branch"), \
              patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator.get_tui", return_value=ui), \
              patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
              patch("evolve.orchestrator._generate_evolution_report") as mock_report, \
@@ -2944,6 +2950,7 @@ class TestEvolveLoopResumeForeverCombined:
         (new_session / "conversation_loop_2.md").write_text("r2")
 
         with patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._setup_forever_branch"), \
              patch("evolve.orchestrator._run_rounds") as mock_run:
             evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
@@ -2983,6 +2990,7 @@ class TestEvolveLoopResumeForeverCombined:
                 raise SystemExit(42)
 
         with patch("evolve.orchestrator._ensure_git"), \
+             patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._setup_forever_branch"), \
              patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
              patch("evolve.orchestrator._git_commit"), \
