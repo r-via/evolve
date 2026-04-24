@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from costs import TokenUsage, aggregate_usage, build_usage_state, estimate_cost, format_cost
+from evolve.costs import TokenUsage, aggregate_usage, build_usage_state, estimate_cost, format_cost
 from evolve.git import _ensure_git, _git_commit, _git_show_at, _setup_forever_branch
 from evolve.hooks import fire_hook, load_hooks
 from evolve.party import _forever_restart, _run_party_mode
@@ -1516,54 +1516,94 @@ def run_single_round(
     improvements_path = project_dir / "runs" / "improvements.md"
     ui = get_tui()
 
-    print(f"[probe] round {round_num} starting — project={project_dir.name}, model={model}")
+    print(f"[probe] round {round_num} starting — project={project_dir.name}, model={model}", flush=True)
 
-    # 1. Run check command if provided
+    # Round-wide heartbeat.  The parent orchestrator watches this
+    # subprocess's stdout with a silence-based watchdog
+    # (``_run_monitored_subprocess``, ``WATCHDOG_TIMEOUT``=120s).  Any
+    # part of the round that buffers output — pre-check running pytest
+    # silently, agent tool calls using ``| tail`` or ``> /dev/null``,
+    # long agent thinking between streaming messages, git operations
+    # on large repos — would trigger SIGKILL before the round can
+    # finish.  A background thread printing an alive-line every 30s
+    # keeps the watchdog satisfied while real work proceeds.  Total
+    # round duration is still bounded by budget/round/cost limits at
+    # the orchestrator level, not by this watchdog.
+    _round_heartbeat_stop = threading.Event()
+    _round_start_time = time.monotonic()
+
+    def _round_heartbeat():
+        while not _round_heartbeat_stop.wait(30):
+            elapsed = int(time.monotonic() - _round_start_time)
+            print(
+                f"[probe] round {round_num} alive — {elapsed}s elapsed",
+                flush=True,
+            )
+
+    _round_hb_thread = threading.Thread(target=_round_heartbeat, daemon=True)
+    _round_hb_thread.start()
+    try:
+        _run_single_round_body(
+            project_dir=project_dir,
+            round_num=round_num,
+            check_cmd=check_cmd,
+            allow_installs=allow_installs,
+            timeout=timeout,
+            rdir=rdir,
+            improvements_path=improvements_path,
+            ui=ui,
+            spec=spec,
+        )
+    finally:
+        _round_heartbeat_stop.set()
+
+
+def _run_single_round_body(
+    *,
+    project_dir: Path,
+    round_num: int,
+    check_cmd: str | None,
+    allow_installs: bool,
+    timeout: int,
+    rdir: Path,
+    improvements_path: Path,
+    ui: TUIProtocol,
+    spec: str | None,
+) -> None:
+    """Body of ``run_single_round`` — extracted so the caller can wrap
+    the whole thing in a try/finally around the round-wide heartbeat
+    without indenting 100+ lines.
+    """
+    from agent import analyze_and_fix  # local import mirrors caller
+
+    # 1. Run check command if provided.  The round-wide heartbeat in
+    # ``run_single_round`` keeps the parent watchdog satisfied during
+    # silent pre-check runs; the pre-check's own ``timeout`` still
+    # bounds the wait.
     check_output = ""
     if check_cmd:
         print(f"[probe] running pre-check: {check_cmd}", flush=True)
         ui.check_result("check", check_cmd, passed=None)
-        # Emit a heartbeat every 30s so the parent orchestrator's
-        # watchdog (``_run_monitored_subprocess``, 120s silence limit)
-        # stays quiet while the pre-check hangs silently — otherwise
-        # a pytest that collects slowly would trigger SIGKILL on the
-        # whole round before its own ``timeout`` fires, and the agent
-        # would never get a chance to see the hang in ``check_output``.
-        # The pre-check's own ``timeout`` still bounds the wait; the
-        # heartbeat just prevents the wrong actor from killing us.
-        _heartbeat_stop = threading.Event()
-
-        def _precheck_heartbeat():
-            elapsed = 0
-            while not _heartbeat_stop.wait(30):
-                elapsed += 30
-                print(
-                    f"[probe] pre-check still running... {elapsed}s/{timeout}s",
-                    flush=True,
-                )
-
-        _hb_thread = threading.Thread(target=_precheck_heartbeat, daemon=True)
-        _hb_thread.start()
         try:
-            try:
-                result = subprocess.run(
-                    check_cmd, shell=True, cwd=str(project_dir),
-                    capture_output=True, text=True, timeout=timeout,
-                )
-                check_output = f"Exit code: {result.returncode}\n"
-                if result.stdout:
-                    check_output += f"stdout:\n{result.stdout[-2000:]}\n"
-                if result.stderr:
-                    check_output += f"stderr:\n{result.stderr[-2000:]}\n"
-                ok = result.returncode == 0
-                ui.check_result("check", check_cmd, passed=ok)
-                print(f"[probe] pre-check {'PASSED' if ok else 'FAILED'} (exit {result.returncode})", flush=True)
-            except subprocess.TimeoutExpired:
-                check_output = f"TIMEOUT after {timeout}s"
-                ui.check_result("check", check_cmd, timeout=True)
-                print(f"[probe] pre-check TIMEOUT after {timeout}s", flush=True)
-        finally:
-            _heartbeat_stop.set()
+            result = subprocess.run(
+                check_cmd, shell=True, cwd=str(project_dir),
+                capture_output=True, text=True, timeout=timeout,
+            )
+            check_output = f"Exit code: {result.returncode}\n"
+            if result.stdout:
+                check_output += f"stdout:\n{result.stdout[-2000:]}\n"
+            if result.stderr:
+                check_output += f"stderr:\n{result.stderr[-2000:]}\n"
+            ok = result.returncode == 0
+            ui.check_result("check", check_cmd, passed=ok)
+            print(
+                f"[probe] pre-check {'PASSED' if ok else 'FAILED'} (exit {result.returncode})",
+                flush=True,
+            )
+        except subprocess.TimeoutExpired:
+            check_output = f"TIMEOUT after {timeout}s"
+            ui.check_result("check", check_cmd, timeout=True)
+            print(f"[probe] pre-check TIMEOUT after {timeout}s", flush=True)
     else:
         ui.no_check()
         print("[probe] no check command configured", flush=True)

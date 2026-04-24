@@ -1293,28 +1293,45 @@ the next round's subprocess crash triggers the zero-progress retry and
 then the Phase 1 escape hatch. The structural-change protocol is the
 preventive layer; the retry/escape guards are the reactive layer.
 
-### Pre-check heartbeat
+### Round-wide heartbeat
 
-`run_single_round` executes the check command (`pytest`, `npm test`, …)
-inside each round subprocess *before* invoking the agent.  The parent
-orchestrator watches that subprocess with a silence-based watchdog
-(kills on `WATCHDOG_TIMEOUT` seconds of no stdout).  Without
-intervention, a check command that hangs silently — a collection
-deadlock, a stuck fixture, a `--lf` pass that stalls on a bad import —
-would burn through the watchdog and get SIGKILL'd before its own
-`--timeout` fires, *and the agent would never run*.  That's the worst
-possible state: no diagnostic, no chance for the agent to investigate,
-and the debug retry re-enters the same hang deterministically.
+The parent orchestrator watches each round subprocess with a
+silence-based watchdog (`_run_monitored_subprocess`,
+`WATCHDOG_TIMEOUT` = 120s of no stdout → SIGKILL).  Several operations
+inside a round naturally buffer or suppress output:
 
-To prevent that, the pre-check runs under a heartbeat thread that
-prints `[probe] pre-check still running... Ns/Ts` every 30s.  The
-heartbeat keeps the parent watchdog quiet while the pre-check's own
-`subprocess.run(..., timeout=timeout)` bounds the wait.  When the
-pre-check's timeout fires, `check_output` becomes `"TIMEOUT after Ns"`,
-the agent is invoked normally, and receives the timeout message in
-its prompt — so it can investigate (skip a flaky test, fix a slow
-fixture, adjust the check command) rather than watching the round
-get murdered.
+- The pre-check / post-check running `pytest` silently while it
+  collects or runs long-running tests;
+- Agent tool calls that pipe output through `| tail`, redirect to
+  `/dev/null`, or pass `-q`/`--quiet` flags;
+- Long agent "thinking" gaps between streaming messages (Opus can
+  spend tens of seconds on extended reasoning before emitting);
+- Git operations on large repos;
+- The Claude Agent SDK subprocess buffering at its own layer.
+
+Without intervention, any of these would race the watchdog and lose
+— the round gets SIGKILL'd mid-work, the agent never completes, the
+debug retry re-enters the same buffering pattern and loses again,
+and the circuit breaker eventually fires because three attempts
+share the same "stalled" signature.
+
+To prevent that, `run_single_round` starts a daemon heartbeat thread
+that prints `[probe] round N alive — Ns elapsed` every 30s for the
+entire round duration.  The heartbeat is cheap (one print per
+30 seconds), safely terminated via a `threading.Event` in a
+`try/finally`, and covers every phase: pre-check, agent invocation,
+agent tool calls, git commit, post-check.  Total round duration is
+still bounded by the user's budget (`--max-cost`), round count
+(`--rounds`), and convergence — the heartbeat removes only the
+120-second silence-based cudgel, not those higher-level bounds.
+
+Pre-check and post-check still use their own `subprocess.run(...,
+timeout=timeout)` to catch genuinely hung commands.  When that
+timeout fires, `check_output` becomes `"TIMEOUT after Ns"`, the
+agent is invoked (or the post-check result recorded) normally, and
+the agent receives the timeout message in its prompt — so it can
+investigate (skip a flaky test, fix a slow fixture, adjust the
+check command) rather than watching the round get murdered.
 
 ### Circuit breakers
 
