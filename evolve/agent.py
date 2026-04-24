@@ -42,6 +42,20 @@ def _build_system_prompt_blocks(blocks: PromptBlocks) -> list[dict]:
     ]
 
 
+def _oneshot_system_prompt_blocks(prompt: str) -> list[dict]:
+    """Build two-block system prompt for one-shot agents (dry-run, validate, diff, sync-readme, curation).
+
+    One-shot agents run once per session, so caching is less impactful, but
+    the SPEC requires every SDK call site to use the two-block format with
+    ``cache_control``.  The full prompt is placed in the cached block and the
+    uncached block is a minimal instruction.
+    """
+    return _build_system_prompt_blocks(PromptBlocks(
+        cached=prompt,
+        uncached="Proceed with the analysis.",
+    ))
+
+
 def _build_system_prompt_from_text(text: str) -> list[dict]:
     """Build a two-block system_prompt from a single text string.
 
@@ -1074,10 +1088,12 @@ def analyze_and_fix(
     """
     if yolo is not None:
         allow_installs = yolo
-    prompt = build_prompt(
+    blocks = build_prompt_blocks(
         project_dir, check_output, check_cmd, allow_installs, run_dir,
         spec=spec, round_num=round_num, check_timeout=check_timeout,
     )
+    sdk_blocks = _build_system_prompt_blocks(blocks)
+    user_message = blocks.uncached
 
     # Per-attempt conversation log filename.  Each orchestrator-level subprocess
     # attempt gets its own file (no overwrite), so a debug retry can read the
@@ -1088,8 +1104,9 @@ def analyze_and_fix(
 
     async def _run():
         await run_claude_agent(
-            prompt, project_dir,
+            user_message, project_dir,
             round_num=round_num, run_dir=run_dir, log_filename=attempt_log_fname,
+            system_prompt_blocks=sdk_blocks,
         )
 
     _run_agent_with_retries(
@@ -1282,6 +1299,7 @@ async def _run_readonly_claude_agent(
     log_filename: str,
     log_header: str,
     disallowed_tools: list[str] | None = None,
+    system_prompt_blocks: list[dict] | None = None,
 ) -> None:
     """Shared helper for running the Claude agent in read-only modes.
 
@@ -1296,6 +1314,8 @@ async def _run_readonly_claude_agent(
         log_header: Markdown header written at the top of the log file.
         disallowed_tools: Tools to block.  Defaults to read-only set
             (Edit, Bash, Task, Agent, WebSearch, WebFetch).
+        system_prompt_blocks: Two-block system prompt list with
+            ``cache_control`` for prompt caching.
     """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -1311,6 +1331,7 @@ async def _run_readonly_claude_agent(
         disallowed_tools=disallowed_tools,
         include_partial_messages=True,
         effort=EFFORT,
+        **({"system_prompt": system_prompt_blocks} if system_prompt_blocks else {}),
     )
 
     log_path = run_dir / log_filename
@@ -1378,10 +1399,12 @@ async def _run_dry_run_claude_agent(
         project_dir: Root directory of the project (used as cwd).
         run_dir: Session directory for the conversation log and report.
     """
+    blocks = _oneshot_system_prompt_blocks(prompt)
     await _run_readonly_claude_agent(
-        prompt, project_dir, run_dir,
+        "Proceed with the dry-run analysis.", project_dir, run_dir,
         log_filename="dry_run_conversation.md",
         log_header="Dry Run Analysis",
+        system_prompt_blocks=blocks,
     )
 
 
@@ -1479,10 +1502,12 @@ async def _run_validate_claude_agent(
         project_dir: Root directory of the project (used as cwd).
         run_dir: Session directory for the conversation log and report.
     """
+    blocks = _oneshot_system_prompt_blocks(prompt)
     await _run_readonly_claude_agent(
-        prompt, project_dir, run_dir,
+        "Proceed with the validation analysis.", project_dir, run_dir,
         log_filename="validate_conversation.md",
         log_header="Validation Analysis",
+        system_prompt_blocks=blocks,
     )
 
 
@@ -1613,10 +1638,12 @@ async def _run_diff_claude_agent(
         project_dir: Root directory of the project (used as cwd).
         run_dir: Session directory for the conversation log and report.
     """
+    blocks = _oneshot_system_prompt_blocks(prompt)
     await _run_readonly_claude_agent(
-        prompt, project_dir, run_dir,
+        "Proceed with the diff analysis.", project_dir, run_dir,
         log_filename="diff_conversation.md",
         log_header="Diff Analysis",
+        system_prompt_blocks=blocks,
     )
 
 
@@ -1747,6 +1774,8 @@ async def _run_sync_readme_claude_agent(
     prompt: str,
     project_dir: Path,
     run_dir: Path,
+    *,
+    system_prompt_blocks: list[dict] | None = None,
 ) -> None:
     """Run the Claude agent for the ``sync-readme`` one-shot subcommand.
 
@@ -1767,6 +1796,7 @@ async def _run_sync_readme_claude_agent(
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
         effort=EFFORT,
+        **({"system_prompt": system_prompt_blocks} if system_prompt_blocks else {}),
     )
 
     log_path = run_dir / "sync_readme_conversation.md"
@@ -1843,9 +1873,13 @@ def run_sync_readme_agent(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     prompt = build_sync_readme_prompt(project_dir, run_dir, spec=spec, apply=apply)
+    blocks = _oneshot_system_prompt_blocks(prompt)
 
     _run_agent_with_retries(
-        lambda: _run_sync_readme_claude_agent(prompt, project_dir, run_dir),
+        lambda: _run_sync_readme_claude_agent(
+            "Proceed with the README sync.", project_dir, run_dir,
+            system_prompt_blocks=blocks,
+        ),
         fail_label="Sync-readme agent",
         max_retries=max_retries,
     )
@@ -1998,6 +2032,8 @@ async def _run_memory_curation_claude_agent(
     prompt: str,
     project_dir: Path,
     run_dir: Path,
+    *,
+    system_prompt_blocks: list[dict] | None = None,
 ) -> None:
     """Run the Mira curation agent via the Claude SDK.
 
@@ -2015,6 +2051,7 @@ async def _run_memory_curation_claude_agent(
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
         effort="low",
+        **({"system_prompt": system_prompt_blocks} if system_prompt_blocks else {}),
     )
 
     log_path = run_dir / "curation_conversation.md"
@@ -2134,9 +2171,13 @@ def run_memory_curation(
     )
 
     # Run the agent
+    blocks = _oneshot_system_prompt_blocks(prompt)
     try:
         _run_agent_with_retries(
-            lambda: _run_memory_curation_claude_agent(prompt, project_dir, run_dir),
+            lambda: _run_memory_curation_claude_agent(
+                "Proceed with memory curation.", project_dir, run_dir,
+                system_prompt_blocks=blocks,
+            ),
             fail_label="Memory curation (Mira)",
             max_retries=2,
         )
