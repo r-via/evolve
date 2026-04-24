@@ -6,10 +6,19 @@ import asyncio
 import re
 import shutil
 import time
+from collections import namedtuple
 from pathlib import Path
 
 from evolve.state import _is_needs_package, _runs_base
 from evolve.tui import get_tui
+
+
+# Two-block prompt structure for prompt caching — SPEC.md § "Prompt caching".
+# The cached block contains static-per-session content (system template +
+# SPEC/README) marked with ``cache_control={"type": "ephemeral"}``.  The
+# uncached block contains per-round variable content (check results, memory,
+# attempt marker, prior audit, crash diagnostics).
+PromptBlocks = namedtuple("PromptBlocks", ["cached", "uncached"])
 
 
 def _detect_current_attempt(run_dir: Path | None, round_num: int) -> int:
@@ -599,12 +608,37 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
         prior_k = current_attempt - 1
         prior_log = Path(run_dir) / f"conversation_loop_{round_num}_attempt_{prior_k}.md"
         if prior_log.is_file():
-            prev_attempt_section = _PREV_ATTEMPT_LOG_FMT.format(
-                current=current_attempt,
-                round=round_num,
-                prior=prior_k,
-                log_path=prior_log,
+            # Skip the prior-attempt retry-continuity section when the
+            # prior log is trivially empty.  The ``_PREV_ATTEMPT_LOG_FMT``
+            # template tells the agent to "Read this file FIRST" — a
+            # dutiful instruction that turns into noise when the file
+            # contains only a header or no tool calls at all (e.g. the
+            # prior attempt was killed by scope-creep detection or the
+            # circuit breaker before it produced any reusable trace).
+            # The user-visible symptom was every round starting with
+            # "Prior attempt log is empty (1 line). No useful context
+            # to reuse." — pure prompt overhead.
+            #
+            # Heuristic: a log under 500 bytes OR with no tool-call
+            # markers (``**Read**:``, ``**Edit**:``, ``**Bash**:`` …)
+            # is trivially empty and skipped.
+            try:
+                content = prior_log.read_text()
+            except OSError:
+                content = ""
+            has_tool_calls = any(
+                marker in content for marker in (
+                    "**Read**:", "**Edit**:", "**Write**:",
+                    "**Bash**:", "**Grep**:", "**Glob**:",
+                )
             )
+            if len(content) >= 500 and has_tool_calls:
+                prev_attempt_section = _PREV_ATTEMPT_LOG_FMT.format(
+                    current=current_attempt,
+                    round=round_num,
+                    prior=prior_k,
+                    log_path=prior_log,
+                )
 
     check_section = ""
     if check_cmd and check_output:

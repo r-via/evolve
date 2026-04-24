@@ -144,16 +144,29 @@ class TestRetryPromptSurfacesPriorAttempt:
     """build_prompt on a debug retry must surface the prior attempt log."""
 
     def _prepare_retry_state(self, tmp_path: Path, round_num: int, attempt_k: int):
-        """Create diagnostic + prior attempt logs so build_prompt detects retry."""
+        """Create diagnostic + prior attempt logs so build_prompt detects retry.
+
+        The prior log must contain substantive content (≥ 500 bytes +
+        at least one tool-call marker) to pass the "trivially empty"
+        guard in ``build_prompt``; an empty stub is now treated as
+        noise and the section is suppressed.
+        """
         run_dir = _setup_project(tmp_path)
         (run_dir / f"subprocess_error_round_{round_num}.txt").write_text(
             _diagnostic_attempt(attempt_k),
         )
-        # Prior attempt log must exist for the section to render.
         prior_log = run_dir / (
             f"conversation_loop_{round_num}_attempt_{attempt_k}.md"
         )
-        prior_log.write_text("# Attempt transcript\n")
+        prior_log.write_text(
+            "# Attempt transcript\n\n"
+            "Started analysis of the target.\n\n"
+            "**Read**: `/src/foo.py`\n"
+            "Found that the parser doesn't handle nested braces correctly — "
+            "line 42 fails on input `{{nested}}`.  "
+            + "Detailed investigation continues. " * 20
+            + "\n\n**Edit**: `/src/foo.py` (edit)\n"
+        )
         return run_dir, prior_log
 
     def test_retry_prompt_contains_prior_attempt_section_header(
