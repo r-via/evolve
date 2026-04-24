@@ -2252,66 +2252,64 @@ Types: `fix`, `feat`, `refactor`, `perf`, `docs`, `test`, `chore`
 ## Prompt caching
 
 Every agent round's prompt concatenates the persona system text,
-``SPEC.md`` (~110 KB), ``README.md``, and project context — roughly
-30 000 tokens of static-ish content plus a few hundred tokens of
-round-specific state (prior-round audit, ``## Check results``,
-attempt marker).  Without caching, every round pays the full
-input-token cost of the static portion even though SPEC/README
-rarely change between rounds.
+``SPEC.md``, ``README.md``, and project context — tens of
+thousands of tokens of static-ish content.  If the underlying
+runtime does not cache this stable portion between calls, every
+round pays the full input-token cost even though the content
+rarely changes.
 
-**Contract.**  ``analyze_and_fix`` and its siblings
-(``run_dry_run_agent``, ``run_validate_agent``,
-``run_sync_readme_claude_agent``, ``run_diff_agent``,
-``_run_party_agent_async``, and the upcoming Sid + Mira
-curation calls) MUST pass a **two-block system prompt** to the
-Claude Agent SDK:
+**SDK contract (claude-agent-sdk 0.1.50).**  The Python SDK's
+``ClaudeAgentOptions.system_prompt`` signature is ``str |
+SystemPromptPreset | None`` — it does NOT accept the Anthropic
+API's ``list[dict]`` shape with explicit ``cache_control``
+markers.  Passing a list silently mis-serialises and the API call
+arrives with no usable system prompt (symptom: model returns
+zero tool calls on well-formed rounds).
 
-1. **Cached block** — the static-per-session portion, marked
-   ``cache_control={"type": "ephemeral"}``:
-   - The system prompt template (``prompts/system.md`` after
-     placeholder substitution, minus the round-specific
-     ``{attempt_marker}`` banner).
-   - The README / spec content (``SPEC.md`` or ``--spec``).
-   - Persona profile text (for curation / review / party-mode
-     calls).
-2. **Uncached block** — per-round variable content:
-   - ``## Check results`` (pre-check output for this round).
-   - ``## Prior round audit`` section (when anomalies present).
-   - ``## Previous attempt log`` (retry continuity).
-   - ``{attempt_marker}`` banner (attempt 1 of 3 / 3 of 3 / …).
-   - ``## Memory`` section (changes each round).
+**How caching actually happens.**  The underlying Claude Code
+CLI that the SDK wraps applies prompt caching natively on stable
+system prompts across calls — the caller does NOT need to set
+``cache_control`` explicitly.  When the same (or leading-prefix
+identical) system prompt is sent within the cache TTL, the CLI
+translates it into a ``cache_control`` API call under the hood
+and the response's ``ResultMessage.usage`` carries
+``cache_read_input_tokens > 0``.
 
-**Effect.**  First round of a session pays the full static-block
-cost.  Subsequent rounds within the Anthropic ``cache_control``
-TTL (5 minutes at time of writing) pay **~10% of the cached
-portion** (cache-read price vs cache-write price).  Rounds longer
-than the TTL pay the write price again on the next call.
+**Caller contract (what evolve code must do).**
 
-**Expected savings.**  At the current SPEC size:
+- Pass ``system_prompt`` as a **single string** to
+  ``ClaudeAgentOptions``.  Never a list-of-dicts.
+- Keep the **leading portion** of the prompt stable across
+  rounds — put per-round variable content (check results,
+  memory, attempt marker, prior audit, crash diagnostics)
+  **after** the static content.  The CLI's caching is prefix-
+  based: the cached portion is whatever's identical up to the
+  first byte that differs.
+- Observe cache hits via ``ResultMessage.usage.cache_read_input_tokens``
+  and record them in ``usage_round_N.json``.
 
-| Config                             | Input tokens per round | Relative cost |
-|------------------------------------|------------------------|---------------|
-| No caching, SPEC as-is             | ~27 000                | 100%          |
-| Caching on, SPEC as-is, cache hit  | ~27 000 (90% cached)   | ~19%          |
-| Caching on + SPEC sharded (see next §) | ~12 000 (90% cached)   | ~8%           |
+**Wrong patterns (will silently disable caching):**
 
-**Acceptance criteria:**
+- Two-block ``system_prompt=[dict, dict]`` with explicit
+  ``cache_control`` (doesn't match the SDK signature — see
+  symptom above).
+- Per-round content interleaved with static content (breaks the
+  leading-prefix hash).
+- A timestamp or counter in the first ~200 bytes of the system
+  prompt (invalidates the prefix every call).
 
-1. ``ClaudeAgentOptions`` is called with ``system_prompt`` as a
-   list of two blocks; the first block has ``cache_control={"type":
-   "ephemeral"}``.
-2. A unit test in ``tests/test_prompt_caching.py`` asserts the
-   two-block shape and the ``cache_control`` marker on every
-   orchestrator-to-SDK call site (analyze_and_fix, dry_run,
-   validate, diff, sync_readme, party mode, curation).
-3. The cached block is **deterministic for the session** —
-   per-round variables (``{attempt_marker}``, prev_crash,
-   prev_check_section, memory_section, prior_round_audit_section)
-   MUST be in the uncached block so cache hits are reliable.
-4. A session-level integration test verifies that running the
-   same round twice back-to-back produces a cache-read charge on
-   the second call (inspecting ``ResultMessage.usage``
-   ``cache_read_input_tokens`` field).
+**Acceptance criteria for verification:**
+
+1. A session-level integration test runs two rounds back-to-back
+   with identical inputs and asserts that the second round's
+   ``usage_round_2.json`` has ``cache_read_tokens > 0`` —
+   evidence the native caching fires.
+2. No call site in evolve passes ``system_prompt=[...]`` as a
+   list; grep/lint guard in CI.
+3. ``build_prompt`` and its siblings place per-round variable
+   content **after** the static (system.md + SPEC/README)
+   portion.  A unit test asserts ordering on the rendered
+   prompt.
 
 ---
 

@@ -1088,21 +1088,17 @@ def analyze_and_fix(
     """
     if yolo is not None:
         allow_installs = yolo
-    # Prompt caching rollback: the ``list[dict]`` ``system_prompt``
-    # format with ``cache_control`` is the Claude API native shape for
-    # prompt caching, but the currently-installed
-    # ``claude_agent_sdk.ClaudeAgentOptions`` does not accept that list
-    # shape — passing it silently produces an API call without the
-    # system prompt, and the model returns with zero tool calls (the
-    # symptom reported by the operator: two attempts in a row each
-    # logged ``[opus] done (0 tool calls)`` with no edits).
-    #
-    # Until an SDK path for caching is verified, concatenate the
-    # cached + uncached blocks into a single string and pass it as
-    # the user prompt (the legacy shape).  The caching-oriented
-    # ``build_prompt_blocks`` / ``_build_system_prompt_blocks``
-    # helpers stay in the codebase for the follow-up US; they just
-    # aren't called from the live code path right now.
+    # Prompt caching: the underlying Claude Code CLI handles caching
+    # natively on stable system prompts across calls — no explicit
+    # ``cache_control`` wiring needed.  The SDK's
+    # ``ClaudeAgentOptions.system_prompt`` signature is ``str |
+    # SystemPromptPreset | None`` (verified against
+    # ``claude-agent-sdk`` 0.1.50) and does NOT accept the
+    # Anthropic-API ``list[dict]`` shape; passing a list silently
+    # produces an empty-system-prompt call (the symptom was the
+    # agent returning with zero tool calls on every round).  See
+    # SPEC.md § "Prompt caching" for the rationale and for the
+    # prefix-ordering contract that keeps cache hits reliable.
     full_prompt = build_prompt(
         project_dir, check_output, check_cmd, allow_installs, run_dir,
         spec=spec, round_num=round_num, check_timeout=check_timeout,
@@ -1411,12 +1407,10 @@ async def _run_dry_run_claude_agent(
         project_dir: Root directory of the project (used as cwd).
         run_dir: Session directory for the conversation log and report.
     """
-    blocks = _oneshot_system_prompt_blocks(prompt)
     await _run_readonly_claude_agent(
-        "Proceed with the dry-run analysis.", project_dir, run_dir,
+        prompt, project_dir, run_dir,
         log_filename="dry_run_conversation.md",
         log_header="Dry Run Analysis",
-        system_prompt_blocks=blocks,
     )
 
 
@@ -1514,12 +1508,10 @@ async def _run_validate_claude_agent(
         project_dir: Root directory of the project (used as cwd).
         run_dir: Session directory for the conversation log and report.
     """
-    blocks = _oneshot_system_prompt_blocks(prompt)
     await _run_readonly_claude_agent(
-        "Proceed with the validation analysis.", project_dir, run_dir,
+        prompt, project_dir, run_dir,
         log_filename="validate_conversation.md",
         log_header="Validation Analysis",
-        system_prompt_blocks=blocks,
     )
 
 
@@ -1650,12 +1642,10 @@ async def _run_diff_claude_agent(
         project_dir: Root directory of the project (used as cwd).
         run_dir: Session directory for the conversation log and report.
     """
-    blocks = _oneshot_system_prompt_blocks(prompt)
     await _run_readonly_claude_agent(
-        "Proceed with the diff analysis.", project_dir, run_dir,
+        prompt, project_dir, run_dir,
         log_filename="diff_conversation.md",
         log_header="Diff Analysis",
-        system_prompt_blocks=blocks,
     )
 
 
@@ -1885,12 +1875,10 @@ def run_sync_readme_agent(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     prompt = build_sync_readme_prompt(project_dir, run_dir, spec=spec, apply=apply)
-    blocks = _oneshot_system_prompt_blocks(prompt)
 
     _run_agent_with_retries(
         lambda: _run_sync_readme_claude_agent(
-            "Proceed with the README sync.", project_dir, run_dir,
-            system_prompt_blocks=blocks,
+            prompt, project_dir, run_dir,
         ),
         fail_label="Sync-readme agent",
         max_retries=max_retries,
@@ -2183,12 +2171,10 @@ def run_memory_curation(
     )
 
     # Run the agent
-    blocks = _oneshot_system_prompt_blocks(prompt)
     try:
         _run_agent_with_retries(
             lambda: _run_memory_curation_claude_agent(
-                "Proceed with memory curation.", project_dir, run_dir,
-                system_prompt_blocks=blocks,
+                prompt, project_dir, run_dir,
             ),
             fail_label="Memory curation (Mira)",
             max_retries=2,

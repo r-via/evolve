@@ -147,6 +147,17 @@ Your job: orchestrate a multi-agent brainstorming session, then produce:
         warnings.filterwarnings("ignore", message=".*cancel scope.*")
         warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
 
+        # Prompt caching note: the claude-agent-sdk
+        # ``ClaudeAgentOptions.system_prompt`` signature is
+        # ``str | SystemPromptPreset | None`` — the ``list[dict]`` with
+        # ``cache_control`` shape of the Anthropic API is NOT accepted
+        # (verified against SDK 0.1.50 types.py).  The underlying
+        # Claude Code CLI handles prompt caching natively on stable
+        # system prompts across calls; pass the full prompt as a
+        # single string and let the CLI apply cache_control under the
+        # hood.  Cache-hit telemetry shows up in ``ResultMessage.usage``
+        # under ``cache_read_input_tokens`` when it fires.
+
         max_retries = 5
         print("[probe] party mode: launching Claude agent for brainstorming session")
         for attempt in range(1, max_retries + 1):
