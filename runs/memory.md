@@ -139,3 +139,6 @@ Tests like `test_constant_drift.py` that `read_text()` the source file to count 
 
 ### CLI move: __init__.py→cli.py Path(__file__) unchanged — round 1 of 20260424_123612
 Both `evolve/__init__.py` and `evolve/cli.py` are in `evolve/` → `.parent.parent` gives same project root. No path fixup needed unlike agent.py move (which went from root to subdirectory).
+
+### Shim removal: local `from X import` inside function bodies — round 2 of 20260424_132929
+Round 1 grep `^from (loop|agent) import` caught top-level imports only. ~50 local imports inside test function bodies (`from loop import run_diff`, `from agent import _run_validate_claude_agent`) were missed. Rule: always grep WITHOUT `^` anchor when hunting root-module imports — indented local imports are invisible to line-start matches.
