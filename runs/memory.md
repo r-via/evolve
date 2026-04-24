@@ -136,3 +136,6 @@ After moving `agent.py` → `evolve/agent.py`, `patch("agent.get_tui")` patches 
 
 ### Source-reading tests: update paths after package move — round 1 of 20260424_120253
 Tests like `test_constant_drift.py` that `read_text()` the source file to count literal occurrences need path updates (root `agent.py` → `evolve/agent.py`). The shim is ~35 lines and won't contain the constants/patterns being tested. Same for `test_evolve.py` effort-flag grep.
+
+### CLI move: __init__.py→cli.py Path(__file__) unchanged — round 1 of 20260424_123612
+Both `evolve/__init__.py` and `evolve/cli.py` are in `evolve/` → `.parent.parent` gives same project root. No path fixup needed unlike agent.py move (which went from root to subdirectory).

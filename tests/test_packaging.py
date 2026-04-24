@@ -62,7 +62,7 @@ class TestEntryPoint:
         ep = data["project"]["scripts"]["evolve"]
         assert ":" in ep, f"Entry point {ep!r} should be 'module:callable'"
         module, func = ep.split(":", 1)
-        assert module == "evolve"
+        assert module == "evolve.cli"
         assert func == "main"
 
     def test_entry_point_module_importable(self):

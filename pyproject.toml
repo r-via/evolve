@@ -19,7 +19,7 @@ vision = ["cairosvg"]
 dev = ["rich", "pytest", "pytest-cov"]
 
 [project.scripts]
-evolve = "evolve:main"
+evolve = "evolve.cli:main"
 
 [tool.setuptools]
 packages = ["evolve"]

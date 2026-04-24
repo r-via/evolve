@@ -26,7 +26,7 @@
   - STRUCTURAL commit with RESTART_REQUIRED marker
   **Architect notes (Winston):** Same shim pattern as hooks.py/costs.py. ~1573 lines, heavy imports from loop.py. Test imports via shim keep working.
   **PM notes (John):** P2 infrastructure. Blocks steps 8-10. NOT removing shim (step 10). NOT changing public API.
-- [ ] [functional] [P2] US-015: Move CLI into evolve/cli.py and update entry point (migration step 8)
+- [x] [functional] [P2] US-015: Move CLI into evolve/cli.py and update entry point (migration step 8)
   **As** an evolve operator, **I want** the CLI entry point at `evolve.cli:main` **so that** the package layout matches SPEC § Architecture and `evolve/__init__.py` is a clean package marker.
   **Acceptance criteria (must all pass before the item is [x]'d):**
   1. `evolve/cli.py` exists with all CLI parsing, config resolution, and `main()` function
