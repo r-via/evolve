@@ -229,9 +229,10 @@ class TestRunMemoryCuration:
 class TestRunCurationPass:
     """_run_curation_pass in orchestrator delegates correctly."""
 
+    @patch("evolve.orchestrator._git_commit")
     @patch("evolve.orchestrator._runs_base")
     @patch("evolve.agent.run_memory_curation", return_value="SKIPPED")
-    def test_skipped_is_silent(self, mock_cur, mock_rb, tmp_path: Path) -> None:
+    def test_skipped_is_silent(self, mock_cur, mock_rb, mock_gc, tmp_path: Path) -> None:
         from evolve.orchestrator import _run_curation_pass
         mock_rb.return_value = tmp_path
         ui = MagicMock()
@@ -240,10 +241,12 @@ class TestRunCurationPass:
 
         _run_curation_pass(tmp_path, tmp_path / "run", 5, imp_path, None, ui)
         mock_cur.assert_called_once()
+        mock_gc.assert_not_called()
 
+    @patch("evolve.orchestrator._git_commit")
     @patch("evolve.orchestrator._runs_base")
     @patch("evolve.agent.run_memory_curation", return_value="CURATED")
-    def test_curated_logs_probe(self, mock_cur, mock_rb, tmp_path: Path) -> None:
+    def test_curated_commits_with_compaction_marker(self, mock_cur, mock_rb, mock_gc, tmp_path: Path) -> None:
         from evolve.orchestrator import _run_curation_pass
         mock_rb.return_value = tmp_path
         ui = MagicMock()
@@ -252,10 +255,16 @@ class TestRunCurationPass:
 
         _run_curation_pass(tmp_path, tmp_path / "run", 10, imp_path, "SPEC.md", ui)
         mock_cur.assert_called_once()
+        # AC 5: commit includes `memory: compaction` marker
+        mock_gc.assert_called_once()
+        commit_msg = mock_gc.call_args[0][1]
+        assert "memory: compaction" in commit_msg
+        assert "curation round 10" in commit_msg
 
+    @patch("evolve.orchestrator._git_commit")
     @patch("evolve.orchestrator._runs_base")
     @patch("evolve.agent.run_memory_curation", return_value="ABORTED")
-    def test_aborted_warns(self, mock_cur, mock_rb, tmp_path: Path) -> None:
+    def test_aborted_does_not_commit(self, mock_cur, mock_rb, mock_gc, tmp_path: Path) -> None:
         from evolve.orchestrator import _run_curation_pass
         mock_rb.return_value = tmp_path
         ui = MagicMock()
@@ -264,3 +273,18 @@ class TestRunCurationPass:
 
         _run_curation_pass(tmp_path, tmp_path / "run", 10, imp_path, None, ui)
         mock_cur.assert_called_once()
+        mock_gc.assert_not_called()
+
+    @patch("evolve.orchestrator._git_commit")
+    @patch("evolve.orchestrator._runs_base")
+    @patch("evolve.agent.run_memory_curation", return_value="SDK_FAIL")
+    def test_sdk_fail_does_not_commit(self, mock_cur, mock_rb, mock_gc, tmp_path: Path) -> None:
+        from evolve.orchestrator import _run_curation_pass
+        mock_rb.return_value = tmp_path
+        ui = MagicMock()
+        imp_path = tmp_path / "improvements.md"
+        imp_path.write_text("- [x] done\n")
+
+        _run_curation_pass(tmp_path, tmp_path / "run", 10, imp_path, None, ui)
+        mock_cur.assert_called_once()
+        mock_gc.assert_not_called()

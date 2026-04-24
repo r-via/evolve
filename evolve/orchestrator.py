@@ -1024,6 +1024,16 @@ def _run_curation_pass(
         return  # silent — no log needed
     elif verdict == "CURATED":
         _probe(f"memory curation: CURATED at round {round_num}")
+        # SPEC § "Dedicated memory curation (Mira)" — verdict routing:
+        # CURATED → commit with `memory: compaction` marker so the
+        # byte-size sanity gate (§ "Byte-size sanity gate") accepts
+        # the shrink.  The curation modified memory.md in-place and
+        # wrote an audit log; commit both.
+        commit_msg = (
+            f"chore(memory): curation round {round_num}\n\n"
+            f"memory: compaction\n"
+        )
+        _git_commit(project_dir, commit_msg, ui)
     elif verdict == "ABORTED":
         _probe_warn(f"memory curation: ABORTED at round {round_num} (>80% shrink)")
     elif verdict == "SDK_FAIL":
