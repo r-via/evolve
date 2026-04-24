@@ -125,15 +125,24 @@ class TestBuildSystem:
         requires = data["build-system"]["requires"]
         assert any("setuptools" in r for r in requires)
 
-    def test_py_modules_declared(self):
-        """Root-level modules and the evolve package should be declared."""
+    def test_packages_declared(self):
+        """The evolve package must be declared; the legacy root-level
+        py-modules (loop, agent, tui, …) were removed when their shims
+        were deleted in the package-restructuring migration — they are
+        no longer expected in ``pyproject.toml``.
+        """
         data = _load_pyproject()
-        modules = data["tool"]["setuptools"]["py-modules"]
         packages = data["tool"]["setuptools"].get("packages", [])
-        # evolve is now a package, not a py-module
         assert "evolve" in packages, "'evolve' missing from packages"
-        for expected in ["loop", "agent", "tui"]:
-            assert expected in modules, f"{expected!r} missing from py-modules"
+        # py-modules key is absent (or empty) now that shims are gone;
+        # if it re-appears it should not re-add the legacy names.
+        legacy = {"loop", "agent", "tui", "hooks", "costs"}
+        modules = data["tool"]["setuptools"].get("py-modules", [])
+        leaked = legacy & set(modules)
+        assert not leaked, (
+            f"legacy root-module name(s) {leaked} resurfaced in "
+            f"py-modules; the shims are gone — import from evolve.* instead"
+        )
 
     def test_core_dependency(self):
         """claude-agent-sdk must be a core dependency."""

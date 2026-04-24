@@ -479,7 +479,7 @@ class TestForeverAtomicAdoptionCommit:
         that references only the spec proposal — README is user-authored and
         never appears in the commit (see SPEC.md § "README as a user-level summary").
         """
-        from loop import evolve_loop
+        from evolve.orchestrator import evolve_loop
 
         project_dir, imp_path = self._setup_project(tmp_path)
         call_count = 0
@@ -526,7 +526,7 @@ class TestForeverAtomicAdoptionCommit:
 
     def test_legacy_commit_message_when_spec_is_readme(self, tmp_path: Path):
         """With no --spec (README.md IS the spec), legacy chore commit is used."""
-        from loop import evolve_loop
+        from evolve.orchestrator import evolve_loop
 
         project_dir = tmp_path / "proj"
         project_dir.mkdir()

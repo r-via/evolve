@@ -196,7 +196,7 @@ class TestRunDryRun:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_dry_run_agent") as mock_agent:
-            from loop import run_dry_run
+            from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path)
 
         # Should have created a timestamped dir under runs/
@@ -215,7 +215,7 @@ class TestRunDryRun:
 
         with patch("evolve.orchestrator.subprocess.run", return_value=mock_result) as mock_sub, \
              patch("evolve.agent.run_dry_run_agent") as mock_agent:
-            from loop import run_dry_run
+            from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path, check_cmd="pytest", timeout=60)
 
         # subprocess.run should have been called with the check command
@@ -233,7 +233,7 @@ class TestRunDryRun:
 
         with patch("evolve.orchestrator.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 60)), \
              patch("evolve.agent.run_dry_run_agent"):
-            from loop import run_dry_run
+            from evolve.orchestrator import run_dry_run
             # Should not raise
             run_dry_run(tmp_path, check_cmd="pytest", timeout=60)
 
@@ -247,7 +247,7 @@ class TestRunDryRun:
         with patch("evolve.orchestrator._auto_detect_check", return_value="pytest") as mock_detect, \
              patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
              patch("evolve.agent.run_dry_run_agent"):
-            from loop import run_dry_run
+            from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path)
             mock_detect.assert_called_once_with(tmp_path)
 
@@ -258,7 +258,7 @@ class TestRunDryRun:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_dry_run_agent"):
-            from loop import run_dry_run
+            from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path)
 
         # No report produced so warn is displayed
@@ -278,7 +278,7 @@ class TestRunDryRun:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_dry_run_agent", side_effect=create_report):
-            from loop import run_dry_run
+            from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path)
 
         output = capsys.readouterr().out
@@ -300,7 +300,7 @@ class TestRunDryRun:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_dry_run_agent"):
-            from loop import run_dry_run
+            from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path, model="claude-sonnet-4-20250514")
             assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
 
@@ -345,7 +345,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_dry_run_claude_agent
+            from evolve.agent import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -386,7 +386,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_dry_run_claude_agent
+            from evolve.agent import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -417,7 +417,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_dry_run_claude_agent
+            from evolve.agent import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -456,7 +456,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_dry_run_claude_agent
+            from evolve.agent import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -496,7 +496,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_dry_run_claude_agent
+            from evolve.agent import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -527,7 +527,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_dry_run_claude_agent
+            from evolve.agent import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))

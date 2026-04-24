@@ -621,7 +621,7 @@ class TestRunRounds:
             )
         assert exc.value.code == 4  # circuit breaker — identical signatures across attempts
         # Should have MAX_DEBUG_RETRIES + 1 attempts (1 original + 2 retries)
-        from loop import MAX_DEBUG_RETRIES
+        from evolve.orchestrator import MAX_DEBUG_RETRIES
         assert len(attempt_log) == MAX_DEBUG_RETRIES + 1
         assert attempt_log == list(range(1, MAX_DEBUG_RETRIES + 2))
 
@@ -888,7 +888,7 @@ class TestRunRounds:
     def test_memory_wipe_prompt_header(self, tmp_path: Path):
         """agent.build_prompt renders the dedicated 'silently wiped memory.md' header
         when the diagnostic starts with 'MEMORY WIPED'."""
-        from agent import build_prompt
+        from evolve.agent import build_prompt
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
         project_dir = tmp_path
@@ -2002,7 +2002,7 @@ class TestPartyModeWorkflowFallback:
         ui = MagicMock()
 
         # Patch the evolve package's workflow dir to not exist so it falls back
-        import loop as loop_mod
+        import evolve.orchestrator as loop_mod
         real_parent = Path(loop_mod.__file__).parent
 
         real_is_dir = Path.is_dir
@@ -2034,7 +2034,7 @@ class TestPartyModeWorkflowFallback:
         (agents / "dev.md").write_text("# Dev Agent")
 
         # Create workflow with steps dir containing a bad file
-        import loop as loop_mod
+        import evolve.orchestrator as loop_mod
         wf_dir = Path(loop_mod.__file__).parent / "workflows" / "party-mode"
         # We'll use project-level workflow dir to control file contents
         proj_wf_dir = tmp_path / "workflows" / "party-mode" / "steps"
@@ -2092,7 +2092,7 @@ class TestForeverRestartConvergedFile:
 
     def test_converged_file_preserved(self, tmp_path: Path):
         """CONVERGED file is left in place (line 1030 — pass branch)."""
-        from loop import _forever_restart
+        from evolve.orchestrator import _forever_restart
 
         run_dir = tmp_path / "runs" / "session1"
         run_dir.mkdir(parents=True)
@@ -2215,8 +2215,12 @@ class TestPartyModeAgentLoading:
 
         ui = MagicMock()
 
-        import loop as loop_mod
-        evolve_agents = Path(loop_mod.__file__).parent / "agents"
+        # ``_run_party_mode`` (in ``evolve/party.py``) looks for
+        # fallback agents at ``Path(__file__).parent.parent / "agents"``
+        # which is the project root — not the ``evolve/`` package dir.
+        # Use the same resolution for the test's existence check.
+        import evolve.party as party_mod
+        evolve_agents = Path(party_mod.__file__).parent.parent / "agents"
 
         if evolve_agents.is_dir() and list(evolve_agents.glob("*.md")):
             # Evolve has its own agents — should proceed without warning about missing agents
@@ -2300,10 +2304,13 @@ class TestPartyModePromptContent:
         ui = MagicMock()
         import asyncio as _asyncio
         import evolve.agent as agent_mod
-        import loop as loop_mod
+        import evolve.party as party_mod
 
-        # Create workflow in evolve's directory
-        wf_dir = Path(loop_mod.__file__).parent / "workflows" / "party-mode"
+        # ``_run_party_mode`` looks for workflows at
+        # ``Path(__file__).parent.parent / "workflows"`` — the project
+        # root relative to ``evolve/party.py``.  Use the same lookup
+        # so this test creates the fixture where the code reads.
+        wf_dir = Path(party_mod.__file__).parent.parent / "workflows" / "party-mode"
         wf_existed = wf_dir.is_dir()
 
         if not wf_existed:
@@ -2347,7 +2354,7 @@ class TestPartyModeMissingWorkflow:
         ui = MagicMock()
         import asyncio as _asyncio
         import evolve.agent as agent_mod
-        import loop as loop_mod
+        import evolve.orchestrator as loop_mod
 
         real_parent = Path(loop_mod.__file__).parent
         real_is_dir = Path.is_dir
@@ -2390,7 +2397,7 @@ class TestPartyModeMissingWorkflow:
         ui = MagicMock()
         import asyncio as _asyncio
         import evolve.agent as agent_mod
-        import loop as loop_mod
+        import evolve.orchestrator as loop_mod
 
         real_parent = Path(loop_mod.__file__).parent
         real_is_dir = Path.is_dir
@@ -3037,7 +3044,7 @@ class TestBacklogStateJsonSchema:
 
     def test_schema_field_names_and_types(self, tmp_path: Path):
         """state.json.backlog has the exact 5 keys and types documented in SPEC."""
-        from loop import _write_state_json
+        from evolve.orchestrator import _write_state_json
         import json as _json
 
         project_dir = tmp_path / "proj"
@@ -3086,7 +3093,7 @@ class TestBacklogStateJsonSchema:
 
     def test_added_this_round_and_growth_from_git_history(self, tmp_path: Path):
         """added_this_round = new ``- [ ]`` lines vs HEAD; growth = delta vs HEAD~5."""
-        from loop import _write_state_json
+        from evolve.orchestrator import _write_state_json
         import json as _json
 
         project_dir = tmp_path / "proj"
@@ -3134,7 +3141,7 @@ class TestBacklogStateJsonSchema:
 
     def test_growth_zero_without_git_history(self, tmp_path: Path):
         """No git repo → added_this_round=0, growth_rate=0.0 (graceful degrade)."""
-        from loop import _write_state_json
+        from evolve.orchestrator import _write_state_json
         import json as _json
 
         project_dir = tmp_path / "proj"
@@ -3165,7 +3172,7 @@ class TestBacklogStateJsonSchema:
 
     def test_added_this_round_uses_line_set_diff_not_count_diff(self, tmp_path: Path):
         """Checking off A and adding B → added_this_round=1, NOT 0 (count is unchanged)."""
-        from loop import _write_state_json
+        from evolve.orchestrator import _write_state_json
         import json as _json
 
         project_dir = tmp_path / "proj"

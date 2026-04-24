@@ -424,7 +424,7 @@ class TestPartyModeFrameAttachment:
         from evolve.tui import PlainTUI
         ui = PlainTUI()
 
-        from loop import _run_party_mode
+        from evolve.orchestrator import _run_party_mode
         _run_party_mode(
             project_dir=project_dir,
             run_dir=run_dir,
@@ -482,7 +482,7 @@ class TestPartyModeFrameAttachment:
         from evolve.tui import PlainTUI
         ui = PlainTUI()
 
-        from loop import _run_party_mode
+        from evolve.orchestrator import _run_party_mode
         _run_party_mode(
             project_dir=project_dir,
             run_dir=run_dir,

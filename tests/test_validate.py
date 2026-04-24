@@ -200,7 +200,7 @@ class TestRunValidate:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent"):
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             run_validate(tmp_path)
 
         sessions = [d for d in (tmp_path / "runs").iterdir() if d.is_dir()]
@@ -218,7 +218,7 @@ class TestRunValidate:
 
         with patch("evolve.orchestrator.subprocess.run", return_value=mock_result) as mock_sub, \
              patch("evolve.agent.run_validate_agent") as mock_agent:
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             run_validate(tmp_path, check_cmd="pytest", timeout=60)
 
         calls = [c for c in mock_sub.call_args_list if "pytest" in str(c)]
@@ -234,7 +234,7 @@ class TestRunValidate:
 
         with patch("evolve.orchestrator.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 60)), \
              patch("evolve.agent.run_validate_agent"):
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             run_validate(tmp_path, check_cmd="pytest", timeout=60)
 
     def test_auto_detect_when_no_check(self, tmp_path: Path):
@@ -247,7 +247,7 @@ class TestRunValidate:
         with patch("evolve.orchestrator._auto_detect_check", return_value="pytest") as mock_detect, \
              patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
              patch("evolve.agent.run_validate_agent"):
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             run_validate(tmp_path)
             mock_detect.assert_called_once_with(tmp_path)
 
@@ -268,7 +268,7 @@ class TestRunValidate:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent", side_effect=create_report):
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             result = run_validate(tmp_path)
             assert result == 0
 
@@ -289,7 +289,7 @@ class TestRunValidate:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent", side_effect=create_report):
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             result = run_validate(tmp_path)
             assert result == 1
 
@@ -300,7 +300,7 @@ class TestRunValidate:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent"):
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             result = run_validate(tmp_path)
             assert result == 2
 
@@ -318,7 +318,7 @@ class TestRunValidate:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent", side_effect=create_report):
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             result = run_validate(tmp_path)
             assert result == 2
 
@@ -331,7 +331,7 @@ class TestRunValidate:
 
         with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent"):
-            from loop import run_validate
+            from evolve.orchestrator import run_validate
             run_validate(tmp_path, model="claude-sonnet-4-20250514")
             assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
 
@@ -376,7 +376,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_validate_claude_agent
+            from evolve.agent import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -417,7 +417,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_validate_claude_agent
+            from evolve.agent import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -448,7 +448,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_validate_claude_agent
+            from evolve.agent import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -486,7 +486,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_validate_claude_agent
+            from evolve.agent import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -526,7 +526,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_validate_claude_agent
+            from evolve.agent import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -556,7 +556,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_validate_claude_agent
+            from evolve.agent import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))

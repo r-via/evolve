@@ -55,7 +55,7 @@
   - STRUCTURAL commit with RESTART_REQUIRED marker
   **Architect notes (Winston):** loop.py is ~2093 lines, the largest module. Heavy cross-imports with agent.py. After agent.py is in-package (US-014), internal imports become `from evolve.agent import ...`. Test patches must be updated for new module path.
   **PM notes (John):** P2 infrastructure. Blocks step 10 (shim removal). NOT refactoring orchestrator internals.
-- [ ] [functional] [P2] US-019: Remove root-level backward-compat shims (migration step 10)
+- [x] [functional] [P2] US-019: Remove root-level backward-compat shims (migration step 10)
   **As** an evolve operator, **I want** the root-level shim files removed **so that** the project is clean with all code inside `evolve/` per SPEC § Architecture and the project root is uncluttered.
   **Acceptance criteria (must all pass before the item is [x]'d):**
   1. Root-level `agent.py`, `loop.py`, `tui.py`, `hooks.py`, `costs.py` are deleted

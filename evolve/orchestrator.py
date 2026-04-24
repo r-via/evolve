@@ -1632,6 +1632,7 @@ def _run_single_round_body(
         round_num=round_num,
         run_dir=rdir,
         spec=spec,
+        check_timeout=timeout,
     )
     print("[probe] agent finished")
 

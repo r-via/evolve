@@ -99,6 +99,67 @@ _MEMORY_WIPED_HEADER_FMT = (
 )
 
 
+# Ordered list of input keys to probe for a human-meaningful summary
+# when rendering a tool-use line in the conversation log and TUI.
+# The first hit wins; a trailing fallback stringifies the whole dict
+# truncated to 80 chars.  Keep this list ordered by specificity:
+# ``command`` is more useful than ``query`` is more useful than the
+# raw dict repr.  New SDK tools (ToolSearch, WebSearch, WebFetch,
+# TaskOutput, TodoWrite, Agent, …) get meaningful single-line
+# summaries instead of an empty string after the tool name.
+_TOOL_INPUT_SUMMARY_KEYS: tuple[str, ...] = (
+    "command",       # Bash
+    "pattern",       # Grep, Glob
+    "file_path",     # Read, Write, Edit, NotebookEdit
+    "query",         # ToolSearch, WebSearch
+    "url",           # WebFetch
+    "prompt",        # Agent / Task subagent invocation
+    "description",   # Agent description when prompt is long
+    "skill",         # Skill
+    "to",            # SendMessage
+    "task_id",       # TaskOutput / TaskStop
+    "subagent_type", # Agent
+)
+
+
+def _summarise_tool_input(inp: object) -> str:
+    """Render a one-line summary of a tool-use block's ``input``.
+
+    Falls through ``_TOOL_INPUT_SUMMARY_KEYS`` in order, then special-
+    cases a few bulkier keys (``old_string`` → edit marker,
+    ``content`` → byte count, ``todos`` → todo count), and finally
+    produces a truncated repr of the whole dict so new / uncommon
+    tools at least render *something* after the tool name in the TUI
+    and conversation log.  Previously an unknown key schema produced
+    an empty line like ``[opus] ToolSearch → `` that looked broken.
+    """
+    if not inp:
+        return ""
+    if not isinstance(inp, dict):
+        return str(inp)[:100]
+    for key in _TOOL_INPUT_SUMMARY_KEYS:
+        if key in inp and inp[key]:
+            val = inp[key]
+            if isinstance(val, str):
+                return val[:100]
+            return str(val)[:100]
+    if "old_string" in inp:
+        return f'{inp.get("file_path", "?")} (edit)'
+    if "content" in inp:
+        try:
+            return f'({len(inp["content"])} chars)'
+        except TypeError:
+            pass
+    if "todos" in inp:
+        try:
+            return f'({len(inp["todos"])} todos)'
+        except TypeError:
+            pass
+    # Last-resort fallback: truncated repr of the full dict so the
+    # caller sees *some* signal about what the tool was invoked with.
+    return str(inp)[:80]
+
+
 def _load_project_context(project_dir: Path, spec: str | None = None) -> dict[str, str]:
     """Load shared project context: spec file (README) and improvements.
 
@@ -208,6 +269,7 @@ def build_prompt(
     spec: str | None = None,
     round_num: int = 1,
     yolo: bool | None = None,
+    check_timeout: int = 20,
 ) -> str:
     """Build the system prompt for the opus agent from project context.
 
@@ -299,6 +361,7 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     system_prompt = system_prompt.replace("{yolo_note}", allow_installs_note)
     system_prompt = system_prompt.replace("{allow_installs_note}", allow_installs_note)
     system_prompt = system_prompt.replace("{watchdog_timeout}", str(WATCHDOG_TIMEOUT))
+    system_prompt = system_prompt.replace("{check_timeout}", str(check_timeout))
     system_prompt = system_prompt.replace("{round_num}", str(round_num))
     system_prompt = system_prompt.replace("{prev_round_1}", str(round_num - 1))
     system_prompt = system_prompt.replace("{prev_round_2}", str(round_num - 2))
@@ -675,22 +738,9 @@ async def run_claude_agent(
 
                             tools_used += 1
                             tool_name = block.name
-                            tool_input = ""
-                            if hasattr(block, "input") and block.input:
-                                inp = block.input
-                                if isinstance(inp, dict):
-                                    if "command" in inp:
-                                        tool_input = inp["command"]
-                                    elif "pattern" in inp:
-                                        tool_input = inp["pattern"]
-                                    elif "file_path" in inp:
-                                        tool_input = inp["file_path"]
-                                    elif "old_string" in inp:
-                                        tool_input = f'{inp.get("file_path", "?")} (edit)'
-                                    elif "content" in inp:
-                                        tool_input = f'({len(inp["content"])} chars)'
-                                else:
-                                    tool_input = str(inp)[:100]
+                            tool_input = _summarise_tool_input(
+                                getattr(block, "input", None)
+                            )
                             _log(f"\n**{tool_name}**: `{tool_input}`\n")
                             ui.agent_tool(tool_name, tool_input)
 
@@ -781,6 +831,7 @@ def analyze_and_fix(
     run_dir: Path | None = None,
     spec: str | None = None,
     yolo: bool | None = None,
+    check_timeout: int = 20,
 ) -> None:
     """Run Claude opus agent to analyze and fix code.
 
@@ -800,7 +851,10 @@ def analyze_and_fix(
     """
     if yolo is not None:
         allow_installs = yolo
-    prompt = build_prompt(project_dir, check_output, check_cmd, allow_installs, run_dir, spec=spec, round_num=round_num)
+    prompt = build_prompt(
+        project_dir, check_output, check_cmd, allow_installs, run_dir,
+        spec=spec, round_num=round_num, check_timeout=check_timeout,
+    )
 
     # Per-attempt conversation log filename.  Each orchestrator-level subprocess
     # attempt gets its own file (no overwrite), so a debug retry can read the

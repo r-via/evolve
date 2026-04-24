@@ -28,7 +28,7 @@ class TestBuildSyncReadmePrompt:
     """Tests for agent.build_sync_readme_prompt."""
 
     def test_includes_spec_text(self, tmp_path: Path):
-        from agent import build_sync_readme_prompt
+        from evolve.agent import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec\nFancy feature X\n")
         (tmp_path / "README.md").write_text("# Readme\nOld text\n")
         run_dir = tmp_path / "runs" / "20260424_000000"
@@ -39,7 +39,7 @@ class TestBuildSyncReadmePrompt:
         assert "SPEC.md" in prompt
 
     def test_includes_proposal_path_in_default_mode(self, tmp_path: Path):
-        from agent import build_sync_readme_prompt
+        from evolve.agent import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# R")
         run_dir = tmp_path / "runs" / "s"
@@ -52,7 +52,7 @@ class TestBuildSyncReadmePrompt:
         assert str(tmp_path / "README_proposal.md") in prompt
 
     def test_includes_readme_path_in_apply_mode(self, tmp_path: Path):
-        from agent import build_sync_readme_prompt
+        from evolve.agent import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# R")
         run_dir = tmp_path / "runs" / "s"
@@ -64,7 +64,7 @@ class TestBuildSyncReadmePrompt:
         assert str(tmp_path / "README.md") in prompt
 
     def test_includes_sentinel_path(self, tmp_path: Path):
-        from agent import build_sync_readme_prompt, SYNC_README_NO_CHANGES_SENTINEL
+        from evolve.agent import build_sync_readme_prompt, SYNC_README_NO_CHANGES_SENTINEL
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# R")
         run_dir = tmp_path / "runs" / "session1"
@@ -74,7 +74,7 @@ class TestBuildSyncReadmePrompt:
         assert str(run_dir / SYNC_README_NO_CHANGES_SENTINEL) in prompt
 
     def test_includes_voice_constraints(self, tmp_path: Path):
-        from agent import build_sync_readme_prompt
+        from evolve.agent import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# R")
         run_dir = tmp_path / "runs" / "s"
@@ -87,7 +87,7 @@ class TestBuildSyncReadmePrompt:
         assert "do not invent features" in lower
 
     def test_handles_missing_readme(self, tmp_path: Path):
-        from agent import build_sync_readme_prompt
+        from evolve.agent import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec\nA, B, C\n")
         run_dir = tmp_path / "runs" / "s"
         run_dir.mkdir(parents=True)
@@ -104,7 +104,7 @@ class TestRunSyncReadmeRefusal:
     """Tests for run_sync_readme's no-op refusal when spec IS README."""
 
     def test_refuses_when_spec_is_none(self, tmp_path: Path):
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
         # No --spec → refuse with exit 1, no agent call, no run_dir created.
         with patch("evolve.agent.run_sync_readme_agent") as mock_agent:
             rc = run_sync_readme(tmp_path, spec=None, apply=False)
@@ -116,7 +116,7 @@ class TestRunSyncReadmeRefusal:
             assert not any(d.is_dir() for d in runs.iterdir())
 
     def test_refuses_when_spec_equals_readme(self, tmp_path: Path):
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
         with patch("evolve.agent.run_sync_readme_agent") as mock_agent:
             rc = run_sync_readme(tmp_path, spec="README.md", apply=False)
         assert rc == 1
@@ -127,7 +127,7 @@ class TestRunSyncReadmeMissingSpec:
     """Tests for run_sync_readme when the spec file is missing."""
 
     def test_missing_spec_returns_2(self, tmp_path: Path):
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
         # No SPEC.md created.
         with patch("evolve.agent.run_sync_readme_agent") as mock_agent:
             rc = run_sync_readme(tmp_path, spec="SPEC.md", apply=False)
@@ -139,7 +139,7 @@ class TestRunSyncReadmeProposalMode:
     """Tests for run_sync_readme default (proposal) mode."""
 
     def test_writes_proposal_returns_0(self, tmp_path: Path):
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# Readme")
 
@@ -159,8 +159,8 @@ class TestRunSyncReadmeProposalMode:
         assert "Updated to reflect" in (tmp_path / "README_proposal.md").read_text()
 
     def test_no_changes_sentinel_returns_1(self, tmp_path: Path):
-        from loop import run_sync_readme
-        from agent import SYNC_README_NO_CHANGES_SENTINEL
+        from evolve.orchestrator import run_sync_readme
+        from evolve.agent import SYNC_README_NO_CHANGES_SENTINEL
 
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# Readme")
@@ -180,7 +180,7 @@ class TestRunSyncReadmeProposalMode:
         assert (tmp_path / "README.md").read_text() == "# Readme"
 
     def test_no_output_returns_2(self, tmp_path: Path):
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# Readme")
 
@@ -193,7 +193,7 @@ class TestRunSyncReadmeProposalMode:
         assert rc == 2
 
     def test_agent_exception_returns_2(self, tmp_path: Path):
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# Readme")
 
@@ -212,7 +212,7 @@ class TestRunSyncReadmeApplyMode:
         subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=tmp_path, check=True)
 
     def test_apply_mode_writes_readme_and_commits(self, tmp_path: Path):
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
 
         self._git_init(tmp_path)
         (tmp_path / "SPEC.md").write_text("# Spec\nfeature X\n")
@@ -240,7 +240,7 @@ class TestRunSyncReadmeApplyMode:
         assert "readme" in commit_msg.lower()
 
     def test_apply_mode_unmodified_readme_returns_2(self, tmp_path: Path):
-        from loop import run_sync_readme
+        from evolve.orchestrator import run_sync_readme
 
         self._git_init(tmp_path)
         (tmp_path / "SPEC.md").write_text("# Spec")

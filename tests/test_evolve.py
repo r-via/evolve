@@ -773,7 +773,7 @@ class TestEffortFlag:
         try:
             from unittest.mock import patch as _patch
             with _patch("evolve.agent.analyze_and_fix"):
-                from loop import run_single_round
+                from evolve.orchestrator import run_single_round
                 run_single_round(
                     project_dir=tmp_path,
                     round_num=1,

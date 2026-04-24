@@ -24,12 +24,14 @@ prompt:
 - Pre-check output → ``## Check results`` (or ``TIMEOUT after 20s``).
 - Post-check runs after your commit, on the next round's prompt.
 
-**You MUST NOT run the check command from your Bash tool.**  Reasons:
+**You SHOULD NOT run the check command from your Bash tool.**  The
+orchestrator's pre-check and post-check are authoritative — trust
+them.  Reasons:
 
 1. **Cost explosion.**  Each agent-side run layers another full
    test-suite execution on top of the orchestrator's two.  Five
-   agent-side pytest calls = five 20-second slots wasted per round,
-   compounding the round's cost without extra signal.
+   agent-side pytest calls = five ``{check_timeout}``-second slots
+   wasted per round, compounding cost without extra signal.
 2. **Single source of truth.**  Two independent runs can disagree
    (flaky tests, env drift, different CWD).  One orchestrator-
    controlled run is authoritative.
@@ -37,13 +39,50 @@ prompt:
    heartbeat's wall time; a piped ``pytest | tail`` buffers until
    completion and eats minutes of the round.
 
-**If you need fresh verification after an edit**, edit the code
-AND the relevant test together, trust the orchestrator's post-check
-to surface any regression, and read that result on the next round.
-If you need finer granularity (single test file, ``--durations=5``,
-``-x``, ``-k pattern``), ask for it via ``runs/memory.md`` as a
-diagnostic note for the operator to run manually — do not spawn a
-separate pytest from Bash.
+**Hard rule if you absolutely must run it anyway.**  If you have
+a genuinely valid reason — verifying a test-file edit whose
+fallout the orchestrator's pre/post cannot catch during THIS turn,
+bisecting which of two fixes actually passes before committing —
+you MUST wrap the command in ``timeout {check_timeout}``:
+
+    timeout {check_timeout} pytest tests/test_foo.py -x -q
+
+This enforces the same ceiling the orchestrator uses.  A bare
+``pytest`` call without ``timeout`` is **forbidden** regardless of
+justification — it bypasses the 20-second quality invariant and
+can stall the round for minutes.  When in doubt, use ``-x``
+(stop-on-first-fail) and restrict to a single test file to keep
+the run well under the ceiling.
+
+**Writing tests: the Claude SDK MUST be mocked.**  (See SPEC.md §
+"Hard rule: tests MUST NOT call the real Claude SDK".)  Any test
+you add that touches ``analyze_and_fix``, ``run_claude_agent``,
+``run_dry_run_agent``, ``run_validate_agent``,
+``run_sync_readme_claude_agent``, or the party-mode agent path
+MUST mock the SDK at one of three layers:
+
+- ``patch("evolve.agent.run_claude_agent", new=AsyncMock())`` —
+  cheapest, bypasses the whole streaming stack.
+- ``patch.dict(sys.modules, {"claude_agent_sdk": fake_sdk})`` with
+  a bespoke fake for tests that exercise message parsing.
+- ``patch("asyncio.run", side_effect=lambda c: c.close())`` — for
+  "was the agent invoked?" assertions that don't need the SDK's
+  output.
+
+A test that reaches a live SDK call is a correctness bug (variable
+latency, > 20s pytest budget blown, non-deterministic, requires API
+key in CI).  If you see a test in the suite that does not mock and
+makes a real call, either fix it in the same round as discovery
+or log it in ``runs/memory.md`` under ``## Test leaks`` as a
+``[P1]`` backlog candidate.
+
+**If you need fresh verification after an edit** but don't have a
+hard reason to bypass: edit the code AND the relevant test
+together, trust the orchestrator's post-check to surface any
+regression, and read that result on the next round.  If you need
+finer granularity (``--durations=5``, whole-suite ``-x``), ask for
+it via ``runs/memory.md`` as a diagnostic note for the operator to
+run manually — do not spawn an unbounded pytest from Bash.
 
 The `agents/dev.md` persona's rule "all tests must pass 100%" is
 satisfied by the orchestrator's post-check seeing 100% pass, not by

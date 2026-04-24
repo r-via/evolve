@@ -199,7 +199,7 @@ class TestRunDiff:
         (tmp_path / "runs").mkdir()
 
         with patch("evolve.agent.run_diff_agent"):
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             run_diff(tmp_path)
 
         sessions = [d for d in (tmp_path / "runs").iterdir() if d.is_dir()]
@@ -221,7 +221,7 @@ class TestRunDiff:
                 )
 
         with patch("evolve.agent.run_diff_agent", side_effect=create_report):
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             result = run_diff(tmp_path)
             assert result == 0
 
@@ -241,7 +241,7 @@ class TestRunDiff:
                 )
 
         with patch("evolve.agent.run_diff_agent", side_effect=create_report):
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             result = run_diff(tmp_path)
             assert result == 1
 
@@ -251,7 +251,7 @@ class TestRunDiff:
         (tmp_path / "runs").mkdir()
 
         with patch("evolve.agent.run_diff_agent"):
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             result = run_diff(tmp_path)
             assert result == 2
 
@@ -268,7 +268,7 @@ class TestRunDiff:
                 )
 
         with patch("evolve.agent.run_diff_agent", side_effect=create_report):
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             result = run_diff(tmp_path)
             assert result == 2
 
@@ -276,7 +276,7 @@ class TestRunDiff:
         """Returns exit code 2 when spec file does not exist."""
         (tmp_path / "runs").mkdir()
 
-        from loop import run_diff
+        from evolve.orchestrator import run_diff
         result = run_diff(tmp_path, spec="NONEXISTENT.md")
         assert result == 2
 
@@ -288,7 +288,7 @@ class TestRunDiff:
         import evolve.agent as _agent_mod
 
         with patch("evolve.agent.run_diff_agent"):
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             run_diff(tmp_path, model="claude-sonnet-4-20250514")
             assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
 
@@ -303,7 +303,7 @@ class TestRunDiff:
         import evolve.agent as _agent_mod
 
         with patch("evolve.agent.run_diff_agent"):
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             run_diff(tmp_path)
             assert _agent_mod.EFFORT == "low"
 
@@ -318,7 +318,7 @@ class TestRunDiff:
         import evolve.agent as _agent_mod
 
         with patch("evolve.agent.run_diff_agent"):
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             run_diff(tmp_path, effort="high")
             assert _agent_mod.EFFORT == "high"
 
@@ -332,7 +332,7 @@ class TestRunDiff:
 
         with patch("evolve.agent.run_diff_agent"), \
              patch("evolve.orchestrator.subprocess.run") as mock_sub:
-            from loop import run_diff
+            from evolve.orchestrator import run_diff
             run_diff(tmp_path)
             mock_sub.assert_not_called()
 
@@ -374,7 +374,7 @@ class TestRunDiffClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_diff_claude_agent
+            from evolve.agent import _run_diff_claude_agent
             asyncio.run(_run_diff_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -407,7 +407,7 @@ class TestRunDiffClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from agent import _run_diff_claude_agent
+            from evolve.agent import _run_diff_claude_agent
             asyncio.run(_run_diff_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))

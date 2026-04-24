@@ -283,7 +283,7 @@ class TestMemoryWipeSanityGateRetry:
         agent knows to treat the retry as a memory-discipline violation
         rather than a generic stuck round.
         """
-        from agent import build_prompt
+        from evolve.agent import build_prompt
 
         project_dir = tmp_path
         (project_dir / "README.md").write_text("# project")
