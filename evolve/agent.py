@@ -13,64 +13,21 @@ from evolve.state import _is_needs_package, _runs_base
 from evolve.tui import get_tui
 
 
-# Two-block prompt structure for prompt caching — SPEC.md § "Prompt caching".
-# The cached block contains static-per-session content (system template +
-# SPEC/README) marked with ``cache_control={"type": "ephemeral"}``.  The
-# uncached block contains per-round variable content (check results, memory,
-# attempt marker, prior audit, crash diagnostics).
+# Historical note: an earlier implementation tried to wire prompt
+# caching explicitly via ``ClaudeAgentOptions(system_prompt=[dict, dict])``
+# with ``cache_control={"type": "ephemeral"}`` on the first block.
+# That's the Anthropic API's native shape, but ``claude-agent-sdk``
+# 0.1.50's ``ClaudeAgentOptions.system_prompt`` signature is
+# ``str | SystemPromptPreset | None`` — passing a list silently
+# produces an empty-system-prompt API call and the model returns
+# with zero tool calls.  The underlying Claude Code CLI applies
+# prompt caching natively on stable leading prefixes of the string
+# system prompt, so explicit wiring is unnecessary and harmful.
+# ``PromptBlocks`` and ``build_prompt_blocks`` remain in the codebase
+# (below) as a structured way to keep the static/dynamic ordering
+# correct — callers concatenate ``.cached + .uncached`` themselves,
+# never hand a list to the SDK.  See SPEC § "Prompt caching".
 PromptBlocks = namedtuple("PromptBlocks", ["cached", "uncached"])
-
-
-def _build_system_prompt_blocks(blocks: PromptBlocks) -> list[dict]:
-    """Convert :class:`PromptBlocks` into the SDK's two-block system_prompt list.
-
-    The first block (cached) carries ``cache_control={"type": "ephemeral"}``
-    so the Anthropic API caches it across calls within the TTL window.
-
-    Returns a list of two dicts suitable for ``ClaudeAgentOptions(system_prompt=...)``.
-    """
-    return [
-        {
-            "type": "text",
-            "text": blocks.cached,
-            "cache_control": {"type": "ephemeral"},
-        },
-        {
-            "type": "text",
-            "text": blocks.uncached,
-        },
-    ]
-
-
-def _oneshot_system_prompt_blocks(prompt: str) -> list[dict]:
-    """Build two-block system prompt for one-shot agents (dry-run, validate, diff, sync-readme, curation).
-
-    One-shot agents run once per session, so caching is less impactful, but
-    the SPEC requires every SDK call site to use the two-block format with
-    ``cache_control``.  The full prompt is placed in the cached block and the
-    uncached block is a minimal instruction.
-    """
-    return _build_system_prompt_blocks(PromptBlocks(
-        cached=prompt,
-        uncached="Proceed with the analysis.",
-    ))
-
-
-def _build_system_prompt_from_text(text: str) -> list[dict]:
-    """Build a two-block system_prompt from a single text string.
-
-    Used by read-only agents (dry-run, validate, diff, sync-readme,
-    curation) where the prompt is built as a single string rather than
-    via :func:`build_prompt_blocks`.  The entire text is placed in a
-    single cached block.
-    """
-    return [
-        {
-            "type": "text",
-            "text": text,
-            "cache_control": {"type": "ephemeral"},
-        },
-    ]
 
 
 def _detect_current_attempt(run_dir: Path | None, round_num: int) -> int:
