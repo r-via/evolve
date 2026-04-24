@@ -867,6 +867,53 @@ def _is_circuit_breaker_tripped(signatures: list[str]) -> bool:
     return len(set(signatures[-MAX_IDENTICAL_FAILURES:])) == 1
 
 
+def _check_review_verdict(run_dir: Path, round_num: int) -> tuple[str | None, str]:
+    """Read the adversarial review file and return the verdict.
+
+    Returns:
+        (verdict, high_findings) where verdict is one of
+        "APPROVED", "CHANGES REQUESTED", "BLOCKED", or None (file absent),
+        and high_findings is the raw text of HIGH-severity findings
+        (empty string when verdict is APPROVED or None).
+    """
+    review_path = run_dir / f"review_round_{round_num}.md"
+    if not review_path.is_file():
+        return None, ""
+    try:
+        content = review_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None, ""
+
+    # Parse verdict line — expected format: "**Verdict:** APPROVED" or similar
+    verdict = None
+    for line in content.splitlines():
+        low = line.lower().strip()
+        if "verdict" in low:
+            if "blocked" in low:
+                verdict = "BLOCKED"
+            elif "changes requested" in low or "changes_requested" in low:
+                verdict = "CHANGES REQUESTED"
+            elif "approved" in low:
+                verdict = "APPROVED"
+            if verdict:
+                break
+
+    # Extract HIGH findings for diagnostic context
+    high_findings: list[str] = []
+    if verdict and verdict != "APPROVED":
+        in_high = False
+        for line in content.splitlines():
+            if "HIGH" in line and ("finding" in line.lower() or ":" in line or "-" in line[:5]):
+                in_high = True
+                high_findings.append(line.strip())
+            elif in_high and line.strip() and not line.startswith("#"):
+                high_findings.append(line.strip())
+            elif in_high and (line.startswith("#") or not line.strip()):
+                in_high = False
+
+    return verdict, "\n".join(high_findings)
+
+
 def _save_subprocess_diagnostic(
     run_dir: Path,
     round_num: int,
@@ -1188,8 +1235,57 @@ def _run_rounds(
                     converged_written = (run_dir / "CONVERGED").is_file()
                     effective_imp_unchanged = imp_unchanged and not converged_written
 
+                    # "Backlog drained but CONVERGED skipped" case.
+                    #
+                    # When all ``[ ]`` items are checked off, the agent has
+                    # legitimately nothing to implement this round — the
+                    # correct next step is Phase 4 convergence (write
+                    # CONVERGED after verifying the README claims).  If the
+                    # agent stopped short of Phase 4 (e.g. ran out of turns
+                    # after the last check-off, or didn't confidently
+                    # decide), ``imp_unchanged=True`` and
+                    # ``no_commit_msg=True`` both fire and the zero-progress
+                    # retry kicks in — which would force the agent to "fix"
+                    # a non-bug, wasting the retry budget.
+                    #
+                    # Detect the drained-but-not-converged state and route
+                    # to a dedicated diagnostic so the retry prompt nudges
+                    # the agent straight to Phase 4 instead of treating
+                    # the round as a no-progress bug.
+                    unchecked_remaining = _count_unchecked(improvements_path)
+                    backlog_drained_no_converged = (
+                        unchecked_remaining == 0
+                        and imp_unchanged
+                        and not converged_written
+                    )
+                    if backlog_drained_no_converged:
+                        # Override the default "no progress" framing so the
+                        # diagnostic is actionable (agent goes to Phase 4)
+                        # rather than punitive (agent must edit something).
+                        _save_subprocess_diagnostic(
+                            run_dir, round_num, cmd, output,
+                            reason=(
+                                "BACKLOG DRAINED: all [ ] items checked off, "
+                                "but agent did not write CONVERGED — the correct "
+                                "next step is Phase 4 (verify every README claim, "
+                                "then write CONVERGED), not a zero-progress retry."
+                            ),
+                            attempt=attempt,
+                        )
+                        _attempt_sig = _failure_signature(
+                            "no-progress:BACKLOG DRAINED",
+                            returncode,
+                            f"unchecked={unchecked_remaining}",
+                        )
+                        # Fall through to the retry-registration path at
+                        # the end of the attempt loop.  The retry's prompt
+                        # will surface this as "BACKLOG DRAINED" and steer
+                        # the agent toward Phase 4 on the next attempt.
+                        # No need to evaluate the other no-progress signals —
+                        # they'd all fire as tautological consequences of
+                        # an empty queue + no edits.
                     # Any condition alone triggers zero-progress / memory-wipe / backlog retry
-                    if no_commit_msg or effective_imp_unchanged or memory_wiped or backlog_violated:
+                    elif no_commit_msg or effective_imp_unchanged or memory_wiped or backlog_violated:
                         no_progress_reasons: list[str] = []
                         if no_commit_msg:
                             no_progress_reasons.append(

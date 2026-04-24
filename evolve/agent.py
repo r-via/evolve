@@ -404,6 +404,37 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     if prev_crash:
         if "MEMORY WIPED" in prev_crash:
             prev_crash_section = _MEMORY_WIPED_HEADER_FMT.format(diagnostic=prev_crash)
+        elif "BACKLOG DRAINED" in prev_crash:
+            # The previous round legitimately had nothing to implement
+            # (every ``[ ]`` item already checked off) but the agent
+            # stopped short of Phase 4 — no CONVERGED written, no
+            # commit body, no edits.  The retry must NOT go fishing
+            # for something to do; the correct next step is Phase 4
+            # (verify README claims, then write CONVERGED).
+            prev_crash_section = (
+                f"\n## CRITICAL — Backlog drained, CONVERGED skipped\n"
+                f"The previous round's improvements.md has zero unchecked "
+                f"``[ ]`` items, yet you did not write ``CONVERGED``.  The "
+                f"round was not a failure — you had nothing to implement — "
+                f"but stopping without writing ``CONVERGED`` triggers the "
+                f"zero-progress retry loop.\n\n"
+                f"**This attempt MUST go straight to Phase 4:**\n\n"
+                f"1. Re-read the spec (README.md or ``--spec``) line by line.\n"
+                f"2. For EACH section / claim, confirm the implementation "
+                f"   actually exists and works.  Do NOT trust the ``[x]`` "
+                f"   checkboxes alone — walk the spec.\n"
+                f"3. If every claim checks out → write "
+                f"   ``{{run_dir}}/CONVERGED`` with a one-line justification "
+                f"   per documented gate.\n"
+                f"4. If ONE claim is not yet implemented → add exactly one "
+                f"   new ``[ ]`` US item for it (Winston → John → final-draft "
+                f"   pipeline per SPEC § 'Item format'), leave the backlog "
+                f"   non-empty, and skip CONVERGED (the next round picks it "
+                f"   up).\n\n"
+                f"Do NOT fabricate a filler improvement just to make the "
+                f"round look productive — that is worse than not converging.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
         elif "BACKLOG VIOLATION" in prev_crash:
             # Backlog discipline rule 1 (empty-queue gate) — see SPEC.md §
             # "Backlog discipline".  The previous attempt added a new `- [ ]`

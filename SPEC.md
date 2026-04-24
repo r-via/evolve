@@ -1408,6 +1408,29 @@ silently burn rounds until `max_rounds`. The debug retry now kicks in, and the
 agent receives a "CRITICAL — Previous round made NO PROGRESS" header
 instructing it to start with Edit/Write immediately and defer exploration.
 
+**Carve-out: backlog drained, ``CONVERGED`` skipped.**
+
+There is one case where ``imp_unchanged=True`` + ``no_commit_msg=True``
+is *not* a failure: every ``[ ]`` item in `improvements.md` has
+been checked off but the agent stopped short of writing
+``CONVERGED``.  The round had nothing to implement — the correct
+next step is Phase 4 (verify README claims, then converge), not a
+zero-progress retry that pushes the agent to fabricate filler
+work.
+
+The orchestrator detects this state — ``_count_unchecked(imp) ==
+0`` AND ``imp_unchanged`` AND no ``CONVERGED`` marker — and emits
+a dedicated ``BACKLOG DRAINED: all [ ] items checked off, but
+agent did not write CONVERGED`` diagnostic instead of the generic
+``NO PROGRESS`` one.  ``build_prompt`` in ``agent.py`` recognises
+the prefix and surfaces a ``## CRITICAL — Backlog drained,
+CONVERGED skipped`` section that steers the retry straight to
+Phase 4 (re-read the spec line by line, verify each claim, write
+``CONVERGED`` or add exactly one new US item covering a genuinely
+missing claim).  Explicit guard in the prompt: do NOT fabricate
+filler improvements to make the round look productive — that is
+worse than not converging.
+
 ### Per-turn cap as a granularity forcing function
 
 The Claude Agent SDK's `max_turns` parameter is set to a deliberately modest
