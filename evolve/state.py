@@ -22,19 +22,41 @@ from evolve.git import _git_show_at
 
 
 def _runs_base(project_dir: Path) -> Path:
-    """Return the canonical runs base directory for *project_dir*.
+    """Return the runs base directory for *project_dir*.
 
-    All evolve artifacts live under ``<project>/.evolve/runs/``.  This is
-    the single source of truth for the base path — no module should
-    hard-code ``"runs"`` as a path component.
+    Canonical location is ``<project>/.evolve/runs/`` per SPEC.md §
+    "The .evolve/ directory".  For backward compatibility during the
+    migration window — and for isolated test fixtures that haven't
+    adopted ``.evolve/`` — legacy ``<project>/runs/`` is accepted
+    as a fallback **only when it already exists on disk and the
+    canonical path does not**.  New creations always go to the
+    canonical location.
+
+    Resolution order:
+
+    1. If ``<project>/.evolve/runs/`` exists → canonical (primary).
+    2. Else if ``<project>/runs/`` exists → legacy (transition).
+    3. Else → canonical (pre-create target).
+
+    The ambiguous "both exist" case is handled by
+    ``_ensure_runs_layout`` which raises ``_RunsLayoutError`` and
+    asks the operator to reconcile — this helper simply returns the
+    canonical path in that case to avoid silent split-brain.
 
     Args:
         project_dir: Root directory of the project being evolved.
 
     Returns:
-        ``project_dir / ".evolve" / "runs"``
+        ``project_dir / ".evolve" / "runs"`` (canonical) or, in the
+        transition case, ``project_dir / "runs"`` (legacy).
     """
-    return project_dir / ".evolve" / "runs"
+    canonical = project_dir / ".evolve" / "runs"
+    legacy = project_dir / "runs"
+    if canonical.is_dir():
+        return canonical
+    if legacy.is_dir():
+        return legacy
+    return canonical
 
 
 class _RunsLayoutError(Exception):
