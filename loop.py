@@ -702,19 +702,31 @@ def _run_monitored_subprocess(
     reader_thread = threading.Thread(target=_reader, daemon=True)
     reader_thread.start()
 
+    # Check-in interval scales with ``watchdog_timeout`` — a 2-second
+    # test watchdog wakes up every 200ms while a 120-second production
+    # watchdog checks in every 1s.  We use ``proc.wait(timeout=...)``
+    # rather than ``time.sleep + poll``: wait() returns *immediately*
+    # when the subprocess exits (saving up to one interval per call)
+    # and raises ``TimeoutExpired`` only when the process is still
+    # alive at the deadline — at which point we check the silence
+    # watchdog.  Capped at 1.0s so CPU overhead stays negligible.
+    _wait_interval = min(1.0, max(0.1, watchdog_timeout / 10.0))
     stalled = False
-    while proc.poll() is None:
-        time.sleep(1)
-        with lock:
-            idle = time.monotonic() - last_activity
-        if idle > watchdog_timeout:
-            stalled = True
-            ui.warn(
-                f"Round {round_num} stalled ({int(idle)}s without output) "
-                "— killing subprocess"
-            )
-            proc.kill()
-            break
+    while True:
+        try:
+            proc.wait(timeout=_wait_interval)
+            break  # subprocess exited cleanly
+        except subprocess.TimeoutExpired:
+            with lock:
+                idle = time.monotonic() - last_activity
+            if idle > watchdog_timeout:
+                stalled = True
+                ui.warn(
+                    f"Round {round_num} stalled ({int(idle)}s without output) "
+                    "— killing subprocess"
+                )
+                proc.kill()
+                break
 
     reader_thread.join(timeout=5)
     output = "".join(output_lines)

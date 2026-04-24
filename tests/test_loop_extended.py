@@ -797,9 +797,12 @@ class TestRunMonitoredSubprocess:
 
     def test_successful_subprocess(self, tmp_path: Path):
         """A fast subprocess returns output and exit code 0."""
+        # watchdog_timeout=2 drops the poll interval to 200ms (vs 1s
+        # at the production default) — the ``print('hello')`` itself
+        # finishes in milliseconds but the poll loop paces the return.
         cmd = [self._python, "-c", "print('hello')"]
         returncode, output, stalled = _run_monitored_subprocess(
-            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=10,
+            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=2,
         )
         assert returncode == 0
         assert "hello" in output
@@ -809,7 +812,7 @@ class TestRunMonitoredSubprocess:
         """A subprocess that exits with error returns non-zero code."""
         cmd = [self._python, "-c", "import sys; print('boom'); sys.exit(42)"]
         returncode, output, stalled = _run_monitored_subprocess(
-            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=10,
+            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=2,
         )
         assert returncode == 42
         assert "boom" in output
@@ -817,10 +820,12 @@ class TestRunMonitoredSubprocess:
 
     def test_stalled_subprocess_killed(self, tmp_path: Path):
         """A subprocess producing no output is killed by the watchdog."""
-        # sleep for 60s but watchdog is 2s — should be killed quickly
+        # Sleep for 60s but watchdog is 1s.  Poll interval scales with
+        # watchdog, so kill happens ~1.1s after start — vs ~3s before
+        # the scaled poll was introduced.
         cmd = [self._python, "-c", "import time; time.sleep(60)"]
         returncode, output, stalled = _run_monitored_subprocess(
-            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=2,
+            cmd, str(tmp_path), self.ui, round_num=1, watchdog_timeout=1,
         )
         assert stalled is True
         self.ui.warn.assert_called_once()
