@@ -548,6 +548,17 @@ def evolve_loop(
     improvements_path = _runs_base(project_dir) / "improvements.md"
 
     _probe(f"evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
+    # Announce the two independent timing axes once at startup so the
+    # reader doesn't have to reconstruct them from scattered messages:
+    #   * check_timeout = hard ceiling on pre/post-check pytest runs.
+    #   * watchdog      = max stdout silence before SIGKILL on the
+    #                     round subprocess.  The round-wide heartbeat
+    #                     (every 30s) is what keeps this quiet; the
+    #                     axis is about silence, not elapsed time.
+    _probe(
+        f"timing axes — check_timeout: {timeout}s (pre/post), "
+        f"watchdog: {WATCHDOG_TIMEOUT}s silence, heartbeat: every 30s"
+    )
 
     # Load event hooks from project config
     hooks = load_hooks(project_dir)
@@ -1582,7 +1593,14 @@ def run_single_round(
     def _round_heartbeat():
         while not _round_heartbeat_stop.wait(30):
             elapsed = int(time.monotonic() - _round_start_time)
-            _probe(f"round {round_num} alive — {elapsed}s elapsed (watchdog: {WATCHDOG_TIMEOUT}s silence)")
+            # Only the elapsed wall clock — the watchdog's silence
+            # threshold is a different axis (it measures *stdout
+            # silence*, and this heartbeat line is precisely what
+            # keeps it quiet).  Mixing the two in one message
+            # implies a relationship that doesn't exist.  The
+            # watchdog config is announced once at orchestrator
+            # startup instead.
+            _probe(f"round {round_num} alive — {elapsed}s elapsed")
 
     _round_hb_thread = threading.Thread(target=_round_heartbeat, daemon=True)
     _round_hb_thread.start()
