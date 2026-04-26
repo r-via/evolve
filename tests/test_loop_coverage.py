@@ -1315,7 +1315,8 @@ class TestRunRounds:
         # Step 3: verify run_single_round would set agent.EFFORT
         original = _agent_mod.EFFORT
         try:
-            with patch("evolve.agent.analyze_and_fix"):
+            with patch("evolve.agent.analyze_and_fix"), \
+                 patch("evolve.agent.run_review_agent"):
                 run_single_round(
                     project_dir=project_dir,
                     round_num=1,

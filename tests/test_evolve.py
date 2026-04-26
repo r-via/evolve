@@ -769,10 +769,14 @@ class TestEffortFlag:
         """loop.run_single_round writes args.effort to agent.EFFORT."""
         import evolve.agent as _agent_mod
         original = _agent_mod.EFFORT
-        (tmp_path / "runs").mkdir()
+        runs_dir = tmp_path / "runs"
+        runs_dir.mkdir()
+        (runs_dir / "improvements.md").write_text("- [ ] [functional] placeholder\n")
+        (tmp_path / "README.md").write_text("# Test\n")
         try:
             from unittest.mock import patch as _patch
-            with _patch("evolve.agent.analyze_and_fix"):
+            with _patch("evolve.agent.analyze_and_fix"), \
+                 _patch("evolve.agent.run_review_agent"):
                 from evolve.orchestrator import run_single_round
                 run_single_round(
                     project_dir=tmp_path,
