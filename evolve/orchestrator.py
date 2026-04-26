@@ -1350,7 +1350,7 @@ def _run_rounds(
                             attempt=attempt,
                         )
                         ui.round_failed(round_num, 2)
-                        _fire_hook(hooks, "on_error", run_dir, round_num, "review_blocked")
+                        fire_hook(hooks, "on_error", session=session_name, round_num=round_num, status="review_blocked")
                         return  # exit _run_rounds → caller exits with code 2
                     elif review_verdict == "CHANGES REQUESTED":
                         _save_subprocess_diagnostic(
