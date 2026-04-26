@@ -623,3 +623,245 @@ class TestBuildPromptYoloAlias:
         run_dir.mkdir()
         prompt = build_prompt(tmp_path, yolo=True, run_dir=run_dir)
         assert "[needs-package]" not in prompt or "skipped" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# ResultMessage.subtype — authoritative termination signal
+# ---------------------------------------------------------------------------
+
+class TestResultMessageSubtype:
+    """Tests for SPEC § 'Authoritative termination signal from the SDK'."""
+
+    def test_run_claude_agent_returns_subtype_success(self, tmp_path: Path):
+        """run_claude_agent returns 'success' when ResultMessage.subtype='success'."""
+        from types import SimpleNamespace
+
+        result_msg = SimpleNamespace(
+            content=[],
+            usage=SimpleNamespace(
+                input_tokens=100, output_tokens=50,
+                cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            ),
+            subtype="success",
+            is_error=False,
+            num_turns=10,
+        )
+
+        async def fake_query(**kwargs):
+            yield result_msg
+
+        sdk_mod = MagicMock()
+        sdk_mod.ClaudeAgentOptions = MagicMock(return_value=MagicMock())
+        sdk_mod.query = fake_query
+        # Make isinstance checks work: ResultMessage must be the class
+        sdk_mod.ResultMessage = type(result_msg)
+        sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}):
+            from evolve.agent import run_claude_agent
+            import evolve.agent as _ag
+            _ag._patch_sdk_parser = lambda: None  # no-op
+
+            ui_mock = MagicMock()
+            with patch("evolve.agent.get_tui", return_value=ui_mock):
+                subtype = asyncio.run(run_claude_agent(
+                    "test prompt", tmp_path, round_num=1,
+                    run_dir=tmp_path,
+                ))
+
+        assert subtype == "success"
+        # ui.warn should NOT be called for success
+        for call in ui_mock.warn.call_args_list:
+            assert "Agent stopped" not in str(call)
+
+    def test_run_claude_agent_returns_subtype_error_max_turns(self, tmp_path: Path):
+        """run_claude_agent returns 'error_max_turns' and warns on is_error."""
+        from types import SimpleNamespace
+
+        result_msg = SimpleNamespace(
+            content=[],
+            usage=SimpleNamespace(
+                input_tokens=100, output_tokens=50,
+                cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            ),
+            subtype="error_max_turns",
+            is_error=True,
+            num_turns=40,
+        )
+
+        async def fake_query(**kwargs):
+            yield result_msg
+
+        sdk_mod = MagicMock()
+        sdk_mod.ClaudeAgentOptions = MagicMock(return_value=MagicMock())
+        sdk_mod.query = fake_query
+        sdk_mod.ResultMessage = type(result_msg)
+        sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}):
+            from evolve.agent import run_claude_agent
+            import evolve.agent as _ag
+            _ag._patch_sdk_parser = lambda: None
+
+            ui_mock = MagicMock()
+            with patch("evolve.agent.get_tui", return_value=ui_mock):
+                subtype = asyncio.run(run_claude_agent(
+                    "test prompt", tmp_path, round_num=1,
+                    run_dir=tmp_path,
+                ))
+
+        assert subtype == "error_max_turns"
+        # ui.warn should be called with the error signal
+        warn_calls = [str(c) for c in ui_mock.warn.call_args_list]
+        assert any("error_max_turns" in c for c in warn_calls)
+        assert any("40 turns" in c for c in warn_calls)
+
+    def test_run_claude_agent_returns_none_when_no_result_message(self, tmp_path: Path):
+        """When no ResultMessage is emitted, returns None gracefully."""
+        from types import SimpleNamespace
+
+        # An AssistantMessage without subtype
+        assistant_msg = SimpleNamespace(
+            content=[SimpleNamespace(text="hello", name=None)],
+        )
+        # Ensure it's not a ResultMessage
+        class FakeAssistant:
+            content = [SimpleNamespace(text="hello")]
+
+        async def fake_query(**kwargs):
+            yield FakeAssistant()
+
+        sdk_mod = MagicMock()
+        sdk_mod.ClaudeAgentOptions = MagicMock(return_value=MagicMock())
+        sdk_mod.query = fake_query
+        sdk_mod.ResultMessage = type("ResultMessage", (), {})
+        sdk_mod.AssistantMessage = FakeAssistant
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}):
+            from evolve.agent import run_claude_agent
+            import evolve.agent as _ag
+            _ag._patch_sdk_parser = lambda: None
+
+            ui_mock = MagicMock()
+            with patch("evolve.agent.get_tui", return_value=ui_mock):
+                subtype = asyncio.run(run_claude_agent(
+                    "test prompt", tmp_path, round_num=1,
+                    run_dir=tmp_path,
+                ))
+
+        assert subtype is None
+
+    def test_done_log_line_includes_subtype(self, tmp_path: Path):
+        """The Done: log line includes subtype= and num_turns= fields."""
+        from types import SimpleNamespace
+
+        result_msg = SimpleNamespace(
+            content=[],
+            usage=SimpleNamespace(
+                input_tokens=10, output_tokens=5,
+                cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            ),
+            subtype="error_max_turns",
+            is_error=True,
+            num_turns=60,
+        )
+
+        async def fake_query(**kwargs):
+            yield result_msg
+
+        sdk_mod = MagicMock()
+        sdk_mod.ClaudeAgentOptions = MagicMock(return_value=MagicMock())
+        sdk_mod.query = fake_query
+        sdk_mod.ResultMessage = type(result_msg)
+        sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}):
+            from evolve.agent import run_claude_agent
+            import evolve.agent as _ag
+            _ag._patch_sdk_parser = lambda: None
+
+            ui_mock = MagicMock()
+            with patch("evolve.agent.get_tui", return_value=ui_mock):
+                asyncio.run(run_claude_agent(
+                    "test prompt", tmp_path, round_num=1,
+                    run_dir=tmp_path,
+                ))
+
+        log_path = tmp_path / "conversation_loop_1.md"
+        log_text = log_path.read_text()
+        assert "subtype=error_max_turns" in log_text
+        assert "num_turns=60" in log_text
+
+    def test_analyze_and_fix_propagates_subtype(self, tmp_path: Path):
+        """analyze_and_fix returns the subtype from run_claude_agent."""
+        from evolve.agent import analyze_and_fix
+
+        (tmp_path / "README.md").write_text("# Spec")
+        run_dir = tmp_path / ".evolve" / "runs" / "session"
+        run_dir.mkdir(parents=True)
+
+        # Mock _run_agent_with_retries to return a known subtype
+        with patch("evolve.agent._run_agent_with_retries", return_value="error_max_turns"):
+            with patch("evolve.agent.build_prompt", return_value="prompt"):
+                result = analyze_and_fix(
+                    tmp_path, "ok", run_dir=run_dir, round_num=1,
+                )
+
+        assert result == "error_max_turns"
+
+    def test_analyze_and_fix_returns_none_on_no_sdk(self, tmp_path: Path):
+        """analyze_and_fix returns None when SDK is missing."""
+        from evolve.agent import analyze_and_fix
+
+        (tmp_path / "README.md").write_text("# Spec")
+        run_dir = tmp_path / ".evolve" / "runs" / "session"
+        run_dir.mkdir(parents=True)
+
+        with patch("evolve.agent._run_agent_with_retries", return_value=None):
+            with patch("evolve.agent.build_prompt", return_value="prompt"):
+                result = analyze_and_fix(
+                    tmp_path, "ok", run_dir=run_dir, round_num=1,
+                )
+
+        assert result is None
+
+
+class TestBuildPromptSubtypePrefixes:
+    """build_prompt handles MAX_TURNS: and SDK ERROR: diagnostic prefixes."""
+
+    def _setup_project(self, tmp_path: Path):
+        (tmp_path / "README.md").write_text("# Spec")
+        run_dir = tmp_path / ".evolve" / "runs" / "session"
+        run_dir.mkdir(parents=True)
+        return run_dir
+
+    def test_max_turns_prefix_renders_dedicated_header(self, tmp_path: Path):
+        """MAX_TURNS: prefix in diagnostic renders the max_turns header."""
+        run_dir = self._setup_project(tmp_path)
+        diag = run_dir / "subprocess_error_round_1.txt"
+        diag.write_text(
+            "MAX_TURNS: no COMMIT_MSG written AND "
+            "improvements.md byte-identical AND "
+            "SDK subtype=error_max_turns (attempt 1)"
+        )
+
+        prompt = build_prompt(
+            tmp_path, run_dir=run_dir, round_num=2,
+        )
+        assert "Agent hit max_turns cap" in prompt
+        assert "fix-only" in prompt.lower() or "Fix only" in prompt or "Start with Edit/Write immediately" in prompt
+
+    def test_sdk_error_prefix_renders_dedicated_header(self, tmp_path: Path):
+        """SDK ERROR: prefix in diagnostic renders the SDK error header."""
+        run_dir = self._setup_project(tmp_path)
+        diag = run_dir / "subprocess_error_round_1.txt"
+        diag.write_text(
+            "SDK ERROR: improvements.md byte-identical AND "
+            "SDK subtype=error_during_execution (attempt 1)"
+        )
+
+        prompt = build_prompt(
+            tmp_path, run_dir=run_dir, round_num=2,
+        )
+        assert "SDK execution error" in prompt
+        assert "error_during_execution" in prompt

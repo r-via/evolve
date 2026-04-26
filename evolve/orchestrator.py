@@ -948,10 +948,13 @@ def _check_review_verdict(run_dir: Path, round_num: int) -> tuple[str | None, st
     """Read the adversarial review file and return the verdict.
 
     Returns:
-        (verdict, high_findings) where verdict is one of
+        (verdict, findings) where verdict is one of
         "APPROVED", "CHANGES REQUESTED", "BLOCKED", or None (file absent),
-        and high_findings is the raw text of HIGH-severity findings
-        (empty string when verdict is APPROVED or None).
+        and findings is the raw text of HIGH and MEDIUM-severity findings
+        (empty string when verdict is APPROVED or None).  HIGH and MEDIUM
+        are both surfaced because the orchestrator auto-fixes them on the
+        next attempt — the operator never arbitrates findings manually
+        (SPEC § "Adversarial round review (Phase 3.6)").
     """
     review_path = run_dir / f"review_round_{round_num}.md"
     if not review_path.is_file():
@@ -975,20 +978,25 @@ def _check_review_verdict(run_dir: Path, round_num: int) -> tuple[str | None, st
             if verdict:
                 break
 
-    # Extract HIGH findings for diagnostic context
-    high_findings: list[str] = []
+    # Extract HIGH and MEDIUM findings for diagnostic context — both are
+    # auto-fixed on the next attempt.
+    findings: list[str] = []
     if verdict and verdict != "APPROVED":
-        in_high = False
+        in_finding = False
         for line in content.splitlines():
-            if "HIGH" in line and ("finding" in line.lower() or ":" in line or "-" in line[:5]):
-                in_high = True
-                high_findings.append(line.strip())
-            elif in_high and line.strip() and not line.startswith("#"):
-                high_findings.append(line.strip())
-            elif in_high and (line.startswith("#") or not line.strip()):
-                in_high = False
+            is_severity_header = (
+                ("HIGH" in line or "MEDIUM" in line)
+                and ("finding" in line.lower() or ":" in line or "-" in line[:5])
+            )
+            if is_severity_header:
+                in_finding = True
+                findings.append(line.strip())
+            elif in_finding and line.strip() and not line.startswith("#"):
+                findings.append(line.strip())
+            elif in_finding and (line.startswith("#") or not line.strip()):
+                in_finding = False
 
-    return verdict, "\n".join(high_findings)
+    return verdict, "\n".join(findings)
 
 
 def _run_curation_pass(
@@ -1338,35 +1346,48 @@ def _run_rounds(
                     review_verdict, review_findings = _check_review_verdict(
                         run_dir, round_num
                     )
-                    if review_verdict == "BLOCKED":
-                        _save_subprocess_diagnostic(
-                            run_dir, round_num, cmd, output,
-                            reason=(
+                    if review_verdict in ("BLOCKED", "CHANGES REQUESTED"):
+                        # SPEC § "Adversarial round review (Phase 3.6)":
+                        # both verdicts auto-retry to fix HIGH + MEDIUM
+                        # findings.  The operator never arbitrates manually —
+                        # the deterministic-loop guard below caps runaway
+                        # retries.  BLOCKED differs from CHANGES REQUESTED
+                        # only in severity volume (3+ HIGH or regression-risk
+                        # tag vs 1-2 HIGH), but the auto-fix protocol is the
+                        # same: feed the findings back to the next attempt
+                        # under a REVIEW: header.
+                        if review_verdict == "BLOCKED":
+                            reason = (
                                 f"REVIEW: blocked — adversarial review found "
                                 f"3+ HIGH findings or a [regression-risk] tag. "
-                                f"Operator intervention required.\n"
+                                f"Auto-fixing on next attempt.\n"
                                 f"{review_findings}"
-                            ),
-                            attempt=attempt,
-                        )
-                        ui.round_failed(round_num, 2)
-                        fire_hook(hooks, "on_error", session=session_name, round_num=round_num, status="review_blocked")
-                        return  # exit _run_rounds → caller exits with code 2
-                    elif review_verdict == "CHANGES REQUESTED":
+                            )
+                        else:
+                            reason = (
+                                f"REVIEW: changes requested — adversarial review "
+                                f"found HIGH/MEDIUM findings that must be addressed.\n"
+                                f"{review_findings}"
+                            )
                         _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
-                            reason=(
-                                f"REVIEW: changes requested — adversarial review "
-                                f"found 1-2 HIGH findings that must be addressed.\n"
-                                f"{review_findings}"
-                            ),
+                            reason=reason,
                             attempt=attempt,
+                        )
+                        fire_hook(
+                            hooks, "on_error",
+                            session=session_name, round_num=round_num,
+                            status=(
+                                "review_blocked"
+                                if review_verdict == "BLOCKED"
+                                else "review_changes_requested"
+                            ),
                         )
                         _attempt_sig = _failure_signature(
                             "no-progress:REVIEW", returncode, review_findings
                         )
                         # Fall through to retry registration — the next attempt
-                        # will see the REVIEW: prefix and address the HIGH findings.
+                        # sees the REVIEW: prefix and addresses the findings.
                         # Skip the normal zero-progress checks for this attempt.
                         if _attempt_sig:
                             _failure_signatures.append(_attempt_sig)
@@ -1377,6 +1398,15 @@ def _run_rounds(
                                 )
                                 return
                             continue  # next attempt
+
+                    # --- Read SDK subtype (authoritative termination signal) ---
+                    # SPEC § "Authoritative termination signal from the SDK":
+                    # the subtype written by _run_single_round_body is the
+                    # single source of truth for WHY the agent stopped.
+                    _subtype_path = run_dir / f"agent_subtype_round_{round_num}.txt"
+                    _agent_subtype: str | None = None
+                    if _subtype_path.is_file():
+                        _agent_subtype = _subtype_path.read_text().strip() or None
 
                     # --- Zero-progress detection ---
                     # 1. Check if improvements.md is byte-identical to pre-round snapshot
@@ -1683,12 +1713,32 @@ def _run_rounds(
                             )
                         reason_str = " AND ".join(no_progress_reasons)
                         # Diagnostic prefix priority: memory-wipe > backlog >
-                        # no-progress, so agent.py's prompt builder picks the
-                        # most specific dedicated header.
+                        # subtype-based > no-progress, so agent.py's prompt
+                        # builder picks the most specific dedicated header.
+                        #
+                        # Subtype-based branching per SPEC § "Authoritative
+                        # termination signal from the SDK":
+                        # - error_max_turns → MAX_TURNS prefix (fix-only retry)
+                        # - error_during_execution → SDK ERROR prefix
+                        # - success + imp_unchanged → genuine no-work path
                         if memory_wiped:
                             prefix = "MEMORY WIPED"
                         elif backlog_violated:
                             prefix = _BACKLOG_VIOLATION_PREFIX
+                        elif _agent_subtype == "error_max_turns":
+                            prefix = "MAX_TURNS"
+                            no_progress_reasons.append(
+                                "SDK subtype=error_max_turns — agent hit turn cap "
+                                "before finishing"
+                            )
+                            reason_str = " AND ".join(no_progress_reasons)
+                        elif _agent_subtype == "error_during_execution":
+                            prefix = "SDK ERROR"
+                            no_progress_reasons.append(
+                                "SDK subtype=error_during_execution — agent "
+                                "encountered an execution error"
+                            )
+                            reason_str = " AND ".join(no_progress_reasons)
                         else:
                             prefix = "NO PROGRESS"
                         _save_subprocess_diagnostic(
@@ -1709,15 +1759,47 @@ def _run_rounds(
                             round_succeeded = True
                             break
 
-                        # No progress — save diagnostic for retry
-                        _save_subprocess_diagnostic(
-                            run_dir, round_num, cmd, output,
-                            reason="no progress (agent ran but changed nothing)",
-                            attempt=attempt,
-                        )
-                        _attempt_sig = _failure_signature(
-                            "no-progress:silent", returncode, output
-                        )
+                        # Subtype-aware "silent no progress" path.
+                        # Per SPEC § "Authoritative termination signal from
+                        # the SDK": success + imp_unchanged is a genuine
+                        # "agent decided no work needed" signal (e.g.
+                        # backlog drained), NOT a turn-budget exhaustion.
+                        if _agent_subtype == "error_max_turns":
+                            _save_subprocess_diagnostic(
+                                run_dir, round_num, cmd, output,
+                                reason=(
+                                    "MAX_TURNS: agent hit turn cap without "
+                                    "making progress — target may be too "
+                                    "large, consider splitting"
+                                ),
+                                attempt=attempt,
+                            )
+                            _attempt_sig = _failure_signature(
+                                "no-progress:MAX_TURNS", returncode, output
+                            )
+                        elif _agent_subtype == "error_during_execution":
+                            _save_subprocess_diagnostic(
+                                run_dir, round_num, cmd, output,
+                                reason=(
+                                    "SDK ERROR: agent stopped with "
+                                    "error_during_execution — check SDK "
+                                    "error in output"
+                                ),
+                                attempt=attempt,
+                            )
+                            _attempt_sig = _failure_signature(
+                                "no-progress:SDK ERROR", returncode, output
+                            )
+                        else:
+                            # No progress — save diagnostic for retry
+                            _save_subprocess_diagnostic(
+                                run_dir, round_num, cmd, output,
+                                reason="no progress (agent ran but changed nothing)",
+                                attempt=attempt,
+                            )
+                            _attempt_sig = _failure_signature(
+                                "no-progress:silent", returncode, output
+                            )
 
                 # Register this attempt's signature with the circuit
                 # breaker — fires sys.exit(4) when the last
@@ -2240,11 +2322,12 @@ def _run_single_round_body(
     #
     # The orchestrator picks; the agent doesn't have to decide.
     current = _get_current_improvement(improvements_path, allow_installs=allow_installs)
+    agent_subtype: str | None = None
     if current:
         _probe(f"invoking implement agent — target: {current}")
         ui.agent_working()
         from evolve.agent import analyze_and_fix as _analyze_and_fix
-        _analyze_and_fix(
+        agent_subtype = _analyze_and_fix(
             project_dir=project_dir,
             check_output=check_output,
             check_cmd=check_cmd,
@@ -2254,7 +2337,15 @@ def _run_single_round_body(
             spec=spec,
             check_timeout=timeout,
         )
-        _probe("implement agent finished")
+        _probe(f"implement agent finished (subtype={agent_subtype})")
+
+        # Persist the subtype so the parent orchestrator (_run_rounds) can
+        # branch retry logic on the authoritative SDK signal rather than
+        # relying solely on indirect tells (missing COMMIT_MSG, imp_unchanged).
+        # See SPEC § "Authoritative termination signal from the SDK".
+        if agent_subtype:
+            subtype_path = rdir / f"agent_subtype_round_{round_num}.txt"
+            subtype_path.write_text(agent_subtype)
     else:
         _probe("backlog drained — invoking draft agent (Winston + John, Sonnet low)")
         ui.agent_working()

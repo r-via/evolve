@@ -539,6 +539,38 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
                 f"every other `- [ ]` line is checked off.\n"
                 f"```\n{prev_crash}\n```\n"
             )
+        elif "MAX_TURNS" in prev_crash:
+            # SDK subtype=error_max_turns — the agent hit the turn cap
+            # before finishing.  Per SPEC § "Authoritative termination
+            # signal from the SDK": retry with "fix-only, defer
+            # investigation" header.
+            prev_crash_section = (
+                f"\n## CRITICAL — Agent hit max_turns cap (error_max_turns)\n"
+                f"The previous attempt exhausted the SDK turn budget without "
+                f"finishing.  This means the target is too large for a single "
+                f"round or the agent spent too many turns on reconnaissance.\n\n"
+                f"**This attempt MUST:**\n\n"
+                f"1. Start with Edit/Write immediately — no Read/Grep exploration.\n"
+                f"2. Fix only the most critical remaining issue, then commit.\n"
+                f"3. If the target cannot be finished in one pass, commit a "
+                f"partial fix with a clear COMMIT_MSG describing what was done "
+                f"and what remains.\n"
+                f"4. Do NOT defer to the next round by doing nothing — make at "
+                f"least one meaningful edit.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
+        elif "SDK ERROR" in prev_crash:
+            # SDK subtype=error_during_execution — the agent hit an SDK
+            # error.  Surface it verbatim per SPEC § "Authoritative
+            # termination signal from the SDK".
+            prev_crash_section = (
+                f"\n## CRITICAL — Agent stopped with SDK execution error\n"
+                f"The previous attempt's Claude Agent SDK session ended with "
+                f"``subtype=error_during_execution``.  The SDK error is in the "
+                f"diagnostic below.  Diagnose and work around it — typically "
+                f"a tool permission issue or a malformed tool input.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
         elif "NO PROGRESS" in prev_crash:
             prev_crash_section = (
                 f"\n## CRITICAL — Previous round made NO PROGRESS\n"
@@ -827,7 +859,7 @@ async def run_claude_agent(
     run_dir: Path | None = None,
     log_filename: str | None = None,
     images: list[Path] | None = None,
-) -> None:
+) -> str | None:
     """Run Claude Code agent with the given prompt. Logs conversation to run_dir/.
 
     Streams SDK messages, deduplicates partial updates, and writes a
@@ -836,6 +868,13 @@ async def run_claude_agent(
     The prompt is passed as a **single string** — never a list-of-dicts.
     The underlying Claude Code CLI applies prompt caching natively on
     stable leading prefixes; see SPEC.md § "Prompt caching".
+
+    Returns:
+        The ``ResultMessage.subtype`` string (``"success"``,
+        ``"error_max_turns"``, ``"error_during_execution"``) from the
+        final ``ResultMessage`` emitted by the SDK, or ``None`` when no
+        ``ResultMessage`` was observed (e.g. SDK error before completion).
+        See SPEC.md § "Authoritative termination signal from the SDK".
 
     Args:
         prompt: The assembled system prompt for the agent.
@@ -883,6 +922,12 @@ async def run_claude_agent(
         _usage_output = 0
         _usage_cache_create = 0
         _usage_cache_read = 0
+        # Track the final ResultMessage's subtype — the authoritative
+        # termination signal per SPEC.md § "Authoritative termination
+        # signal from the SDK".  Updated on every ResultMessage so the
+        # last one wins.
+        final_subtype: str | None = None
+        final_num_turns: int | None = None
         # Track already-logged block IDs to skip duplicate partial messages.
         # With include_partial_messages=True, the same AssistantMessage is
         # re-emitted with progressively more content.  We keep the option
@@ -909,6 +954,12 @@ async def run_claude_agent(
                     continue
 
                 if isinstance(message, (AssistantMessage, ResultMessage)):
+                    # Capture ResultMessage termination signal — the
+                    # authoritative source per SPEC § "Authoritative
+                    # termination signal from the SDK".
+                    if isinstance(message, ResultMessage):
+                        final_subtype = getattr(message, "subtype", None)
+                        final_num_turns = getattr(message, "num_turns", None)
                     if not hasattr(message, "content") or not message.content:
                         continue
                     for block in message.content:
@@ -975,7 +1026,23 @@ async def run_claude_agent(
         except Exception as e:
             _log(f"\n> SDK error: {e}\n")
 
-        _log(f"\n---\n\n**Done**: {turn} messages, {tools_used} tool calls\n")
+        # Extended Done line with subtype per SPEC § "Authoritative
+        # termination signal from the SDK".
+        _done_parts = f"**Done**: {turn} messages, {tools_used} tool calls"
+        if final_subtype is not None:
+            _done_parts += f", subtype={final_subtype}"
+        if final_num_turns is not None:
+            _done_parts += f", num_turns={final_num_turns}"
+        _log(f"\n---\n\n{_done_parts}\n")
+
+        # Warn the operator in real time when the SDK signals an error
+        # termination (e.g. error_max_turns, error_during_execution).
+        _is_err = final_subtype is not None and final_subtype.startswith("error")
+        if _is_err:
+            _warn_msg = f"Agent stopped: {final_subtype}"
+            if final_num_turns is not None:
+                _warn_msg += f" after {final_num_turns} turns"
+            ui.warn(f"⚠ {_warn_msg}")
 
     # Write usage_round_N.json — always, even if counts are zero (the
     # aggregate_usage scanner expects the file to exist for tracked rounds).
@@ -996,6 +1063,7 @@ async def run_claude_agent(
         pass  # Non-fatal — usage tracking is observability, not control flow
 
     ui.agent_done(tools_used, str(log_path))
+    return final_subtype
 
 
 def _is_benign_runtime_error(e: RuntimeError) -> bool:
@@ -1035,11 +1103,16 @@ def analyze_and_fix(
     spec: str | None = None,
     yolo: bool | None = None,
     check_timeout: int = 20,
-) -> None:
+) -> str | None:
     """Run Claude opus agent to analyze and fix code.
 
     Builds a prompt, then invokes the agent with retry logic for rate limits
     and graceful handling of benign async teardown errors.
+
+    Returns:
+        The ``ResultMessage.subtype`` string from the SDK (``"success"``,
+        ``"error_max_turns"``, ``"error_during_execution"``) or ``None``.
+        See SPEC.md § "Authoritative termination signal from the SDK".
 
     Args:
         project_dir: Root directory of the project being evolved.
@@ -1078,12 +1151,12 @@ def analyze_and_fix(
     attempt_log_fname = f"conversation_loop_{round_num}_attempt_{current_attempt}.md"
 
     async def _run():
-        await run_claude_agent(
+        return await run_claude_agent(
             full_prompt, project_dir,
             round_num=round_num, run_dir=run_dir, log_filename=attempt_log_fname,
         )
 
-    _run_agent_with_retries(
+    subtype = _run_agent_with_retries(
         _run,
         fail_label="Claude Code agent",
         max_retries=max_retries,
@@ -1104,6 +1177,8 @@ def analyze_and_fix(
                 # per-attempt log is the source of truth; the copy is just
                 # convenience for downstream consumers.
                 pass
+
+    return subtype
 
 
 def _build_check_section(check_cmd: str | None, check_output: str) -> str:
@@ -1381,15 +1456,20 @@ def _run_agent_with_retries(
     *,
     fail_label: str = "Agent",
     max_retries: int = 5,
-) -> None:
+) -> str | None:
     """Shared retry loop for running an async agent function.
 
     Handles SDK import check, asyncio warning filters, benign teardown
     errors, and rate-limit backoff.  Callers supply the actual async
     callable (already bound to its arguments).
 
+    Returns:
+        The subtype string returned by the async function (typically from
+        ``run_claude_agent``), or ``None`` on failure / SDK absence.
+
     Args:
         async_fn: Zero-argument async callable that runs the agent.
+            May return a string (subtype) or None.
         fail_label: Label used in the failure warning message.
         max_retries: Maximum SDK call attempts on rate-limit errors.
     """
@@ -1398,7 +1478,7 @@ def _run_agent_with_retries(
         from claude_agent_sdk import query  # noqa: F401 — import check only
     except ImportError:
         ui.warn("claude-agent-sdk not installed, skipping agent")
-        return
+        return None
 
     import warnings
     warnings.filterwarnings("ignore", message=".*cancel scope.*")
@@ -1406,11 +1486,11 @@ def _run_agent_with_retries(
 
     for attempt in range(1, max_retries + 1):
         try:
-            asyncio.run(async_fn())
-            return
+            result = asyncio.run(async_fn())
+            return result
         except Exception as e:
             if isinstance(e, RuntimeError) and _is_benign_runtime_error(e):
-                return
+                return None
 
             wait = _should_retry_rate_limit(e, attempt, max_retries)
             if wait is not None:
@@ -1419,7 +1499,8 @@ def _run_agent_with_retries(
                 continue
 
             ui.warn(f"{fail_label} failed ({e})")
-            return
+            return None
+    return None
 
 
 def run_dry_run_agent(

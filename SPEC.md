@@ -286,7 +286,7 @@ instructions in one file.
 ├─ orchestrator parses review_round_N.md                       │
 │     APPROVED → proceed to Phase 4 convergence check          │
 │     CHANGES REQUESTED → retry with REVIEW: diagnostic        │
-│     BLOCKED → exit 2                                         │
+│     BLOCKED → retry with REVIEW: diagnostic (same auto-fix)  │
 │                                                              │
 └─ Phase 4 convergence (deterministic, no agent)               │
 ```
@@ -1992,9 +1992,19 @@ additional anomaly signal.
 
 | Verdict           | Condition                                                    | Action                                                                                                              |
 |-------------------|--------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
-| APPROVED          | 0 HIGH findings                                               | Round proceeds to Phase 4 convergence.                                                                              |
-| CHANGES REQUESTED | 1-2 HIGH findings                                             | Orchestrator writes `subprocess_error_round_{N}.txt` with a `REVIEW: changes requested` prefix listing the HIGH findings; triggers a debug retry (same mechanism as NO PROGRESS / MEMORY WIPED).  The retry reads the review and addresses each HIGH finding before re-committing. |
-| BLOCKED           | ≥ 3 HIGH findings, OR any finding tagged `[regression-risk]` | Orchestrator exits with code 2 surfacing the review summary.  Operator intervention required — the round needs a rewrite, not a patch list. |
+| APPROVED          | 0 HIGH findings AND 0 MEDIUM findings                         | Round proceeds to Phase 4 convergence.                                                                              |
+| CHANGES REQUESTED | 1-2 HIGH findings, OR any MEDIUM findings                     | Orchestrator writes `subprocess_error_round_{N}.txt` with a `REVIEW: changes requested` prefix listing the HIGH **and** MEDIUM findings; triggers a debug retry (same mechanism as NO PROGRESS / MEMORY WIPED).  The retry reads the review and addresses every HIGH and MEDIUM finding before re-committing. |
+| BLOCKED           | ≥ 3 HIGH findings, OR any finding tagged `[regression-risk]` | Same auto-retry path as CHANGES REQUESTED — orchestrator writes `subprocess_error_round_{N}.txt` with a `REVIEW: blocked` prefix and triggers a debug retry to auto-fix the findings.  The deterministic-loop guard (§ "Circuit breakers") caps runaway retries; the operator never arbitrates findings manually. |
+
+**Auto-fix invariant.**  Every HIGH and MEDIUM finding is auto-fixed
+by the next attempt — there is **no** verdict that drops the session
+into a "manual operator review" state.  Earlier versions exited with
+code 2 on BLOCKED; that path was removed because (a) operator
+arbitration is exactly the kind of manual loop evolve exists to
+eliminate, and (b) the circuit breaker / deterministic-loop guard
+already provides the safety net for genuinely unfixable findings.
+LOW findings are surfaced in the review file for the audit trail but
+do not gate the verdict — they are not auto-fixed inside the round.
 
 The `REVIEW:` diagnostic prefix is recognised by `build_prompt` in
 `agent.py` alongside the existing prefixes (NO PROGRESS, MEMORY
