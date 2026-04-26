@@ -77,6 +77,15 @@ MODEL = "claude-opus-4-6"
 #: config → default chain.
 EFFORT: str | None = "medium"
 
+#: Single, centralized turn budget passed to every ``claude_agent_sdk.query``
+#: callsite via ``ClaudeAgentOptions(max_turns=...)``.  Per SPEC.md §
+#: "Per-turn cap as a granularity forcing function" — modest enough to
+#: surface oversized targets, large enough that drafting / reviewing /
+#: implementing all fit comfortably in one round.  Override per-callsite
+#: only with explicit justification (the memory curator's single-shot
+#: protocol is the one documented exception).
+MAX_TURNS = 60
+
 
 # Prompt section emitted on a debug retry to hand the agent the previous
 # attempt's full conversation log — SPEC.md § "Retry continuity" rule (2).
@@ -843,7 +852,7 @@ async def run_claude_agent(
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         model=MODEL,
-        max_turns=40,
+        max_turns=MAX_TURNS,
         cwd=str(project_dir),
         disallowed_tools=["Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
@@ -1288,7 +1297,7 @@ async def _run_readonly_claude_agent(
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         model=MODEL,
-        max_turns=40,
+        max_turns=MAX_TURNS,
         cwd=str(project_dir),
         disallowed_tools=disallowed_tools,
         include_partial_messages=True,
@@ -1744,7 +1753,7 @@ async def _run_sync_readme_claude_agent(
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         model=MODEL,
-        max_turns=40,
+        max_turns=MAX_TURNS,
         cwd=str(project_dir),
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
@@ -1841,7 +1850,7 @@ def run_sync_readme_agent(
 #
 # SPEC.md § "Dedicated memory curation (Mira)" — between-rounds agent that
 # triages memory.md into KEEP / ARCHIVE / DELETE.  Uses Sonnet (cheap),
-# effort=low, max_turns=1.  See tasks/memory-curation.md for full protocol.
+# effort=low, max_turns=MAX_TURNS.  See tasks/memory-curation.md for full protocol.
 
 #: Sonnet model used by the curation agent (cheaper than Opus).
 _CURATION_MODEL = "claude-sonnet-4-20250514"
@@ -1985,7 +1994,7 @@ async def _run_memory_curation_claude_agent(
 ) -> None:
     """Run the Mira curation agent via the Claude SDK.
 
-    Uses Sonnet, effort=low, max_turns=1.  Only allows Write, Read, Grep,
+    Uses Sonnet, effort=low, max_turns=MAX_TURNS.  Only allows Write, Read, Grep,
     Glob tools — no Edit, Bash, or Agent.
     """
     _patch_sdk_parser()
@@ -1994,7 +2003,7 @@ async def _run_memory_curation_claude_agent(
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         model=_CURATION_MODEL,
-        max_turns=1,
+        max_turns=MAX_TURNS,
         cwd=str(project_dir),
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
@@ -2179,7 +2188,7 @@ def run_memory_curation(
 # SPEC § "Multi-call round architecture" — the drafting call.  Runs as a
 # dedicated SDK session when the backlog is drained, produces exactly one
 # new US item in improvements.md, and returns.  Sonnet 4.6 + effort=low +
-# max_turns=8 — tight budget by design.
+# max_turns=MAX_TURNS (centralized in agent.py module-level constant).
 
 #: Sonnet model ID used by the draft and review agents (cheap + fast).
 _DRAFT_REVIEW_MODEL = "claude-sonnet-4-6"
@@ -2227,7 +2236,7 @@ async def _run_draft_claude_agent(
 ) -> None:
     """Spawn the draft agent as a dedicated SDK call.
 
-    Sonnet 4.6, ``effort=low``, ``max_turns=8``.  Edit is allowed
+    Sonnet 4.6, ``effort=low``, ``max_turns=MAX_TURNS``.  Edit is allowed
     (needs to modify ``improvements.md``); Bash / Task / Agent /
     Web* are disallowed.
     """
@@ -2237,7 +2246,7 @@ async def _run_draft_claude_agent(
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         model=_DRAFT_REVIEW_MODEL,
-        max_turns=8,
+        max_turns=MAX_TURNS,
         cwd=str(project_dir),
         disallowed_tools=["Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
@@ -2377,7 +2386,7 @@ async def _run_review_claude_agent(
 ) -> None:
     """Spawn Zara as a dedicated SDK call.
 
-    Sonnet 4.6, ``effort=low``, ``max_turns=5``.  Write is allowed
+    Sonnet 4.6, ``effort=low``, ``max_turns=MAX_TURNS``.  Write is allowed
     (needs to create ``review_round_N.md``); Edit / Bash / Task /
     Agent / Web* are disallowed — review is write-once, not
     iterative editing of other files.
@@ -2388,7 +2397,7 @@ async def _run_review_claude_agent(
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         model=_DRAFT_REVIEW_MODEL,
-        max_turns=5,
+        max_turns=MAX_TURNS,
         cwd=str(project_dir),
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,

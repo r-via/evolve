@@ -1619,15 +1619,26 @@ worse than not converging.
 ### Per-turn cap as a granularity forcing function
 
 The Claude Agent SDK's `max_turns` parameter is set to a deliberately modest
-value (currently `40`). This is not primarily a safety bound — the
+value (currently `60`). This is not primarily a safety bound — the
 120s watchdog plays that role — but a forcing function that makes evolve's
 core concept ("one granular improvement per round") observable. An item that
-does not fit in 40 turns is a signal the item is too large and should be
+does not fit in 60 turns is a signal the item is too large and should be
 split; hitting the cap is therefore *expected* behavior for oversized
 targets, and it feeds directly into the zero-progress detection above, which
 triggers the debug retry with an instruction to split before retrying.
 Raising the cap to mask the signal would mask the granularity violation
 instead of fixing it.
+
+**Single source of truth.**  The cap is exposed as the module-level
+constant ``evolve.agent.MAX_TURNS`` and **every** ``claude_agent_sdk.query``
+callsite in ``evolve/agent.py`` (implement, draft, review, memory
+curator, and any future agent) MUST pass ``max_turns=MAX_TURNS``.  No
+per-callsite literal (``max_turns=8``, ``max_turns=1``, etc.) is
+permitted — divergent budgets per agent role were a maintenance hazard
+(stale doc comments, draft-too-tight bugs, no single knob to tune).
+Tests that assert the budget MUST import the constant rather than
+hard-coding a number, so the value can be tuned in one place without
+a sweeping diff.
 
 ### Authoritative termination signal from the SDK
 
@@ -2804,6 +2815,37 @@ pytest tests/
 # Run with coverage
 pytest tests/ --cov=evolve --cov-report=term-missing
 ```
+
+### Hard rule: source files MUST NOT exceed 500 lines
+
+Every file under ``evolve/`` (and any new code module added to the
+project) MUST be ≤ 500 lines.  This is a hard structural limit, not a
+soft suggestion: a file that crosses the threshold is a signal the
+module is doing too many things and MUST be split — either by extracting
+a coherent sub-responsibility into its own module, or by promoting an
+existing section (constants, helpers, dataclasses) into a sibling file.
+
+**Why 500 specifically.**  Files larger than ~500 lines exceed what can
+be held in working memory in one read, force agents (and humans) to
+navigate by grep instead of by reading top-to-bottom, and are the
+single strongest predictor of merge-conflict density and partial-edit
+bugs in this codebase.  ``evolve/agent.py`` historically grew past
+2 000 lines and was the source of repeated regressions where a fix in
+one section broke an unrelated section the editor had not seen — the
+500-line cap is the fix.
+
+**Scope.**  Applies to all ``*.py`` files under ``evolve/`` and
+``tests/``.  Generated files, fixtures embedded as data, and
+``SPEC.md`` itself are exempt.  Comments and blank lines count toward
+the total — wrapping a 600-line file in extra docstrings to dodge the
+limit defeats the rule.
+
+**Enforcement.**  A pre-commit / CI check counts non-empty + non-pure-comment
+lines per Python file under ``evolve/`` and ``tests/`` and fails the
+build on any file > 500.  The orchestrator's debug-retry diagnostics
+also surface a ``FILE TOO LARGE:`` header when a round leaves any
+``evolve/*.py`` file over the cap, so the next round picks up the split
+as its target instead of piling more code on top.
 
 ### Test coverage target
 
