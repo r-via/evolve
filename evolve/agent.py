@@ -2251,7 +2251,6 @@ async def _run_draft_claude_agent(
         disallowed_tools=["Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
         effort="low",
-        system_prompt=prompt,
     )
 
     log_path = run_dir / "draft_conversation.md"
@@ -2260,7 +2259,7 @@ async def _run_draft_claude_agent(
         log.write("# Draft Agent — Winston + John\n\n")
         seen_tool_ids: set[str] = set()
         try:
-            async for message in query(prompt="Draft the next US.", options=options):
+            async for message in query(prompt=prompt, options=options):
                 msg_type = type(message).__name__
                 if msg_type == "AssistantMessage":
                     for block in getattr(message, "content", []):
@@ -2402,7 +2401,6 @@ async def _run_review_claude_agent(
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
         effort="low",
-        system_prompt=prompt,
     )
 
     log_path = run_dir / f"review_conversation_round_{round_num}.md"
@@ -2411,7 +2409,7 @@ async def _run_review_claude_agent(
         log.write(f"# Review Agent — Zara — round {round_num}\n\n")
         seen_tool_ids: set[str] = set()
         try:
-            async for message in query(prompt="Perform the adversarial review.", options=options):
+            async for message in query(prompt=prompt, options=options):
                 msg_type = type(message).__name__
                 if msg_type == "AssistantMessage":
                     for block in getattr(message, "content", []):
