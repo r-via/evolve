@@ -86,6 +86,20 @@ EFFORT: str | None = "medium"
 #: protocol is the one documented exception).
 MAX_TURNS = 60
 
+#: Fixed reasoning-effort budget for the draft (Winston + John) call.  Per
+#: SPEC.md § "Multi-call round architecture" — the draft pipeline is
+#: bounded and near-deterministic (template-driven US emission); paying
+#: for ``medium``/``high``/``max`` reasoning here is wasted spend.  This
+#: constant is **spec-fixed** (not operator-tunable via CLI / env /
+#: ``evolve.toml``) and intentionally NOT mutated by ``_resolve_config``.
+DRAFT_EFFORT: str = "low"
+
+#: Fixed reasoning-effort budget for the review (Zara) call.  Same
+#: rationale as ``DRAFT_EFFORT``: review is a four-pass attack-plan with
+#: a strict verdict schema, not free-form ideation, so ``low`` is
+#: sufficient.  Spec-fixed; not operator-tunable.
+REVIEW_EFFORT: str = "low"
+
 
 # Prompt section emitted on a debug retry to hand the agent the previous
 # attempt's full conversation log — SPEC.md § "Retry continuity" rule (2).
@@ -2349,9 +2363,10 @@ async def _run_draft_claude_agent(
 ) -> None:
     """Spawn the draft agent as a dedicated SDK call.
 
-    Opus (centralized ``MODEL``), ``effort=EFFORT``, ``max_turns=MAX_TURNS``.  Edit is allowed
-    (needs to modify ``improvements.md``); Bash / Task / Agent /
-    Web* are disallowed.
+    Opus (centralized ``MODEL``), ``effort=DRAFT_EFFORT`` (spec-fixed at
+    ``"low"`` per SPEC § "Multi-call round architecture"), ``max_turns=MAX_TURNS``.
+    Edit is allowed (needs to modify ``improvements.md``); Bash / Task /
+    Agent / Web* are disallowed.
     """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -2363,7 +2378,7 @@ async def _run_draft_claude_agent(
         cwd=str(project_dir),
         disallowed_tools=["Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
-        effort=EFFORT,
+        effort=DRAFT_EFFORT,
     )
 
     log_path = run_dir / "draft_conversation.md"
@@ -2498,10 +2513,11 @@ async def _run_review_claude_agent(
 ) -> None:
     """Spawn Zara as a dedicated SDK call.
 
-    Opus (centralized ``MODEL``), ``effort=EFFORT``, ``max_turns=MAX_TURNS``.  Write is allowed
-    (needs to create ``review_round_N.md``); Edit / Bash / Task /
-    Agent / Web* are disallowed — review is write-once, not
-    iterative editing of other files.
+    Opus (centralized ``MODEL``), ``effort=REVIEW_EFFORT`` (spec-fixed at
+    ``"low"`` per SPEC § "Multi-call round architecture"), ``max_turns=MAX_TURNS``.
+    Write is allowed (needs to create ``review_round_N.md``); Edit /
+    Bash / Task / Agent / Web* are disallowed — review is write-once,
+    not iterative editing of other files.
     """
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -2513,7 +2529,7 @@ async def _run_review_claude_agent(
         cwd=str(project_dir),
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
-        effort=EFFORT,
+        effort=REVIEW_EFFORT,
     )
 
     log_path = run_dir / f"review_conversation_round_{round_num}.md"
