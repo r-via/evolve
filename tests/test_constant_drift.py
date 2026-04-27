@@ -69,18 +69,35 @@ class TestPrevAttemptLogFmt:
         assert "/tmp/conversation_loop_7_attempt_1.md" in out
 
     def test_call_site_no_longer_holds_duplicate_literal(self):
-        """agent.py must use the constant — not re-inline ``## Previous attempt log``."""
-        src = (REPO_ROOT / "evolve" / "agent.py").read_text()
-        # The constant's definition contributes exactly one occurrence of
-        # ``\n## Previous attempt log\n`` at module scope; the call site
-        # must route through .format() rather than duplicating the header.
-        count = src.count("## Previous attempt log")
-        assert count <= 1, (
-            f"agent.py contains {count} literal '## Previous attempt log' "
-            "strings — expected exactly 1 (the constant body). "
-            "Use _PREV_ATTEMPT_LOG_FMT.format(...) at the call site."
+        """The constant's owning + consuming modules must use it — not re-inline
+        ``## Previous attempt log``.
+
+        Post US-035 (agent.py split step 5), the constant lives in
+        ``evolve/prompt_builder.py`` and is re-exported from
+        ``evolve/agent.py``.  Both files are scanned: each may carry at
+        most one occurrence of the literal header (the constant body in
+        prompt_builder.py; zero in agent.py since the call site moved).
+        The ``.format(`` invocation must appear in at least one of the
+        two source files.
+        """
+        agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
+        pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
+        # Each owning file may legitimately carry at most one copy of the
+        # header (the constant body itself).  Re-inlining a second copy
+        # at the call site is the drift this test exists to catch.
+        for fname, src in (("agent.py", agent_src), ("prompt_builder.py", pb_src)):
+            count = src.count("## Previous attempt log")
+            assert count <= 1, (
+                f"{fname} contains {count} literal '## Previous attempt log' "
+                "strings — expected at most 1 (the constant body). "
+                "Use _PREV_ATTEMPT_LOG_FMT.format(...) at the call site."
+            )
+        # The .format() call must be present in at least one of the two
+        # files (post-extraction it lives in prompt_builder.py).
+        assert (
+            "_PREV_ATTEMPT_LOG_FMT.format(" in agent_src
+            or "_PREV_ATTEMPT_LOG_FMT.format(" in pb_src
         )
-        assert "_PREV_ATTEMPT_LOG_FMT.format(" in src
 
 
 # ---------------------------------------------------------------------------
@@ -151,15 +168,29 @@ class TestMemoryWipedHeaderFmt:
         assert out.startswith("\n## CRITICAL — Previous round silently wiped memory.md\n")
 
     def test_call_site_no_longer_holds_duplicate_literal(self):
-        """agent.py must branch via the constant, not re-inline the header."""
-        src = (REPO_ROOT / "evolve" / "agent.py").read_text()
-        count = src.count("silently wiped memory.md")
-        assert count <= 1, (
-            f"agent.py contains {count} literal 'silently wiped memory.md' "
-            "strings — expected exactly 1 (the constant body). "
-            "Use _MEMORY_WIPED_HEADER_FMT.format(...) at the branch site."
+        """The owning + consuming modules must branch via the constant.
+
+        Post US-035, the constant lives in ``evolve/prompt_builder.py``
+        and is re-exported from ``evolve/agent.py``.  Both files are
+        scanned: each may carry at most one literal occurrence (the
+        constant body in prompt_builder.py; zero in agent.py since the
+        branch site moved).
+        """
+        agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
+        pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
+        for fname, src in (("agent.py", agent_src), ("prompt_builder.py", pb_src)):
+            count = src.count("silently wiped memory.md")
+            assert count <= 1, (
+                f"{fname} contains {count} literal 'silently wiped memory.md' "
+                "strings — expected at most 1 (the constant body). "
+                "Use _MEMORY_WIPED_HEADER_FMT.format(...) at the branch site."
+            )
+        # The .format() call must be present in at least one of the two
+        # files (post-extraction it lives in prompt_builder.py).
+        assert (
+            "_MEMORY_WIPED_HEADER_FMT.format(" in agent_src
+            or "_MEMORY_WIPED_HEADER_FMT.format(" in pb_src
         )
-        assert "_MEMORY_WIPED_HEADER_FMT.format(" in src
 
 
 # ---------------------------------------------------------------------------
@@ -203,16 +234,25 @@ class TestMemorySectionRuntimeHeader:
     """
 
     def test_agent_source_no_longer_quotes_old_header(self):
-        src = (REPO_ROOT / "evolve" / "agent.py").read_text()
-        assert "errors from previous rounds" not in src, (
-            "agent.py still carries the pre-broadening memory section "
-            "header — update to 'cumulative learning log — read, then "
-            "append during your turn' per SPEC § 'memory.md'."
-        )
+        # Post US-035 the runtime memory section header lives in
+        # ``evolve/prompt_builder.py``.  Scan both files to catch any
+        # legacy quotation in either location.
+        agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
+        pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
+        for fname, src in (("agent.py", agent_src), ("prompt_builder.py", pb_src)):
+            assert "errors from previous rounds" not in src, (
+                f"{fname} still carries the pre-broadening memory section "
+                "header — update to 'cumulative learning log — read, then "
+                "append during your turn' per SPEC § 'memory.md'."
+            )
 
     def test_agent_source_carries_broadened_header(self):
-        src = (REPO_ROOT / "evolve" / "agent.py").read_text()
-        assert "cumulative learning log" in src
+        # Post US-035 the runtime memory section header lives in
+        # ``evolve/prompt_builder.py``.  At least one of the owning
+        # files must carry the broadened wording.
+        agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
+        pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
+        assert "cumulative learning log" in agent_src or "cumulative learning log" in pb_src
 
 
 # ---------------------------------------------------------------------------
