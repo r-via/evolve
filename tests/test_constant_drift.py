@@ -72,31 +72,42 @@ class TestPrevAttemptLogFmt:
         """The constant's owning + consuming modules must use it — not re-inline
         ``## Previous attempt log``.
 
-        Post US-035 (agent.py split step 5), the constant lives in
-        ``evolve/prompt_builder.py`` and is re-exported from
-        ``evolve/agent.py``.  Both files are scanned: each may carry at
-        most one occurrence of the literal header (the constant body in
-        prompt_builder.py; zero in agent.py since the call site moved).
-        The ``.format(`` invocation must appear in at least one of the
-        two source files.
+        Post US-035 the constant lived in ``evolve/prompt_builder.py``
+        re-exported from ``evolve/agent.py``.  Round 3 of session
+        20260427_203955 (Zara HIGH-1 audit fix) split the diagnostic
+        helpers further into ``evolve/prompt_diagnostics.py`` because
+        ``prompt_builder.py`` had grown to 723 lines (1.45× the SPEC §
+        "Hard rule" 500-line cap).  The 3-link re-export chain
+        (``agent`` → ``prompt_builder`` → ``prompt_diagnostics``) means
+        all THREE files are scanned: each may carry at most one
+        occurrence of the literal header (the constant body, post-
+        extraction in prompt_diagnostics.py; zero in the others).  The
+        ``.format(`` invocation must appear in at least one of the
+        three source files.
         """
         agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
+        pd_src = (REPO_ROOT / "evolve" / "prompt_diagnostics.py").read_text()
         # Each owning file may legitimately carry at most one copy of the
         # header (the constant body itself).  Re-inlining a second copy
         # at the call site is the drift this test exists to catch.
-        for fname, src in (("agent.py", agent_src), ("prompt_builder.py", pb_src)):
+        for fname, src in (
+            ("agent.py", agent_src),
+            ("prompt_builder.py", pb_src),
+            ("prompt_diagnostics.py", pd_src),
+        ):
             count = src.count("## Previous attempt log")
             assert count <= 1, (
                 f"{fname} contains {count} literal '## Previous attempt log' "
                 "strings — expected at most 1 (the constant body). "
                 "Use _PREV_ATTEMPT_LOG_FMT.format(...) at the call site."
             )
-        # The .format() call must be present in at least one of the two
-        # files (post-extraction it lives in prompt_builder.py).
+        # The .format() call must be present in at least one of the three
+        # files (post-audit-fix it lives in prompt_diagnostics.py).
         assert (
             "_PREV_ATTEMPT_LOG_FMT.format(" in agent_src
             or "_PREV_ATTEMPT_LOG_FMT.format(" in pb_src
+            or "_PREV_ATTEMPT_LOG_FMT.format(" in pd_src
         )
 
 
@@ -170,26 +181,36 @@ class TestMemoryWipedHeaderFmt:
     def test_call_site_no_longer_holds_duplicate_literal(self):
         """The owning + consuming modules must branch via the constant.
 
-        Post US-035, the constant lives in ``evolve/prompt_builder.py``
-        and is re-exported from ``evolve/agent.py``.  Both files are
-        scanned: each may carry at most one literal occurrence (the
-        constant body in prompt_builder.py; zero in agent.py since the
-        branch site moved).
+        Post US-035 the constant lived in ``evolve/prompt_builder.py``
+        re-exported from ``evolve/agent.py``.  Round 3 audit fix split
+        the diagnostic helpers further into
+        ``evolve/prompt_diagnostics.py``; all THREE files are scanned
+        (3-link chain ``agent`` → ``prompt_builder`` →
+        ``prompt_diagnostics``).  Each may carry at most one literal
+        occurrence (the constant body, post-extraction in
+        prompt_diagnostics.py; zero in the others since the branch
+        site also moved).
         """
         agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
-        for fname, src in (("agent.py", agent_src), ("prompt_builder.py", pb_src)):
+        pd_src = (REPO_ROOT / "evolve" / "prompt_diagnostics.py").read_text()
+        for fname, src in (
+            ("agent.py", agent_src),
+            ("prompt_builder.py", pb_src),
+            ("prompt_diagnostics.py", pd_src),
+        ):
             count = src.count("silently wiped memory.md")
             assert count <= 1, (
                 f"{fname} contains {count} literal 'silently wiped memory.md' "
                 "strings — expected at most 1 (the constant body). "
                 "Use _MEMORY_WIPED_HEADER_FMT.format(...) at the branch site."
             )
-        # The .format() call must be present in at least one of the two
-        # files (post-extraction it lives in prompt_builder.py).
+        # The .format() call must be present in at least one of the three
+        # files (post-audit-fix it lives in prompt_diagnostics.py).
         assert (
             "_MEMORY_WIPED_HEADER_FMT.format(" in agent_src
             or "_MEMORY_WIPED_HEADER_FMT.format(" in pb_src
+            or "_MEMORY_WIPED_HEADER_FMT.format(" in pd_src
         )
 
 
@@ -235,11 +256,17 @@ class TestMemorySectionRuntimeHeader:
 
     def test_agent_source_no_longer_quotes_old_header(self):
         # Post US-035 the runtime memory section header lives in
-        # ``evolve/prompt_builder.py``.  Scan both files to catch any
-        # legacy quotation in either location.
+        # ``evolve/prompt_builder.py``.  Round 3 audit fix added a
+        # third file (``prompt_diagnostics.py``) to the chain — scan
+        # all three to catch any legacy quotation in any location.
         agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
-        for fname, src in (("agent.py", agent_src), ("prompt_builder.py", pb_src)):
+        pd_src = (REPO_ROOT / "evolve" / "prompt_diagnostics.py").read_text()
+        for fname, src in (
+            ("agent.py", agent_src),
+            ("prompt_builder.py", pb_src),
+            ("prompt_diagnostics.py", pd_src),
+        ):
             assert "errors from previous rounds" not in src, (
                 f"{fname} still carries the pre-broadening memory section "
                 "header — update to 'cumulative learning log — read, then "
@@ -248,11 +275,17 @@ class TestMemorySectionRuntimeHeader:
 
     def test_agent_source_carries_broadened_header(self):
         # Post US-035 the runtime memory section header lives in
-        # ``evolve/prompt_builder.py``.  At least one of the owning
-        # files must carry the broadened wording.
+        # ``evolve/prompt_builder.py``.  At least one of the three owning
+        # files (agent / prompt_builder / prompt_diagnostics) must carry
+        # the broadened wording.
         agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
-        assert "cumulative learning log" in agent_src or "cumulative learning log" in pb_src
+        pd_src = (REPO_ROOT / "evolve" / "prompt_diagnostics.py").read_text()
+        assert (
+            "cumulative learning log" in agent_src
+            or "cumulative learning log" in pb_src
+            or "cumulative learning log" in pd_src
+        )
 
 
 # ---------------------------------------------------------------------------

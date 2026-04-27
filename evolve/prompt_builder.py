@@ -5,16 +5,27 @@ was 1226 lines (2.45× the cap).  This module hosts the four
 prompt-building symbols that dominated the file:
 
     _load_project_context          — shared spec + improvements loader
-    _detect_prior_round_anomalies  — anomaly scan over prior round artifacts
+    _detect_prior_round_anomalies  — anomaly scan over prior round artifacts (re-exported from prompt_diagnostics)
     build_prompt_blocks            — two-block (cached + uncached) prompt
     build_prompt                   — back-compat single-string wrapper
 
 Plus the supporting module-level constants:
 
     PromptBlocks                   — namedtuple(cached, uncached)
-    _PREV_ATTEMPT_LOG_FMT          — retry continuity section template
-    _MEMORY_WIPED_HEADER_FMT       — memory-wipe diagnostic template
-    _PRIOR_ROUND_ANOMALY_PATTERNS  — regex table for prior round audit
+    _PREV_ATTEMPT_LOG_FMT          — retry continuity section template (re-exported from prompt_diagnostics)
+    _MEMORY_WIPED_HEADER_FMT       — memory-wipe diagnostic template (re-exported from prompt_diagnostics)
+    _PRIOR_ROUND_ANOMALY_PATTERNS  — regex table for prior round audit (re-exported from prompt_diagnostics)
+
+Round 3 of session 20260427_203955 audit fix (HIGH-1 from Zara):
+``prompt_builder.py`` was itself 723 lines — 1.45× the SPEC § "Hard
+rule" cap that motivated US-035.  The diagnostic-section helpers and
+their constants are now re-exported from
+``evolve/prompt_diagnostics.py`` so that ``patch("evolve.agent.X")``
+test targets and the ``from evolve.agent import X`` imports continue
+to intercept (3-link re-export chain: ``agent`` →
+``prompt_builder`` → ``prompt_diagnostics``, mirroring the
+``agent`` → ``oneshot_agents`` → ``sync_readme`` chain established
+in US-034).
 
 Public symbols are re-exported from ``evolve.agent`` for backward
 compatibility with the existing test suite (``patch("evolve.agent.
@@ -24,8 +35,9 @@ late-binding import (``from evolve.agent import build_prompt`` inside
 ``_run_rounds``).
 
 Leaf-module invariant: this file imports ONLY from stdlib,
-``evolve.state`` (``_runs_base``, ``_is_needs_package``), and lazily
-``evolve.agent`` (for ``_detect_current_attempt`` only) and
+``evolve.state`` (``_runs_base``, ``_is_needs_package``),
+``evolve.prompt_diagnostics`` (sibling leaf module, no cycle), and
+lazily ``evolve.agent`` (for ``_detect_current_attempt`` only) and
 ``evolve.orchestrator`` (for ``WATCHDOG_TIMEOUT`` only).  The lazy
 ``evolve.agent`` import inside ``build_prompt_blocks`` preserves
 ``patch("evolve.agent._detect_current_attempt", ...)`` test
@@ -48,6 +60,26 @@ from pathlib import Path
 
 from evolve.state import _is_needs_package, _runs_base
 
+# Re-exports from the diagnostic-section sibling module.  These names
+# carry through to ``evolve.agent`` via the existing
+# ``from evolve.prompt_builder import (...)`` block in agent.py — keeping
+# the 3-link chain (``agent`` → ``prompt_builder`` →
+# ``prompt_diagnostics``) so existing test patches like
+# ``patch("evolve.agent._PREV_ATTEMPT_LOG_FMT")`` and
+# ``patch("evolve.agent._detect_prior_round_anomalies")`` continue to
+# intercept by ``is``-identity.  See sibling chain ``agent`` →
+# ``oneshot_agents`` → ``sync_readme`` (US-034) for the same
+# established pattern.
+from evolve.prompt_diagnostics import (  # noqa: F401 — re-exports
+    _PREV_ATTEMPT_LOG_FMT,
+    _MEMORY_WIPED_HEADER_FMT,
+    _PRIOR_ROUND_ANOMALY_PATTERNS,
+    _detect_prior_round_anomalies,
+    build_prev_crash_section,
+    build_prior_round_audit_section,
+    build_prev_attempt_section,
+)
+
 
 # Historical note: an earlier implementation tried to wire prompt
 # caching explicitly via ``ClaudeAgentOptions(system_prompt=[dict, dict])``
@@ -64,46 +96,6 @@ from evolve.state import _is_needs_package, _runs_base
 # correct — callers concatenate ``.cached + .uncached`` themselves,
 # never hand a list to the SDK.  See SPEC § "Prompt caching".
 PromptBlocks = namedtuple("PromptBlocks", ["cached", "uncached"])
-
-
-# Prompt section emitted on a debug retry to hand the agent the previous
-# attempt's full conversation log — SPEC.md § "Retry continuity" rule (2).
-# Kept as a module-level format constant so the single call site in
-# ``build_prompt_blocks`` and any future test / helper share the same
-# wording.  Format placeholders: ``{current}`` (current attempt number,
-# int), ``{round}`` (round number, int), ``{prior}`` (prior attempt
-# number, int), ``{log_path}`` (absolute path to the prior attempt's
-# log file).
-_PREV_ATTEMPT_LOG_FMT = (
-    "\n## Previous attempt log\n"
-    "This is attempt {current} of round {round}. "
-    "The full conversation log of attempt {prior} is at:\n\n"
-    "  {log_path}\n\n"
-    "**Read this file FIRST.** It contains everything the previous "
-    "attempt already discovered — the tool calls, the dead ends, the "
-    "working hypotheses. Do not redo that investigation. Continue "
-    "from where it stopped.\n"
-)
-
-
-# Diagnostic section emitted to the agent when the orchestrator detects a
-# >50% memory.md shrink without the ``memory: compaction`` marker in the
-# commit message — SPEC.md § "Byte-size sanity gate".  Kept as a
-# module-level format constant so the header wording cannot silently drift
-# between the prompt builder, the orchestrator's detection path
-# (``loop._MEMORY_COMPACTION_MARKER`` / ``_MEMORY_WIPE_THRESHOLD``), and
-# any future test / helper.  Single format placeholder: ``{diagnostic}``
-# (the raw diagnostic text from ``subprocess_error_round_N.txt``).
-_MEMORY_WIPED_HEADER_FMT = (
-    "\n## CRITICAL — Previous round silently wiped memory.md\n"
-    "The previous round shrank memory.md by more than 50% "
-    "without declaring `memory: compaction` in its commit "
-    "message. Memory is append-only below ~500 lines; "
-    "compaction requires the explicit COMMIT_MSG marker. "
-    "Do NOT repeat this — preserve existing entries and "
-    "append, do not rewrite or wipe sections.\n"
-    "```\n{diagnostic}\n```\n"
-)
 
 
 def _load_project_context(project_dir: Path, spec: str | None = None) -> dict[str, str]:
@@ -140,70 +132,6 @@ def _load_project_context(project_dir: Path, spec: str | None = None) -> dict[st
     improvements = improvements_path.read_text() if improvements_path.is_file() else None
 
     return {"readme": readme, "improvements": improvements}
-
-
-# Signature patterns for programmatic anomaly detection in the previous
-# round's conversation log.  Kept as module-level constants so the list
-# is easy to extend and the detection + prompt rendering stay aligned.
-# See SPEC.md § "Prior round audit".
-_PRIOR_ROUND_ANOMALY_PATTERNS: tuple[tuple[str, str], ...] = (
-    ("watchdog stall / SIGKILL", r"stalled \(\d+s without output\) — killing subprocess"),
-    ("subprocess killed by signal", r"Round \d+ failed \(exit -\d+\)"),
-    ("pre-check TIMEOUT", r"pre-check TIMEOUT after \d+s"),
-    ("frame capture error", r"Frame capture failed for [\w_]+: not well-formed"),
-    ("circuit breaker tripped (exit 4)", r"deterministic loop detected"),
-)
-
-
-def _detect_prior_round_anomalies(
-    run_dir: Path | None, round_num: int
-) -> list[str]:
-    """Scan artifacts of round ``round_num - 1`` for anomaly signals.
-
-    Returns a list of short human-readable tags ("watchdog stall /
-    SIGKILL", "post-fix check FAIL", etc.) describing any abnormal
-    behaviour in the prior round.  Used by ``build_prompt`` to render a
-    dedicated ``## Prior round audit`` section that forces the agent to
-    investigate before proceeding with the current target — SPEC.md §
-    "Prior round audit".
-
-    Non-anomalous prior rounds return an empty list and the section is
-    omitted from the prompt entirely.
-    """
-    if not run_dir or round_num <= 1:
-        return []
-    rdir = Path(run_dir)
-    prev = round_num - 1
-    anomalies: list[str] = []
-
-    # Signal 1 — orchestrator-level diagnostic exists.  Already surfaced
-    # via ``prev_crash_section``; tallied here so the audit shows the
-    # full picture instead of silently overlapping with prev_crash.
-    if (rdir / f"subprocess_error_round_{prev}.txt").is_file():
-        anomalies.append("orchestrator diagnostic present")
-
-    # Signal 2 — post-fix check reported FAIL.
-    check_file = rdir / f"check_round_{prev}.txt"
-    if check_file.is_file():
-        try:
-            text = check_file.read_text()
-            if "post-fix check: FAIL" in text:
-                anomalies.append("post-fix check FAIL")
-        except OSError:
-            pass
-
-    # Signals 3..N — regex matches in the prior round's conversation log.
-    convo_file = rdir / f"conversation_loop_{prev}.md"
-    if convo_file.is_file():
-        try:
-            text = convo_file.read_text()
-            for label, pattern in _PRIOR_ROUND_ANOMALY_PATTERNS:
-                if re.search(pattern, text):
-                    anomalies.append(label)
-        except OSError:
-            pass
-
-    return anomalies
 
 
 def build_prompt_blocks(
@@ -288,11 +216,9 @@ def build_prompt_blocks(
 
     # Previous round subprocess crash logs (orchestrator-level errors)
     prev_crash = ""
-    prev_crash_file = None
     if run_dir:
         for f in sorted(Path(run_dir).glob("subprocess_error_round_*.txt"), key=lambda p: int(re.search(r'_(\d+)\.txt$', p.name).group(1)), reverse=True):
             prev_crash = f.read_text()
-            prev_crash_file = f
             break
 
     # Determine the current attempt number for this run.  Uses the same
@@ -381,269 +307,21 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     target_section = f"Current target improvement: {current}" if current else "No improvements yet — create initial runs/improvements.md based on your analysis."
     memory_section = f"\n## Memory (cumulative learning log — read, then append during your turn)\n{memory}\n" if memory else ""
     prev_check_section = f"\n## Previous round check results\n{prev_check}\n" if prev_check else ""
-    if prev_crash:
-        if "MEMORY WIPED" in prev_crash:
-            prev_crash_section = _MEMORY_WIPED_HEADER_FMT.format(diagnostic=prev_crash)
-        elif "SCOPE CREEP" in prev_crash:
-            # Rebuild + implement in the same round — the Phase 2
-            # rebuild touched improvements.md AND the commit also
-            # modified non-improvements files.  The retry must split
-            # the work: commit ONLY the improvements.md rebuild this
-            # round; any implementation happens in the NEXT round's
-            # fresh agent.  See SPEC § "improvements.md" + Phase 2
-            # gate in prompts/system.md.
-            prev_crash_section = (
-                f"\n## CRITICAL — Scope creep: rebuild mixed with implementation\n"
-                f"The previous round added one or more new ``[ ]`` items "
-                f"to ``improvements.md`` AND modified non-improvements "
-                f"files (code / tests / docs) in the same commit.  That "
-                f"mixes two round kinds: Phase 2 backlog rebuild vs "
-                f"Phase 3 implementation.  Each is a round by itself.\n\n"
-                f"**This attempt MUST split the work:**\n\n"
-                f"1. ``git reset HEAD~1`` (if the commit went through; "
-                f"otherwise skip).\n"
-                f"2. Stage ONLY the ``improvements.md`` change (the "
-                f"rebuild / new US item).\n"
-                f"3. Discard the code / test / doc edits from the "
-                f"working tree — the NEXT round's fresh agent will "
-                f"re-derive them from the rebuilt backlog.\n"
-                f"4. Write ``COMMIT_MSG`` with ``chore(spec): rebuild "
-                f"backlog after spec change`` (or similar) and stop.\n\n"
-                f"Do NOT attempt to implement the new US item in this "
-                f"retry.  The rebuild round's purpose is to produce a "
-                f"clean commit boundary between planning and coding so "
-                f"the audit trail shows them as distinct actions.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        elif "BACKLOG DRAINED" in prev_crash:
-            # The previous round legitimately had nothing to implement
-            # (every ``[ ]`` item already checked off) but the agent
-            # stopped short of Phase 4 — no CONVERGED written, no
-            # commit body, no edits.  The retry must NOT go fishing
-            # for something to do; the correct next step is Phase 4
-            # (verify README claims, then write CONVERGED).
-            prev_crash_section = (
-                f"\n## CRITICAL — Backlog drained, CONVERGED skipped\n"
-                f"The previous round's improvements.md has zero unchecked "
-                f"``[ ]`` items, yet you did not write ``CONVERGED``.  The "
-                f"round was not a failure — you had nothing to implement — "
-                f"but stopping without writing ``CONVERGED`` triggers the "
-                f"zero-progress retry loop.\n\n"
-                f"**This attempt MUST go straight to Phase 4:**\n\n"
-                f"1. Re-read the spec (README.md or ``--spec``) line by line.\n"
-                f"2. For EACH section / claim, confirm the implementation "
-                f"   actually exists and works.  Do NOT trust the ``[x]`` "
-                f"   checkboxes alone — walk the spec.\n"
-                f"3. If every claim checks out → write "
-                f"   ``{{run_dir}}/CONVERGED`` with a one-line justification "
-                f"   per documented gate.\n"
-                f"4. If ONE claim is not yet implemented → add exactly one "
-                f"   new ``[ ]`` US item for it (Winston → John → final-draft "
-                f"   pipeline per SPEC § 'Item format'), leave the backlog "
-                f"   non-empty, and skip CONVERGED (the next round picks it "
-                f"   up).\n\n"
-                f"Do NOT fabricate a filler improvement just to make the "
-                f"round look productive — that is worse than not converging.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        elif "BACKLOG VIOLATION" in prev_crash:
-            # Backlog discipline rule 1 (empty-queue gate) — see SPEC.md §
-            # "Backlog discipline".  The previous attempt added a new `- [ ]`
-            # item to improvements.md while at least one other `- [ ]` item
-            # was still pending.  Tell the agent to remove the freshly added
-            # item(s) and let the queue drain before adding anything new.
-            prev_crash_section = (
-                f"\n## CRITICAL — Backlog discipline violation: "
-                f"new item added while queue non-empty\n"
-                f"The previous attempt added one or more new `- [ ]` items "
-                f"to runs/improvements.md while at least one other `- [ ]` "
-                f"item was still pending.  Per SPEC.md § 'Backlog discipline' "
-                f"rule 1 (empty-queue gate), new items may ONLY be added when "
-                f"the queue is genuinely empty.  This attempt MUST: (1) "
-                f"remove the freshly added unchecked item(s) from "
-                f"runs/improvements.md, (2) keep working the existing "
-                f"current target, and (3) NOT add any replacement item until "
-                f"every other `- [ ]` line is checked off.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        elif "MAX_TURNS" in prev_crash:
-            # SDK subtype=error_max_turns — the agent hit the turn cap
-            # before finishing.  Per SPEC § "Authoritative termination
-            # signal from the SDK": retry with "fix-only, defer
-            # investigation" header.
-            prev_crash_section = (
-                f"\n## CRITICAL — Agent hit max_turns cap (error_max_turns)\n"
-                f"The previous attempt exhausted the SDK turn budget without "
-                f"finishing.  This means the target is too large for a single "
-                f"round or the agent spent too many turns on reconnaissance.\n\n"
-                f"**This attempt MUST:**\n\n"
-                f"1. Start with Edit/Write immediately — no Read/Grep exploration.\n"
-                f"2. Fix only the most critical remaining issue, then commit.\n"
-                f"3. If the target cannot be finished in one pass, commit a "
-                f"partial fix with a clear COMMIT_MSG describing what was done "
-                f"and what remains.\n"
-                f"4. Do NOT defer to the next round by doing nothing — make at "
-                f"least one meaningful edit.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        elif "SDK ERROR" in prev_crash:
-            # SDK subtype=error_during_execution — the agent hit an SDK
-            # error.  Surface it verbatim per SPEC § "Authoritative
-            # termination signal from the SDK".
-            prev_crash_section = (
-                f"\n## CRITICAL — Agent stopped with SDK execution error\n"
-                f"The previous attempt's Claude Agent SDK session ended with "
-                f"``subtype=error_during_execution``.  The SDK error is in the "
-                f"diagnostic below.  Diagnose and work around it — typically "
-                f"a tool permission issue or a malformed tool input.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        elif "NO PROGRESS" in prev_crash:
-            prev_crash_section = (
-                f"\n## CRITICAL — Previous round made NO PROGRESS\n"
-                f"The previous round ended without making meaningful changes. "
-                f"Start with Edit/Write immediately and defer exploration.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        elif "REVIEW:" in prev_crash:
-            # Adversarial review verdict routing (SPEC § "Adversarial round
-            # review (Phase 3.6)").  The previous attempt's adversarial
-            # review produced HIGH findings that must be addressed before
-            # the round can proceed.
-            prev_crash_section = (
-                f"\n## CRITICAL — Previous attempt failed adversarial review\n"
-                f"The adversarial reviewer (Zara) found HIGH-severity findings "
-                f"in the previous attempt's work. You MUST address each HIGH "
-                f"finding listed below before re-committing. Read the review "
-                f"file (`review_round_N.md` in the run directory) for full "
-                f"context, then fix each finding and re-run the adversarial "
-                f"review.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        elif "FILE TOO LARGE" in prev_crash:
-            prev_crash_section = (
-                f"\n## CRITICAL — File too large\n"
-                f"The previous round left one or more ``evolve/*.py`` or "
-                f"``tests/*.py`` files over the 500-line hard limit "
-                f"(SPEC.md § 'Hard rule: source files MUST NOT exceed "
-                f"500 lines').  Your **primary task this round** is to "
-                f"split the largest offending file into smaller modules "
-                f"(each ≤ 500 lines).  Extract a coherent sub-"
-                f"responsibility into its own module, update imports, and "
-                f"verify tests still pass.\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        elif "PREMATURE CONVERGED" in prev_crash:
-            # Convergence-gate orchestrator backstop (SPEC.md § "Convergence").
-            # The previous round wrote CONVERGED but the orchestrator's
-            # independent re-verification of the two documented gates
-            # rejected it. The agent MUST address the listed gate
-            # violations (rebuild stale backlog, or resolve unresolved
-            # `- [ ]` items) before attempting to write CONVERGED again.
-            prev_crash_section = (
-                f"\n## CRITICAL — Premature CONVERGED\n"
-                f"The previous round wrote CONVERGED but the orchestrator's "
-                f"convergence-gate backstop found unresolved gates "
-                f"(SPEC.md § 'Convergence'). Do NOT write CONVERGED again "
-                f"until the listed gate violation(s) below are resolved: "
-                f"rebuild any ``[stale: spec changed]`` items from the "
-                f"current spec, and close every unchecked ``- [ ]`` item "
-                f"(or tag it with ``[needs-package]`` or "
-                f"``[blocked: ...]``).\n"
-                f"```\n{prev_crash}\n```\n"
-            )
-        else:
-            prev_crash_section = f"\n## CRITICAL — Previous round CRASHED (fix this first!)\n```\n{prev_crash}\n```\n"
-    else:
-        prev_crash_section = ""
 
-    # Prior round audit — scan the previous round's artifacts for
-    # anomaly signals (watchdog stalls, SIGKILL, pre-check timeouts,
-    # frame capture errors, circuit-breaker trips, post-fix FAIL).  When
-    # any signal is present, surface a dedicated section at the top of
-    # the prompt instructing the agent to investigate those anomalies
-    # before touching the backlog.  See SPEC.md § "Prior round audit".
-    prior_anomalies = _detect_prior_round_anomalies(run_dir, round_num)
-    if prior_anomalies:
-        prev = round_num - 1
-        prior_round_audit_section = (
-            f"\n## Prior round audit — Round {prev} showed anomalies\n"
-            f"Before doing ANY backlog work this round, investigate and "
-            f"resolve the anomalies listed below.  They are programmatic "
-            f"signals from round {prev}'s artifacts "
-            f"(``subprocess_error_round_{prev}.txt``, "
-            f"``check_round_{prev}.txt``, "
-            f"``conversation_loop_{prev}.md``).\n\n"
-            f"**Anomalies detected ({len(prior_anomalies)}):**\n"
-            + "\n".join(f"- {a}" for a in prior_anomalies)
-            + "\n\n"
-            f"**Action required (in order):**\n"
-            f"1. Open the three artifacts above and read the relevant "
-            f"excerpts.\n"
-            f"2. Identify the root cause of each anomaly.  Examples: a "
-            f"flaky test hanging pytest, a bad import breaking a "
-            f"subprocess, a non-deterministic fixture exceeding the "
-            f"watchdog, a malformed subprocess output corrupting frame "
-            f"capture.\n"
-            f"3. Apply the fix NOW — edit the offending code/test/"
-            f"config before touching the current improvement target.  "
-            f"Commit the audit fix with a ``fix(audit):`` prefix in "
-            f"COMMIT_MSG so the round history shows that the round's "
-            f"primary work was prior-round remediation.\n"
-            f"4. Only after the audit fix is committed and verified may "
-            f"you proceed with the current target.\n"
-            f"5. If an anomaly is genuinely unfixable (e.g. a known "
-            f"flaky external service) and does not block progress, "
-            f"document it in ``runs/memory.md`` under a new "
-            f"``## Known anomalies`` section with the signature and "
-            f"why it is being deferred — so future rounds don't "
-            f"re-investigate the same known-benign signal.\n"
-        )
-    else:
-        prior_round_audit_section = ""
+    # Diagnostic-section dispatch — extracted to evolve/prompt_diagnostics.py
+    # (round 3 of 20260427_203955 audit fix; addresses Zara HIGH-1 review
+    # finding that this file was 723 lines, > 500-line SPEC cap).
+    prev_crash_section = build_prev_crash_section(prev_crash)
 
-    # Retry continuity: when this run is a debug retry (attempt > 1), surface
-    # the previous attempt's full conversation log so the agent can continue
-    # from where it stopped instead of restarting the investigation.  The
-    # diagnostic in `prev_crash_section` is only the last 3000 chars of
-    # output; the full per-attempt log holds every tool call, dead end, and
-    # working hypothesis.  See SPEC.md § "Retry continuity" rule (2).
-    prev_attempt_section = ""
-    if current_attempt > 1 and run_dir:
-        prior_k = current_attempt - 1
-        prior_log = Path(run_dir) / f"conversation_loop_{round_num}_attempt_{prior_k}.md"
-        if prior_log.is_file():
-            # Skip the prior-attempt retry-continuity section when the
-            # prior log is trivially empty.  The ``_PREV_ATTEMPT_LOG_FMT``
-            # template tells the agent to "Read this file FIRST" — a
-            # dutiful instruction that turns into noise when the file
-            # contains only a header or no tool calls at all (e.g. the
-            # prior attempt was killed by scope-creep detection or the
-            # circuit breaker before it produced any reusable trace).
-            # The user-visible symptom was every round starting with
-            # "Prior attempt log is empty (1 line). No useful context
-            # to reuse." — pure prompt overhead.
-            #
-            # Heuristic: a log under 500 bytes OR with no tool-call
-            # markers (``**Read**:``, ``**Edit**:``, ``**Bash**:`` …)
-            # is trivially empty and skipped.
-            try:
-                content = prior_log.read_text()
-            except OSError:
-                content = ""
-            has_tool_calls = any(
-                marker in content for marker in (
-                    "**Read**:", "**Edit**:", "**Write**:",
-                    "**Bash**:", "**Grep**:", "**Glob**:",
-                )
-            )
-            if len(content) >= 500 and has_tool_calls:
-                prev_attempt_section = _PREV_ATTEMPT_LOG_FMT.format(
-                    current=current_attempt,
-                    round=round_num,
-                    prior=prior_k,
-                    log_path=prior_log,
-                )
+    # Prior round audit section — moved to prompt_diagnostics.py for the
+    # same audit-fix split.  Internal scan is preserved verbatim.
+    prior_round_audit_section = build_prior_round_audit_section(run_dir, round_num)
+
+    # Retry continuity: when this run is a debug retry (attempt > 1), the
+    # helper surfaces the previous attempt's full conversation log when
+    # one exists and contains useful tool-call traces.  See SPEC.md §
+    # "Retry continuity" rule (2).
+    prev_attempt_section = build_prev_attempt_section(run_dir, round_num, current_attempt)
 
     check_section = ""
     if check_cmd and check_output:

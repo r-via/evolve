@@ -60,6 +60,14 @@ from evolve.prompt_builder import (  # noqa: F401 — re-exports for back-compat
     _detect_prior_round_anomalies,
     build_prompt_blocks,
     build_prompt,
+    # Round-3 audit-fix helpers extracted further into
+    # ``evolve/prompt_diagnostics.py`` — re-export through the 3-link
+    # chain (``agent`` → ``prompt_builder`` → ``prompt_diagnostics``)
+    # so ``patch("evolve.agent.<X>")`` continues to intercept by
+    # ``is``-identity.
+    build_prev_crash_section,
+    build_prior_round_audit_section,
+    build_prev_attempt_section,
 )
 
 
