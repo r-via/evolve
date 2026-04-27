@@ -190,7 +190,9 @@ class TestOrchestratorRouting:
 
         assert called["draft"] == 1
         assert called["implement"] == 0
-        assert called["review"] == 1
+        # Review is SKIPPED on draft rounds — SPEC § "Adversarial round
+        # review (Phase 3.6)": "Zara is skipped on draft rounds".
+        assert called["review"] == 0
 
 
 class TestReviewAgentErrorIsolation:
