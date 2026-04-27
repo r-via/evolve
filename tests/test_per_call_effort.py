@@ -23,16 +23,34 @@ import pytest
 
 import evolve.agent as agent_mod
 import evolve.draft_review as draft_review_mod
+import evolve.memory_curation as memory_curation_mod
+import evolve.oneshot_agents as oneshot_agents_mod
+import evolve.spec_archival as spec_archival_mod
 from evolve.agent import DRAFT_EFFORT, REVIEW_EFFORT
 
 
 AGENT_SRC = (Path(agent_mod.__file__)).read_text()
 # US-032 extracted the draft/review SDK callsites into evolve/draft_review.py.
-# Source-grep assertions that previously scanned only agent.py now scan both
-# files so the per-call ``effort=DRAFT_EFFORT`` / ``effort=REVIEW_EFFORT``
-# kwargs are still locked even though they live in a sibling module.
+# US-033 extracted the dry-run / validate / diff / sync-readme SDK
+# callsites into evolve/oneshot_agents.py.  Earlier US-031 extracted the
+# memory curation callsite into evolve/memory_curation.py and round 6
+# extracted SPEC archival into evolve/spec_archival.py.  Source-grep
+# assertions that previously scanned only agent.py now scan the union of
+# the agent.py implement path + every extracted sibling so the per-call
+# ``effort=DRAFT_EFFORT`` / ``effort=REVIEW_EFFORT`` and the session-wide
+# ``effort=EFFORT`` kwargs are still locked even though they live in
+# sibling modules.
 DRAFT_REVIEW_SRC = (Path(draft_review_mod.__file__)).read_text()
-COMBINED_SRC = AGENT_SRC + "\n" + DRAFT_REVIEW_SRC
+ONESHOT_AGENTS_SRC = (Path(oneshot_agents_mod.__file__)).read_text()
+MEMORY_CURATION_SRC = (Path(memory_curation_mod.__file__)).read_text()
+SPEC_ARCHIVAL_SRC = (Path(spec_archival_mod.__file__)).read_text()
+COMBINED_SRC = (
+    AGENT_SRC + "\n"
+    + DRAFT_REVIEW_SRC + "\n"
+    + ONESHOT_AGENTS_SRC + "\n"
+    + MEMORY_CURATION_SRC + "\n"
+    + SPEC_ARCHIVAL_SRC
+)
 
 
 @pytest.mark.parametrize(
@@ -77,23 +95,27 @@ def test_draft_and_review_call_sites_use_dedicated_constants(kwarg_marker):
 
 
 def test_implement_path_still_uses_EFFORT_global():
-    """The implement / sync-readme / dry-run / validate / curation paths
-    keep ``effort=EFFORT`` so the operator's ``--effort`` flag still
-    tunes them.  After the per-call override, at least 3 kwarg sites
-    in agent.py still bind ``effort=EFFORT`` (analyze_and_fix, readonly
-    agent for dry-run/validate/diff, sync-readme).
+    """The implement / sync-readme / dry-run / validate / curation /
+    archival paths keep ``effort=EFFORT`` so the operator's ``--effort``
+    flag still tunes them.  After every extraction, the kwarg sites are
+    spread across ``evolve/agent.py`` (implement path) + the extracted
+    sibling modules (``oneshot_agents`` for readonly + sync-readme,
+    ``memory_curation`` for Mira, ``spec_archival`` for Sid).  The
+    union must contain at least 3 ``effort=EFFORT`` kwarg bindings.
     """
-    # Count is the surviving kwarg sites in agent.py.  Pre-US-032 there
-    # were also docstring/comment references in the multi-call section
-    # header which inflated the count by 1 — that section was removed
-    # when the draft/review SDK callsites were extracted to
-    # ``evolve/draft_review.py`` (US-032), so the floor drops to 3.
-    # See the existing ``>= 3`` assertion in test_evolve.py for the
-    # canonical lower bound.
-    assert AGENT_SRC.count("effort=EFFORT") >= 3, (
-        "agent.py must keep effort=EFFORT for implement / dry-run / "
-        "validate / sync-readme paths so --effort still tunes them "
-        "per SPEC § 'The --effort flag'."
+    # Pre-US-033 there were 3 kwarg sites in agent.py alone
+    # (analyze_and_fix, readonly, sync-readme).  US-033 extracted
+    # readonly + sync-readme into ``evolve/oneshot_agents.py``, leaving
+    # only ``analyze_and_fix`` in agent.py — so the assertion now scans
+    # the union of agent.py + every extracted sibling that hosts an
+    # ``effort=EFFORT`` callsite.  Floor stays at 3 (analyze_and_fix +
+    # readonly + sync-readme); curation + archival add 2 more for a
+    # total of 5 in practice.
+    assert COMBINED_SRC.count("effort=EFFORT") >= 3, (
+        "evolve/agent.py + every extracted sibling combined must keep "
+        "effort=EFFORT for implement / dry-run / validate / sync-readme "
+        "/ curation / archival paths so --effort still tunes them per "
+        "SPEC § 'The --effort flag'."
     )
 
 
