@@ -727,14 +727,21 @@ class TestEffortFlag:
             "for the --effort flag plumbing to work"
         )
 
-        # Verify agent.py passes EFFORT=... to each of its SDK invocation sites.
-        agent_src = (Path(__file__).parent.parent / "evolve" / "agent.py").read_text()
-        # Count invocations: analyze_and_fix (run_claude_agent), _run_readonly_claude_agent,
-        # _run_party_agent_async (via run_claude_agent), _run_sync_readme_claude_agent.
-        # Each ClaudeAgentOptions(...) block must include effort=EFFORT.
-        assert agent_src.count("effort=EFFORT") >= 3, (
-            "agent.py must pass effort=EFFORT to each ClaudeAgentOptions(...) "
-            "invocation site (analyze_and_fix, _run_readonly_claude_agent, "
+        # Verify the implement-path SDK invocation sites pass EFFORT=...
+        # After the agent.py multi-round split (US-030/031/032/033), the
+        # call sites live across agent.py + oneshot_agents.py + the
+        # extracted sibling modules. Scan the union of all sites that
+        # honor the operator-tunable ``EFFORT`` global (memory.md
+        # "US-032 draft_review extraction → comment-block effort=EFFORT
+        # count drops" — count kwarg sites only across the sibling set).
+        evolve_dir = Path(__file__).parent.parent / "evolve"
+        agent_src = (evolve_dir / "agent.py").read_text()
+        oneshot_src = (evolve_dir / "oneshot_agents.py").read_text()
+        total = agent_src.count("effort=EFFORT") + oneshot_src.count("effort=EFFORT")
+        assert total >= 3, (
+            "agent.py + oneshot_agents.py must pass effort=EFFORT to each "
+            "operator-tunable ClaudeAgentOptions(...) invocation site "
+            "(analyze_and_fix, _run_readonly_claude_agent, "
             "_run_sync_readme_claude_agent)"
         )
 

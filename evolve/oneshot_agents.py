@@ -791,11 +791,17 @@ def run_sync_readme_agent(
         apply: When True, agent writes directly to README.md.
         max_retries: Maximum SDK call attempts on rate-limit errors.
     """
-    from evolve.agent import _run_agent_with_retries
+    # Lazy import via ``evolve.agent`` so ``patch("evolve.agent.X")`` in tests
+    # intercepts the call (memory.md round-7 lesson — re-export ≠ patch
+    # surface unless internal call sites bind the re-exported name).
+    from evolve.agent import (
+        _run_agent_with_retries,
+        build_sync_readme_prompt as _build_sync_readme_prompt,
+    )
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    prompt = build_sync_readme_prompt(project_dir, run_dir, spec=spec, apply=apply)
+    prompt = _build_sync_readme_prompt(project_dir, run_dir, spec=spec, apply=apply)
 
     _run_agent_with_retries(
         lambda: _run_sync_readme_claude_agent(
