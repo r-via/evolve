@@ -55,29 +55,12 @@ evolve/
 The `pyproject.toml` entry point is `evolve.cli:main`. The package is
 installed via `pip install .` and the `evolve` command is available globally.
 
-**Backward compatibility.** During the migration from flat modules to the
-package structure, root-level shim files (`loop.py`, `agent.py`, `tui.py`,
-`hooks.py`) re-export all public names from their new locations via
-`from evolve.orchestrator import *` etc. These shims exist for one release
-cycle and emit `DeprecationWarning` on import. They will be removed in a
-future version.
+**Package migration (archived).** The flat-module layout (`loop.py`,
+`agent.py`, `tui.py`, `hooks.py` at project root) was restructured
+into the `evolve/` package over rounds 5-22 (steps 1-10).
+Completed; shims removed.
 
-**Migration strategy.** The restructuring is designed to work within evolve's
-"one granular improvement per round" model:
-
-1. Create `evolve/` package skeleton with `__init__.py`
-2. Move `hooks.py` first (smallest module, fewest dependencies)
-3. Extract `git.py` from `loop.py` (self-contained git operations)
-4. Extract `state.py` from `loop.py` (state management, convergence gates)
-5. Extract `party.py` from `loop.py` (party mode orchestration)
-6. Split `tui.py` into `tui/` subpackage
-7. Move `agent.py` into the package
-8. Move `evolve.py` → `evolve/cli.py`, update entry point
-9. Remaining `loop.py` → `evolve/orchestrator.py`
-10. Remove root-level shims once all imports updated
-
-Each step is one round. Tests and imports are updated in the same round as
-each move.
+→ Full step-by-step history: [`SPEC/archive/001-package-migration.md`]
 
 ### Config resolution
 
@@ -157,9 +140,13 @@ treat evolution artifacts as local-only.
 │       ├── memory.md                  # shared — cumulative learning log (append-only, compacted past ~500 lines)
 │       ├── 20260324_160000/           # session 1
 │       │   ├── state.json             # real-time session state (queryable)
-│       │   ├── conversation_loop_1.md # full opus conversation log
-│       │   ├── conversation_loop_1_attempt_1.md   # per-attempt log when retries occur
+│       │   ├── conversation_loop_1.md # full implement-agent SDK stream (Amelia)
+│       │   ├── conversation_loop_1_attempt_1.md   # per-attempt implement stream when retries occur
 │       │   ├── conversation_loop_1_attempt_2.md
+│       │   ├── draft_conversation_round_1.md      # full draft-agent SDK stream (Winston + John) — when round was a draft round
+│       │   ├── review_conversation_round_1.md     # full review-agent SDK stream (Zara) — when round was reviewed
+│       │   ├── curation_conversation_round_1.md   # full memory-curation SDK stream (Mira) — when curation triggered
+│       │   ├── archival_conversation_round_1.md   # full SPEC-archival SDK stream (Sid) — when archival triggered
 │       │   ├── check_round_1.txt     # post-fix check results
 │       │   ├── usage_round_1.json    # per-round token usage
 │       │   ├── subprocess_error_round_3.txt  # diagnostic from crashed/stalled round
@@ -188,22 +175,12 @@ breaks cross-round audit, and splits evolution history across two
 trees.  Every read and every write resolves to `<project>/.evolve/
 runs/<relative>`.
 
-**Migration from legacy `runs/`.**  Projects that predate this layout
-have a top-level `runs/` directory.  On first encounter, evolve MUST:
+**Legacy `runs/` migration (archived).** Projects that predate
+`.evolve/` had a top-level `runs/` directory. The migration
+protocol (detect, migrate-in-place or refuse-if-ambiguous) is
+completed.
 
-1. Detect the ambiguous state: both `<project>/runs/` and
-   `<project>/.evolve/runs/` exist, or only legacy `<project>/runs/`.
-2. If only legacy exists → migrate in-place: `git mv runs .evolve/
-   runs` (so git history is preserved and the commit lands in the
-   current session), emit an operator-facing notice `[migrate]
-   moved runs/ → .evolve/runs/`, continue.
-3. If both exist → refuse to start with a clear error pointing at
-   one of:
-   - `mv runs/* .evolve/runs/ && rmdir runs` (merge legacy into new)
-   - `rm -rf runs` (discard legacy; for projects where the state is
-     not worth preserving)
-   The operator must resolve before the next run — evolve will not
-   pick a winner automatically.
+→ Full protocol: [`SPEC/archive/003-legacy-runs-migration.md`]
 
 **Gitignore note.**  The default recommendation is to *track*
 `.evolve/runs/` so the evolution audit trail (conversation logs,
@@ -223,24 +200,12 @@ model, effort level, turn budget, and single deliverable.  The
 orchestrator drives the pipeline and routes each call's output to
 the next step.
 
-**Rationale.**  Earlier versions asked one Opus call to do
-everything: run Phase 1 (errors-first), Phase 2 (freshness gate),
-Phase 3 (draft + implement), Phase 3.5 (structural self-detection),
-Phase 3.6 (Zara adversarial review), Phase 4 (convergence).
-Within that one call the agent had to role-play four personas
-(Winston, John, Amelia, Zara) and decide when to stop.  Symptoms:
+**Design history (archived).** The three-call split replaced an
+earlier single-call design that suffered from persona mixing, phase
+drift, and opaque failures. The split is ~2x cheaper and more
+predictable per round.
 
-- 300+ second rounds with the agent drifting between phases.
-- Personas mixing — Amelia's implementation contaminated by
-  Winston's drafting mid-turn.
-- "Stop the round" verbal instruction that the model could
-  interpret as "keep doing tool calls" because there was no
-  structural exit point.
-- Opaque failures — when a round failed, no clear signal pointing
-  at which phase broke down.
-
-Splitting the work restores clarity: one call = one persona = one
-deliverable = one exit point.
+→ Full rationale + cost projections + migration: [`SPEC/archive/002-multi-call-design-history.md`]
 
 **Three calls per round.**
 
@@ -264,14 +229,17 @@ instructions in one file.
 ```
 ┌─ pre-check (subprocess pytest, 20s cap) ────────────────────┐
 │                                                              │
-├─ if improvements.md has ≥1 unchecked [ ] item:              │
+├─ if pre-check FAILED  OR  improvements.md has ≥1 [ ] item:  │
 │     call implement_agent(target_US)                          │
 │       → Amelia edits code + tests                            │
+│       → Phase 1 fixes the failing check FIRST (always, even  │
+│         when target_US is None — broken tests outrank        │
+│         backlog work AND outrank drafting)                   │
 │       → checks off [ ] → [x]                                 │
 │       → writes COMMIT_MSG                                    │
 │       → RETURN                                               │
 │                                                              │
-│   else:                                                      │
+│   else (pre-check PASSED  AND  backlog drained):             │
 │     call draft_agent(spec, backlog, memory)                  │
 │       → Winston + John pipeline (telegraphic role-play)      │
 │       → append ONE new US to improvements.md                 │
@@ -296,6 +264,21 @@ instructions in one file.
 └─ Phase 4 convergence (deterministic, no agent)               │
 ```
 
+**Routing invariant: broken pre-check always routes to implement.**
+A failing pre-check pre-empts every other routing condition,
+including a drained backlog.  The reason is the same as the rule
+that puts Phase 1 (errors first) before Phase 3 (improvements) in
+``prompts/system.md``: drafting a new US item on top of a broken
+test suite is non-sensical — the next implement round would have
+to fix the breakage anyway, and the new draft is at best wasted
+work (the failure may invalidate the US's premises) and at worst
+actively harmful (Winston + John reason about a codebase whose
+behavior cannot be trusted).  The orchestrator emits a dedicated
+``pre-check failed with drained backlog — routing to implement``
+probe line when this branch fires, so the override is observable.
+Only when the pre-check is green AND the backlog is drained does
+the orchestrator route to ``draft_agent``.
+
 **What each prompt file contains.**
 
 - ``prompts/draft.md`` (~100 lines) — Winston + John pipeline, US
@@ -311,22 +294,6 @@ instructions in one file.
 - ``prompts/review.md`` (~120 lines) — Zara's adversarial review
   four-pass protocol, verdict schema, minimum-findings rule.  No
   role-play of other personas.
-
-**Cost and latency projections.**
-
-| Call          | Typical cost       | Typical duration |
-|---------------|--------------------|------------------|
-| draft_agent   | ~$0.002 / round    | 20-40 s          |
-| implement     | ~$0.02 / round     | 60-180 s         |
-| review_agent  | ~$0.002 / round    | 15-30 s          |
-| **Total**     | **~$0.025 / round**| **~120-240 s**   |
-
-Compared to the single-call round at ~$0.05+ and 200-400+ s with
-heavy drift, the pipeline is roughly 2× cheaper and more
-predictable.  The prompt-caching gains compound: each agent's
-prompt prefix is deterministic across rounds of the same kind,
-so the cache-hit rate on draft/review calls approaches
-100% after the first round.
 
 **Orchestrator contract (evolve/orchestrator.py).**
 
@@ -351,25 +318,6 @@ the orchestrator retries the FAILED call (not the whole round).
 Scope-creep and backlog-violation detections still apply to the
 implement call's commit.  Circuit breaker still fires on three
 identical failure signatures.
-
-**Migration strategy.**
-
-Rather than a single large refactor, the migration lands as three
-independent US items, each touching one call:
-
-- Extract ``review_agent`` (Zara) — lowest risk, Zara is already
-  conceptually separate.
-- Extract ``draft_agent`` (Winston + John) — medium risk, replaces
-  Phase 2 rebuild logic.
-- Slim ``implement_agent`` (Amelia) — highest risk, touches the
-  core ``analyze_and_fix`` path.
-
-Each extraction's acceptance criteria include: (a) the new agent
-runs as a separate SDK call, (b) its prompt file is dedicated,
-(c) the main ``prompts/system.md`` is slimmed by the
-corresponding section, (d) existing tests are updated to match,
-(e) a session-level integration test proves the pipeline executes
-all three calls in order on a typical round.
 
 ---
 
@@ -1631,64 +1579,13 @@ sync-readme, dry-run, validate, diff, party — uses the centralized
 ``evolve.agent.MODEL`` constant, currently set to ``claude-opus-4-6``.
 There are no per-agent model overrides.
 
-**Why Opus across the board, not Sonnet for "lighter" agents.**
-Earlier versions of evolve used Sonnet for the "non-implement"
-agents (draft, review, curation, archival) on the assumption these
-were narrow planning / triage tasks where Opus was overkill.  In
-practice the opposite happened:
+**Model selection rationale (archived).** Sonnet was tried for
+"lighter" agents (draft, review, curation) and produced
+hallucinated US items, adversarial review false positives, and net
+higher cost from churn. All agents now use Opus at medium effort
+with mandatory pre-draft verification (Step 0).
 
-1. **Hallucinated US items.**  Winston + John on Sonnet routinely
-   drafted US items whose acceptance criteria were already
-   implemented in the codebase (the draft agent did not verify
-   current state before writing claims).  These spurious items fed
-   the implement agent, which then spent a full round either
-   rediscovering "nothing to do" or worse, refactoring working code
-   to match an imagined future shape.  Opus catches this with the
-   same Glob / Grep discipline it applies in implement rounds.
-2. **Adversarial review false positives.**  Zara on Sonnet pivoted
-   from real adversarial code review to wording-quality critique of
-   US items and AC blocks — flagging HIGH findings on perfectly
-   serviceable rounds, which under the auto-fix invariant fed
-   churn back into the loop.  Opus reads the actual diff with
-   enough context to find or not find genuine regression risk.
-3. **Cost calculus changed.**  The supposed savings (~60% token
-   cost on draft/review calls) were dwarfed by the cost of the
-   *extra rounds* hallucinated US items and false-positive reviews
-   triggered.  One bad draft can burn a full implement round
-   ($0.50–$2.00 of Opus turns) to confirm the US was already done.
-   Saving $0.018/round on review while paying for one extra
-   implement round per false-positive is net negative.
-4. **One knob to tune.**  Centralizing on ``MODEL`` means model
-   upgrades (4.7 → 4.8, etc.) propagate to every agent in one
-   edit — no risk of forgetting to upgrade Mira while bumping
-   Amelia, no version skew between personas working on the same
-   round's artifacts.
-
-**Single effort: medium across the board.**  Earlier versions of
-evolve used ``effort=low`` for the planning / review / triage
-agents on the assumption these were "narrow" tasks where low
-effort would suffice.  In practice low effort produced exactly the
-hallucinated-US and false-positive-review failure modes described
-above — the agents skipped verification steps that medium effort
-would have done by default.  All callsites now pass
-``effort=EFFORT`` (the centralized ``evolve.agent.EFFORT``
-constant, default ``"medium"``).  The CLI ``--effort`` flag still
-overrides for the whole session uniformly — there is no per-agent
-effort knob, exactly as there is no per-agent model knob.
-
-**Mandatory pre-draft verification.**  In conjunction with the
-medium effort policy, ``prompts/draft.md`` mandates a "Step 0 —
-Verify the claim is genuinely missing" block in the draft agent's
-conversation log, ahead of Winston's architectural pass.  Step 0
-requires concrete ``Grep`` / ``Glob`` / ``Read`` evidence for
-every candidate claim, and explicit rejection of candidates whose
-evidence shows them implemented.  A draft committed without a
-visible Step 0 block — or whose Step 0 block lacks evidence for
-the surviving candidate — is treated as a failed draft round and
-rolled back on the next attempt.  This rule directly fixes the
-US-026 false-positive class: the draft agent reading a SPEC
-section about an already-implemented architecture feature and
-mistaking the SPEC description for a missing claim.
+→ Full rationale + failure modes: [`SPEC/archive/006-model-selection-rationale.md`]
 
 ### Per-turn cap as a granularity forcing function
 
@@ -1761,6 +1658,132 @@ heuristic over-fires on ``success`` rounds where the agent legitimately
 made no edits, and under-fires when the agent commits a partial fix
 just before hitting the cap. Both bugs disappear once ``subtype`` is
 the source of truth.
+
+### Complete LLM stream capture per agent invocation
+
+Every Claude Agent SDK invocation evolve makes — implement (Amelia),
+draft (Winston + John), review (Zara), memory curation (Mira),
+SPEC archival (Sid), sync-readme, dry-run, validate, diff,
+party — MUST persist its **complete stream** to a dedicated file
+under the run directory.  "Complete" is normative: nothing the
+SDK emits about that invocation may be silently dropped.  The
+files are the primary debugging surface when an agent
+misbehaves; truncated or summary logs make post-mortems
+impossible and force operators to re-run with extra
+instrumentation, which (a) costs another round's tokens and
+(b) frequently fails to reproduce the original misbehavior.
+
+**File naming.**  One file per agent invocation per round
+(per attempt for implement, since implement retries within a
+round).  Path is always under the session run directory
+(``.evolve/runs/<timestamp>/``):
+
+| Agent              | File pattern                                       |
+|--------------------|----------------------------------------------------|
+| Implement (Amelia) | ``conversation_loop_{N}_attempt_{M}.md``           |
+| Implement summary  | ``conversation_loop_{N}.md`` (last successful attempt, copied for backward compatibility) |
+| Draft (Winston+John) | ``draft_conversation_round_{N}.md``               |
+| Review (Zara)      | ``review_conversation_round_{N}.md``               |
+| Memory curation (Mira) | ``curation_conversation_round_{N}.md``         |
+| SPEC archival (Sid) | ``archival_conversation_round_{N}.md``             |
+| Sync-readme         | ``sync_readme_conversation.md``                   |
+| Dry-run / validate / diff | ``{mode}_conversation.md``                  |
+| Party               | ``party_conversation.md``                         |
+
+The names use the **agent role** (not the persona) so logs
+remain greppable across model / persona changes.
+
+**What MUST be captured.**  For every message the SDK yields
+during the invocation, the file MUST contain (in stream order,
+deduplicated by block id where the SDK streams partials):
+
+1. ``SystemMessage`` events — at minimum a marker so the
+   session boundary is visible.
+2. ``AssistantMessage`` ``ThinkingBlock``s — the model's
+   extended-thinking blocks, verbatim.  Thinking is the most
+   load-bearing diagnostic signal when an agent goes off the
+   rails ("I will now refactor the working code because the
+   SPEC suggests it could be cleaner") — losing thinking blocks
+   is losing the why.
+3. ``AssistantMessage`` ``TextBlock``s — the model's plain
+   reasoning / narration text, verbatim.
+4. ``AssistantMessage`` ``ToolUseBlock``s — every tool call
+   with **its name and input** (input may be summarised /
+   length-capped at a generous limit, e.g. 2000 chars per
+   field, but never elided to "..." without the original
+   length recorded).
+5. ``ToolResultBlock``s — every tool result with
+   ``is_error`` flag and content (length-capped per field, with
+   the cap recorded in the file header so a reader knows the
+   ceiling).
+6. ``RateLimitEvent`` markers — visible as ``> Rate limited``
+   lines so retry behavior is reconstructible.
+7. The final ``ResultMessage`` — full payload: ``subtype``,
+   ``is_error``, ``num_turns``, ``stop_reason``,
+   ``total_cost_usd``, ``duration_ms``, ``usage``.  This is
+   the authoritative termination signal (§ "Authoritative
+   termination signal from the SDK") and MUST appear as the
+   last entry in the file, formatted on a single
+   ``**Result**: subtype=…, num_turns=…, …`` line so it is
+   greppable across logs.
+
+**What MAY be omitted.**  Partial streamed deltas of a block
+that the SDK ultimately re-emits as a complete block (the
+deduplication-by-id step) — only the final consolidated block
+is logged.  Nothing else.
+
+**Format.**  Markdown, one section per message kind (``###
+Thinking``, ``**ToolName**``, etc.), so a human can scroll the
+file top-to-bottom and reconstruct the run.  Code-block fences
+around tool outputs.  No JSON dumps in place of human-readable
+sections — the file is for humans first, machines second.
+
+**Real-time write — no buffering.**  Each entry MUST be flushed
+to disk **as it is received from the SDK stream**, not buffered
+until the agent finishes.  Concretely: open every conversation
+log with line-buffering (``open(path, "w", buffering=1)``) or
+call ``flush()`` after every ``write()``.  The default Python
+file buffering (~4–8 KB block buffer) is forbidden for these
+files because it defeats the primary use case:
+
+1. **Live tailing.**  Operators run ``tail -f
+   .evolve/runs/<latest>/conversation_loop_N.md`` to watch an
+   agent reason in real time.  A buffered log shows nothing
+   for minutes, then dumps the whole transcript at once when
+   the agent finishes — useless for spotting a stuck agent
+   before the watchdog kills it.
+2. **Crash forensics.**  When an agent hangs (rate-limited
+   forever, infinite tool-loop, OOM) and the watchdog SIGKILLs
+   the round subprocess, an unbuffered log preserves
+   everything up to the kill instant.  A buffered log loses the
+   final 4 KB — which is precisely the part that explains why
+   the agent got stuck.
+3. **Mid-round operator inspection.**  ``grep "Rate limited"
+   .evolve/runs/<latest>/*.md`` only works during a long round
+   if the writes have actually hit disk.  Same for any
+   live-debugging workflow that opens the log alongside the
+   running agent.
+
+The cost of line buffering is negligible (one ``write`` syscall
+per ``\n`` instead of one per buffer fill); the diagnostic
+value is enormous.  A test MUST exist that writes to a
+conversation log path and asserts the on-disk byte count
+strictly increases between successive writes — guarding against
+a future regression that re-introduces block buffering.
+
+**Length cap exemption from the 500-line rule.**  These
+conversation files are data, not source code, and routinely
+exceed the project's 500-line cap on Python files (§ "Hard
+rule: source files MUST NOT exceed 500 lines").  They are
+explicitly out of scope for that rule.
+
+**Operator workflow.**  When a round misbehaves, the operator
+opens ``.evolve/runs/<latest>/`` and reads the agent file
+matching the suspect role.  ``grep -l "subtype=error_max_turns"
+.evolve/runs/<latest>/*.md`` immediately surfaces every agent
+that hit the turn cap; ``grep "Rate limited"`` surfaces
+throttling; ``grep "is_error=True"`` surfaces tool failures.
+This is the contract these files exist to deliver.
 
 ### Agent-side self-monitoring
 
@@ -2442,70 +2465,14 @@ panel to the terminal. The summary is generated from the session's
 `evolution_report.md` and displayed through the TUI (Rich panel, plain text,
 or JSON event depending on output mode).
 
-### Frame capture (visual context for party mode)
+### Frame capture (archived)
 
-Party mode is blind to the TUI by default — its agents only see the spec,
-`improvements.md`, and `memory.md`. With frame capture enabled, evolve
-snapshots the rendered TUI at key moments and hands those images to the
-party-mode agents, so they can reason about layout, density, progress
-visualization, and visual design drift the same way a human operator would.
+Frame capture snapshots the TUI as PNG at round end / convergence /
+errors and hands images to party-mode agents for visual reasoning.
+Opt-in via `capture_frames = true` in `evolve.toml`. Requires
+`cairosvg` (`pip install ".[vision]"`); headless-safe.
 
-**Opt-in via config.** Frame capture is off by default (adds disk I/O per
-round and requires an optional dependency). Enable it in `evolve.toml`:
-
-```toml
-[tool.evolve]
-capture_frames = true
-```
-
-Or via CLI: `--capture-frames` / env var `EVOLVE_CAPTURE_FRAMES=1`.
-
-**How it works.**
-
-1. `RichTUI` is instantiated with `Console(record=True)`, which accumulates the
-   rendered output in an internal buffer without extra overhead
-2. The `TUIProtocol` exposes a `capture_frame(label: str) -> Path | None` method:
-   - `RichTUI` exports the buffer to SVG via `console.save_svg()` (built-in,
-     no new dep), then converts the SVG to PNG via `cairosvg`
-   - `PlainTUI` and `JsonTUI` return `None` — there is no visual to capture
-3. Captured PNGs land in `runs/<session>/frames/` with deterministic names:
-   - `round_N_end.png` — after every completed round
-   - `converged.png` — at convergence, just before party mode
-   - `error_round_N.png` — on crash / stall / zero-progress
-4. Party mode (`_run_party_mode`) scans `frames/` and picks the last 3-5 images
-   (convergence + the two or three rounds before it). These are attached to
-   each agent's prompt as image blocks via the Claude Agent SDK's multimodal
-   input format:
-
-   ```python
-   messages = [{
-       "role": "user",
-       "content": [
-           {"type": "text", "text": prompt_text},
-           {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": ...}},
-           ...
-       ],
-   }]
-   ```
-
-5. The agents can now cite visual evidence in `party_report.md` ("the round
-   header's progress bar was clipped at 80 cols", "the completion summary
-   buries the improvement count below the fold") and propose concrete visual
-   fixes in the spec proposal.
-
-**Bonus — visual evolution report.** When frame capture is on,
-`evolution_report.md` embeds the captured PNGs inline under a "Timeline"
-section, so post-session review shows a visual progression of the run, not
-just a table of commit messages.
-
-**Dependencies.** Frame capture requires `cairosvg` (for SVG→PNG conversion).
-Install with `pip install ".[vision]"`. When the `[vision]` extra is missing,
-`capture_frames = true` is a no-op and evolve logs a one-line warning at
-startup — the run is never blocked on a missing optional dep.
-
-**Headless-safe.** The entire pipeline runs inside Rich's internal buffer
-plus `cairosvg`; no X11, no Wayland, no real terminal screenshot. Works in CI,
-Docker, and remote SSH sessions identically.
+→ Full implementation detail: [`SPEC/archive/005-frame-capture-design.md`]
 
 ---
 
@@ -2748,7 +2715,6 @@ layers of defense:
    > round + justification.  Three archive reads in a single
    > round without justification = scope creep, flagged by Zara
    > at Phase 3.6 review.
-
 3. **Orchestrator-side observability.**  The round subprocess
    inspects its own conversation log post-round for
    ``Read → SPEC/archive/`` patterns.  Each occurrence is
@@ -2848,70 +2814,13 @@ fi
 
 ---
 
-## CI/CD integration
+## CI/CD integration (archived)
 
-### GitHub Actions
+GitHub Actions workflow examples (evolution + PR creation,
+`--validate` as a quality gate) are reference material for
+operators, not active contract.
 
-Evolve works in CI/CD pipelines out of the box. Here's a GitHub Actions
-workflow that evolves a project and creates a PR with the results:
-
-```yaml
-name: Evolve
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * 1'  # Weekly on Monday at 2am
-
-jobs:
-  evolve:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install evolve
-        run: pip install .
-
-      - name: Run evolution
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          evolve start . --check "pytest" --rounds 20 --max-cost 50 --json > evolve-output.jsonl
-          echo "EXIT_CODE=$?" >> $GITHUB_ENV
-
-      - name: Create PR on convergence
-        if: env.EXIT_CODE == '0'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          title: 'feat: evolve convergence'
-          body: |
-            Automated evolution run converged.
-            See `runs/*/evolution_report.md` for details.
-          branch: evolve/ci-run
-```
-
-### Validation in CI
-
-Use `--validate` as a quality gate in pull request checks:
-
-```yaml
-name: Spec Compliance
-on: [pull_request]
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: pip install .
-      - name: Validate spec compliance
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: evolve start . --validate --check "pytest"
-```
+→ Full examples: [`SPEC/archive/004-cicd-integration.md`]
 
 ---
 
@@ -2973,27 +2882,14 @@ runner, and sync-readme agent. These are covered by mocking the `ClaudeAgent`
 boundary with a fixture that yields controlled tool-use sequences, rather
 than requiring a live API key.
 
-### Test structure
+### Test structure, smoke test, and drift tests (archived)
 
-```
-tests/
-├── test_orchestrator.py    # round lifecycle, subprocess monitoring, watchdog
-├── test_agent.py           # build_prompt, error helpers, retry logic, SDK mock
-├── test_git.py             # git operations, commit, push, branch management
-├── test_state.py           # state.json, improvements parsing, convergence gates
-├── test_party.py           # party mode orchestration
-├── test_tui.py             # TUI Protocol parity, RichTUI, PlainTUI, JsonTUI
-├── test_cli.py             # CLI arg parsing, config resolution, subcommands
-├── test_hooks.py           # hook loading, event matching, execution, timeout
-├── test_costs.py           # token tracking, cost estimation, budget enforcement
-├── test_smoke.py           # end-to-end smoke test (one round against trivial project)
-└── ...
-```
+Test layout (`tests/test_*.py`), the end-to-end smoke test
+(`test_smoke.py`), and path-agnostic drift tests
+(`test_constant_drift.py`, `test_spec_prompt_sync.py`) are stable
+reference material.
 
-Tests cover all pure utility functions without requiring the Claude SDK.
-Integration tests that need the SDK use mocked responses. Error-path tests
-verify graceful degradation under failure conditions (corrupted files,
-timeouts, missing dependencies).
+→ Full details: [`SPEC/archive/007-development-testing.md`]
 
 ### Hard rule: tests MUST NOT call the real Claude SDK
 
@@ -3053,22 +2949,3 @@ deliberately-integration tests) or leaking into the SDK.  Audit
 such tests on sight: run them in isolation under
 ``pytest --no-summary -q --timeout=5`` and if they hang or call
 out, they've got a leak that needs mocking.
-
-### End-to-end smoke test
-
-`test_smoke.py` contains a single test that exercises the full pipeline:
-creates a temporary git repo with a 3-file Python project and a spec that
-has one deliberate gap, runs `evolve start --rounds 1 --check "pytest"` with
-a mocked Claude agent that makes a single edit, and verifies that
-`improvements.md` was updated, `state.json` was written, and the check
-command passed. This catches regressions in the full subprocess → agent →
-git → state pipeline that unit tests miss.
-
-### Path-agnostic drift tests
-
-Constant-drift tests (`test_constant_drift.py`) and spec-prompt-sync tests
-(`test_spec_prompt_sync.py`) scan source files for magic strings and
-invariants. These tests use dynamic package discovery (`importlib` or
-`glob`) to find source files rather than hardcoding paths like `"loop.py"`.
-This ensures the tests survive the package restructuring without per-file
-updates.

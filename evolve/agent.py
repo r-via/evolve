@@ -906,7 +906,7 @@ async def run_claude_agent(
 
     ui = get_tui()
 
-    with open(log_path, "w") as log:
+    with open(log_path, "w", buffering=1) as log:
         log.write(f"# Evolution Round {round_num}\n\n")
 
         def _log(line: str, console: bool = False):
@@ -1382,7 +1382,7 @@ async def _run_readonly_claude_agent(
     log_path = run_dir / log_filename
     ui = get_tui()
 
-    with open(log_path, "w") as log:
+    with open(log_path, "w", buffering=1) as log:
         log.write(f"# {log_header}\n\n")
 
         seen_tool_ids: set[str] = set()
@@ -1844,7 +1844,7 @@ async def _run_sync_readme_claude_agent(
     log_path = run_dir / "sync_readme_conversation.md"
     ui = get_tui()
 
-    with open(log_path, "w") as log:
+    with open(log_path, "w", buffering=1) as log:
         log.write("# Sync README\n\n")
 
         seen_tool_ids: set[str] = set()
@@ -2093,7 +2093,7 @@ async def _run_memory_curation_claude_agent(
     log_path = run_dir / "curation_conversation.md"
     ui = get_tui()
 
-    with open(log_path, "w") as log:
+    with open(log_path, "w", buffering=1) as log:
         log.write("# Memory Curation (Mira)\n\n")
 
         try:
@@ -2434,7 +2434,7 @@ async def _run_spec_archival_claude_agent(
     log_path = run_dir / "archival_conversation.md"
     ui = get_tui()
 
-    with open(log_path, "w") as log:
+    with open(log_path, "w", buffering=1) as log:
         log.write("# SPEC Archival (Sid)\n\n")
 
         try:
@@ -2651,7 +2651,7 @@ async def _run_draft_claude_agent(
 
     log_path = run_dir / "draft_conversation.md"
     ui = get_tui()
-    with open(log_path, "w") as log:
+    with open(log_path, "w", buffering=1) as log:
         log.write("# Draft Agent — Winston + John\n\n")
         seen_tool_ids: set[str] = set()
         try:
@@ -2801,7 +2801,7 @@ async def _run_review_claude_agent(
 
     log_path = run_dir / f"review_conversation_round_{round_num}.md"
     ui = get_tui()
-    with open(log_path, "w") as log:
+    with open(log_path, "w", buffering=1) as log:
         log.write(f"# Review Agent — Zara — round {round_num}\n\n")
         seen_tool_ids: set[str] = set()
         try:

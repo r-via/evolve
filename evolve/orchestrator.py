@@ -2356,6 +2356,7 @@ def _run_single_round_body(
     # silent pre-check runs; the pre-check's own ``timeout`` still
     # bounds the wait.
     check_output = ""
+    pre_check_failed = False
     if check_cmd:
         _probe(f"running pre-check: {check_cmd} (max {timeout}s)")
         ui.check_result("check", check_cmd, passed=None)
@@ -2370,6 +2371,7 @@ def _run_single_round_body(
             if result.stderr:
                 check_output += f"stderr:\n{result.stderr[-2000:]}\n"
             ok = result.returncode == 0
+            pre_check_failed = not ok
             ui.check_result("check", check_cmd, passed=ok)
             if ok:
                 _probe_ok(f"pre-check PASSED (exit {result.returncode})")
@@ -2377,6 +2379,7 @@ def _run_single_round_body(
                 _probe_warn(f"pre-check FAILED (exit {result.returncode})")
         except subprocess.TimeoutExpired:
             check_output = f"TIMEOUT after {timeout}s"
+            pre_check_failed = True
             ui.check_result("check", check_cmd, timeout=True)
             _probe_warn(f"pre-check TIMEOUT after {timeout}s (hit ceiling)")
     else:
@@ -2388,15 +2391,26 @@ def _run_single_round_body(
     # Multi-call round architecture (SPEC § "Multi-call round
     # architecture"):
     #
+    # - Pre-check FAILED → ``implement`` call (Phase 1 fixes the check
+    #   regardless of backlog state — drafting new US items on top of a
+    #   broken test suite is non-sensical and defeats the whole point of
+    #   Phase 1.  Even when the backlog is drained, fixing the failing
+    #   check is the round's first job).
     # - Backlog has ≥1 unchecked ``[ ]`` item → ``implement`` call
     #   (Amelia — Opus, full ``analyze_and_fix``).
-    # - Backlog drained → ``draft`` call (Winston + John — Opus low,
-    #   narrow scope, writes ONE new US to improvements.md).
+    # - Backlog drained AND pre-check passing → ``draft`` call
+    #   (Winston + John — Opus, narrow scope, writes ONE new US).
     #
     # The orchestrator picks; the agent doesn't have to decide.
     current = _get_current_improvement(improvements_path, allow_installs=allow_installs)
     agent_subtype: str | None = None
-    if current:
+    round_kind = "implement" if (current or pre_check_failed) else "draft"
+    if round_kind == "implement":
+        if not current and pre_check_failed:
+            _probe(
+                "pre-check failed with drained backlog — routing to implement "
+                "(Phase 1 fixes the check before any drafting)"
+            )
         _probe(f"invoking implement agent — target: {current}")
         ui.agent_working()
         from evolve.agent import analyze_and_fix as _analyze_and_fix
@@ -2480,17 +2494,16 @@ def _run_single_round_body(
     # ``review_round_N.md`` which the parent orchestrator's
     # ``_check_review_verdict`` parses and routes to retry / proceed.
     #
-    # SKIPPED on draft rounds (``current`` was falsy → backlog drained
-    # → draft branch ran instead of implement).  Draft rounds produce
-    # only an ``improvements.md`` text edit (a new ``[ ]`` US item)
-    # and a ``COMMIT_MSG`` — there is no code/test surface for
-    # adversarial code review, and the draft agent (Winston + John)
-    # already runs an internal architect + PM dual-pass on the US
-    # before writing it.  Running Zara on top of a draft round
-    # routinely flagged wording-quality "HIGH findings" that fed the
-    # auto-retry loop with non-actionable churn.
+    # SKIPPED on draft rounds.  Draft rounds produce only an
+    # ``improvements.md`` text edit (a new ``[ ]`` US item) and a
+    # ``COMMIT_MSG`` — there is no code/test surface for adversarial
+    # code review, and the draft agent (Winston + John) already runs
+    # an internal architect + PM dual-pass on the US before writing
+    # it.  Running Zara on top of a draft round routinely flagged
+    # wording-quality "HIGH findings" that fed the auto-retry loop
+    # with non-actionable churn.
     # See SPEC § "Adversarial round review (Phase 3.6)".
-    if current:
+    if round_kind == "implement":
         try:
             from evolve.agent import run_review_agent as _run_review_agent
             _probe("invoking review agent (Zara, Opus low)")
