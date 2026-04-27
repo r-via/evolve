@@ -1109,6 +1109,30 @@ def _run_spec_archival_pass(
         _probe_warn(f"SPEC archival: SDK_FAIL at round {round_num}")
 
 
+_FILE_TOO_LARGE_LIMIT = 500
+
+
+def _detect_file_too_large(
+    project_dir: Path,
+) -> list[tuple[str, int]]:
+    """Return ``(path, line_count)`` for every ``evolve/**/*.py`` or
+    ``tests/**/*.py`` file that exceeds :data:`_FILE_TOO_LARGE_LIMIT` lines.
+
+    The scan is cheap (pure line-count via ``Path.read_text`` splitlines),
+    does not invoke ``wc -l``, and silently skips unreadable files.
+    """
+    oversized: list[tuple[str, int]] = []
+    for pattern in ("evolve/**/*.py", "tests/**/*.py"):
+        for p in sorted(project_dir.glob(pattern)):
+            try:
+                count = len(p.read_text(errors="replace").splitlines())
+            except OSError:
+                continue
+            if count > _FILE_TOO_LARGE_LIMIT:
+                oversized.append((str(p.relative_to(project_dir)), count))
+    return oversized
+
+
 def _save_subprocess_diagnostic(
     run_dir: Path,
     round_num: int,
@@ -1983,6 +2007,27 @@ def _run_rounds(
             error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
             if error_log.is_file():
                 error_log.unlink()
+
+            # --- FILE TOO LARGE detection (SPEC § "Hard rule: source files
+            # MUST NOT exceed 500 lines").  Advisory only — writes a
+            # diagnostic for the NEXT round so the agent auto-targets
+            # the oversized file for splitting.  Same prefix-chain
+            # pattern as BACKLOG VIOLATION / SCOPE CREEP.
+            _oversized = _detect_file_too_large(project_dir)
+            if _oversized:
+                _ftl_lines = "\n".join(
+                    f"  - {p}: {lc} lines" for p, lc in _oversized
+                )
+                _probe_warn(f"FILE TOO LARGE detected:\n{_ftl_lines}")
+                _save_subprocess_diagnostic(
+                    run_dir, round_num, ["(post-round file-size check)"],
+                    f"Oversized files:\n{_ftl_lines}",
+                    reason=(
+                        f"FILE TOO LARGE: {len(_oversized)} file(s) exceed "
+                        f"{_FILE_TOO_LARGE_LIMIT} lines:\n{_ftl_lines}"
+                    ),
+                    attempt=0,
+                )
 
             # --- Memory curation (Mira) — SPEC § "Dedicated memory
             # curation (Mira)".  Between rounds, after post-check,

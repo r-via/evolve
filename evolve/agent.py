@@ -593,6 +593,19 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
                 f"review.\n"
                 f"```\n{prev_crash}\n```\n"
             )
+        elif "FILE TOO LARGE" in prev_crash:
+            prev_crash_section = (
+                f"\n## CRITICAL — File too large\n"
+                f"The previous round left one or more ``evolve/*.py`` or "
+                f"``tests/*.py`` files over the 500-line hard limit "
+                f"(SPEC.md § 'Hard rule: source files MUST NOT exceed "
+                f"500 lines').  Your **primary task this round** is to "
+                f"split the largest offending file into smaller modules "
+                f"(each ≤ 500 lines).  Extract a coherent sub-"
+                f"responsibility into its own module, update imports, and "
+                f"verify tests still pass.\n"
+                f"```\n{prev_crash}\n```\n"
+            )
         elif "PREMATURE CONVERGED" in prev_crash:
             # Convergence-gate orchestrator backstop (SPEC.md § "Convergence").
             # The previous round wrote CONVERGED but the orchestrator's
