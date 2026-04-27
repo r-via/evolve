@@ -674,7 +674,12 @@ def evolve_loop(
     # it, not instructions.
     _scaffold_shared_runtime_files(project_dir, spec)
 
-    _probe(f"evolve_loop starting — project={project_dir.name}, max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}")
+    from evolve.agent import MAX_TURNS as _MAX_TURNS
+    _probe(
+        f"evolve_loop starting — project={project_dir.name}, "
+        f"max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}, "
+        f"model={model}, effort={effort}, max_turns={_MAX_TURNS}"
+    )
     # Announce the two independent timing axes once at startup so the
     # reader doesn't have to reconstruct them from scattered messages:
     #   * check_timeout = hard ceiling on pre/post-check pytest runs.
@@ -2278,7 +2283,11 @@ def run_single_round(
     improvements_path = _runs_base(project_dir) / "improvements.md"
     ui = get_tui()
 
-    _probe(f"round {round_num} starting — project={project_dir.name}, model={model}")
+    from evolve.agent import MAX_TURNS as _MAX_TURNS
+    _probe(
+        f"round {round_num} starting — project={project_dir.name}, "
+        f"model={model}, effort={effort}, max_turns={_MAX_TURNS}"
+    )
 
     # Round-wide heartbeat.  The parent orchestrator watches this
     # subprocess's stdout with a silence-based watchdog

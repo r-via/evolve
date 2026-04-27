@@ -9,7 +9,7 @@ rounds = 100
 # fixture) rather than bump the budget.  The suite staying fast is a
 # quality invariant — see SPEC.md § "The --timeout flag".
 timeout = 20
-model = "claude-opus-4-6"
+model = "claude-opus-4-7"
 allow_installs = true
 capture_frames = true
 
