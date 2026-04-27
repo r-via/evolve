@@ -17,3 +17,4 @@
 | 013 | prompt-caching-contract | 2026-04-27 | SPEC.md > 2000 lines (2952); stable SDK caching integration, designed once |
 | 014 | memory-curation-protocol | 2026-04-27 | SPEC.md > 2000 lines (2952); stable Mira protocol, trigger/pass/verdict routing |
 | 015 | cost-tracking-observability | 2026-04-27 | SPEC.md > 2000 lines (2952); stable schemas (cost tracking, state.json, evolution report) |
+| 016 | spec-archival-implementation | 2026-04-27 | SPEC.md > 2000 lines (2072); feature shipped (US-025), acceptance criteria met, migration bootstrap complete |
