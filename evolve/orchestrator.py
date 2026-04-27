@@ -2381,7 +2381,7 @@ def _run_single_round_body(
     #
     # - Backlog has ≥1 unchecked ``[ ]`` item → ``implement`` call
     #   (Amelia — Opus, full ``analyze_and_fix``).
-    # - Backlog drained → ``draft`` call (Winston + John — Sonnet,
+    # - Backlog drained → ``draft`` call (Winston + John — Opus low,
     #   narrow scope, writes ONE new US to improvements.md).
     #
     # The orchestrator picks; the agent doesn't have to decide.
@@ -2411,7 +2411,7 @@ def _run_single_round_body(
             subtype_path = rdir / f"agent_subtype_round_{round_num}.txt"
             subtype_path.write_text(agent_subtype)
     else:
-        _probe("backlog drained — invoking draft agent (Winston + John, Sonnet low)")
+        _probe("backlog drained — invoking draft agent (Winston + John, Opus low)")
         ui.agent_working()
         from evolve.agent import run_draft_agent as _run_draft_agent
         _run_draft_agent(
@@ -2464,29 +2464,41 @@ def _run_single_round_body(
             ui.check_result("verify", check_cmd, timeout=True)
             _probe_warn(f"post-check TIMEOUT after {timeout}s (hit ceiling)")
 
-    # 5. Run the dedicated review agent (Zara — Sonnet low effort).
+    # 5. Run the dedicated review agent (Zara — Opus low effort).
     #
     # Multi-call round architecture: review is a separate SDK call
     # after the implement commit + post-check.  Writes
     # ``review_round_N.md`` which the parent orchestrator's
-    # ``_check_review_verdict`` parses and routes to retry / exit /
-    # proceed.  Runs unconditionally — even "approved" rounds need
-    # the review file written so the verdict is observable.
-    try:
-        from evolve.agent import run_review_agent as _run_review_agent
-        _probe("invoking review agent (Zara, Sonnet low)")
-        _run_review_agent(
-            project_dir=project_dir,
-            run_dir=rdir,
-            round_num=round_num,
-            spec=spec,
-        )
-        _probe("review agent finished")
-    except Exception as exc:
-        # Review failures should not sink the round — log and continue.
-        # The verdict parser treats a missing/malformed file as
-        # ``verdict=None``, which falls through the normal flow.
-        _probe_warn(f"review agent error: {exc}")
+    # ``_check_review_verdict`` parses and routes to retry / proceed.
+    #
+    # SKIPPED on draft rounds (``current`` was falsy → backlog drained
+    # → draft branch ran instead of implement).  Draft rounds produce
+    # only an ``improvements.md`` text edit (a new ``[ ]`` US item)
+    # and a ``COMMIT_MSG`` — there is no code/test surface for
+    # adversarial code review, and the draft agent (Winston + John)
+    # already runs an internal architect + PM dual-pass on the US
+    # before writing it.  Running Zara on top of a draft round
+    # routinely flagged wording-quality "HIGH findings" that fed the
+    # auto-retry loop with non-actionable churn.
+    # See SPEC § "Adversarial round review (Phase 3.6)".
+    if current:
+        try:
+            from evolve.agent import run_review_agent as _run_review_agent
+            _probe("invoking review agent (Zara, Opus low)")
+            _run_review_agent(
+                project_dir=project_dir,
+                run_dir=rdir,
+                round_num=round_num,
+                spec=spec,
+            )
+            _probe("review agent finished")
+        except Exception as exc:
+            # Review failures should not sink the round — log and continue.
+            # The verdict parser treats a missing/malformed file as
+            # ``verdict=None``, which falls through the normal flow.
+            _probe_warn(f"review agent error: {exc}")
+    else:
+        _probe("draft round — skipping review (Zara reviews implement rounds only)")
 
     _probe_ok(f"round {round_num} complete")
 

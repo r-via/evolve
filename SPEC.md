@@ -246,9 +246,13 @@ deliverable = one exit point.
 
 | Call          | Persona       | Model         | Effort | Max turns | Deliverable                          |
 |---------------|---------------|---------------|--------|-----------|--------------------------------------|
-| draft_agent   | Winston + John| Sonnet 4.6    | low    | 8         | ONE new US in improvements.md        |
-| implement     | Amelia        | Opus 4.7      | medium | 40        | Code + tests + ``[x]`` + COMMIT_MSG  |
-| review_agent  | Zara          | Sonnet 4.6    | low    | 5         | ``review_round_N.md`` with verdict   |
+| draft_agent   | Winston + John| Opus (MODEL)  | low    | MAX_TURNS | ONE new US in improvements.md        |
+| implement     | Amelia        | Opus (MODEL)  | medium | MAX_TURNS | Code + tests + ``[x]`` + COMMIT_MSG  |
+| review_agent  | Zara          | Opus (MODEL)  | low    | MAX_TURNS | ``review_round_N.md`` with verdict   |
+
+All three calls use the same centralized ``MODEL`` (Opus) and
+``MAX_TURNS`` constants from ``evolve.agent`` — see § "Single
+model: Opus everywhere" below for the rationale.
 
 Each call receives a prompt tailored to its single responsibility
 (``prompts/draft.md``, ``prompts/system.md`` for implement,
@@ -278,10 +282,11 @@ instructions in one file.
 │                                                              │
 ├─ post-check (subprocess pytest, 20s cap)                     │
 │                                                              │
-├─ call review_agent(round_num, US, diff)                     │
+├─ call review_agent(round_num, US, diff)  [implement only]   │
 │     → Zara four-pass attack plan                             │
 │     → write review_round_N.md with verdict + findings        │
 │     → RETURN                                                 │
+│   (draft rounds skip review — no code surface to audit)      │
 │                                                              │
 ├─ orchestrator parses review_round_N.md                       │
 │     APPROVED → proceed to Phase 4 convergence check          │
@@ -320,7 +325,7 @@ Compared to the single-call round at ~$0.05+ and 200-400+ s with
 heavy drift, the pipeline is roughly 2× cheaper and more
 predictable.  The prompt-caching gains compound: each agent's
 prompt prefix is deterministic across rounds of the same kind,
-so Sonnet's cache-hit rate on draft/review calls approaches
+so the cache-hit rate on draft/review calls approaches
 100% after the first round.
 
 **Orchestrator contract (evolve/orchestrator.py).**
@@ -1460,9 +1465,11 @@ full protocol is in `tasks/memory-curation.md`; in short:
 - **Persona.**  Mira is NOT the round's draft/implement persona
   (Winston / John / Amelia) and NOT the reviewer (Zara).  Fresh
   eyes, no authorship bias.
-- **Model + effort.**  Sonnet 4.6, ``effort=low``, ``max_turns=1``
-  — curation is triage, not architectural reasoning.  Roughly 5×
-  cheaper than a regular Opus round and bounded to one turn.
+- **Model + effort.**  Opus (centralized ``MODEL``), ``effort=low``,
+  ``max_turns=MAX_TURNS`` — see § "Single model: Opus everywhere"
+  for the rationale.  Curation is triage, not architectural
+  reasoning, but Opus at low effort still avoids the misclassification
+  errors Sonnet produced on memory-triage decisions.
 - **Input scope.**  Current `memory.md` + SPEC § "memory.md" + last
   5 rounds' conversation-log titles + `git log --oneline -30`.
   Mira does NOT see prior curation audit logs (each curation is
@@ -1615,6 +1622,73 @@ Phase 4 (re-read the spec line by line, verify each claim, write
 missing claim).  Explicit guard in the prompt: do NOT fabricate
 filler improvements to make the round look productive — that is
 worse than not converging.
+
+### Single model: Opus everywhere
+
+Every evolve agent — implement (Amelia), draft (Winston + John),
+review (Zara), memory curation (Mira), SPEC archival (Sid),
+sync-readme, dry-run, validate, diff, party — uses the centralized
+``evolve.agent.MODEL`` constant, currently set to ``claude-opus-4-6``.
+There are no per-agent model overrides.
+
+**Why Opus across the board, not Sonnet for "lighter" agents.**
+Earlier versions of evolve used Sonnet for the "non-implement"
+agents (draft, review, curation, archival) on the assumption these
+were narrow planning / triage tasks where Opus was overkill.  In
+practice the opposite happened:
+
+1. **Hallucinated US items.**  Winston + John on Sonnet routinely
+   drafted US items whose acceptance criteria were already
+   implemented in the codebase (the draft agent did not verify
+   current state before writing claims).  These spurious items fed
+   the implement agent, which then spent a full round either
+   rediscovering "nothing to do" or worse, refactoring working code
+   to match an imagined future shape.  Opus catches this with the
+   same Glob / Grep discipline it applies in implement rounds.
+2. **Adversarial review false positives.**  Zara on Sonnet pivoted
+   from real adversarial code review to wording-quality critique of
+   US items and AC blocks — flagging HIGH findings on perfectly
+   serviceable rounds, which under the auto-fix invariant fed
+   churn back into the loop.  Opus reads the actual diff with
+   enough context to find or not find genuine regression risk.
+3. **Cost calculus changed.**  The supposed savings (~60% token
+   cost on draft/review calls) were dwarfed by the cost of the
+   *extra rounds* hallucinated US items and false-positive reviews
+   triggered.  One bad draft can burn a full implement round
+   ($0.50–$2.00 of Opus turns) to confirm the US was already done.
+   Saving $0.018/round on review while paying for one extra
+   implement round per false-positive is net negative.
+4. **One knob to tune.**  Centralizing on ``MODEL`` means model
+   upgrades (4.7 → 4.8, etc.) propagate to every agent in one
+   edit — no risk of forgetting to upgrade Mira while bumping
+   Amelia, no version skew between personas working on the same
+   round's artifacts.
+
+**Single effort: medium across the board.**  Earlier versions of
+evolve used ``effort=low`` for the planning / review / triage
+agents on the assumption these were "narrow" tasks where low
+effort would suffice.  In practice low effort produced exactly the
+hallucinated-US and false-positive-review failure modes described
+above — the agents skipped verification steps that medium effort
+would have done by default.  All callsites now pass
+``effort=EFFORT`` (the centralized ``evolve.agent.EFFORT``
+constant, default ``"medium"``).  The CLI ``--effort`` flag still
+overrides for the whole session uniformly — there is no per-agent
+effort knob, exactly as there is no per-agent model knob.
+
+**Mandatory pre-draft verification.**  In conjunction with the
+medium effort policy, ``prompts/draft.md`` mandates a "Step 0 —
+Verify the claim is genuinely missing" block in the draft agent's
+conversation log, ahead of Winston's architectural pass.  Step 0
+requires concrete ``Grep`` / ``Glob`` / ``Read`` evidence for
+every candidate claim, and explicit rejection of candidates whose
+evidence shows them implemented.  A draft committed without a
+visible Step 0 block — or whose Step 0 block lacks evidence for
+the surviving candidate — is treated as a failed draft round and
+rolled back on the next attempt.  This rule directly fixes the
+US-026 false-positive class: the draft agent reading a SPEC
+section about an already-implemented architecture feature and
+mistaking the SPEC description for a missing claim.
 
 ### Per-turn cap as a granularity forcing function
 
@@ -1933,7 +2007,7 @@ preventive layer; the retry/escape guards are the reactive layer.
 
 ### Adversarial round review (Phase 3.6)
 
-After each round's implementation commit — but before the Phase 4
+After each **implement** round's commit — but before the Phase 4
 convergence check — the agent role-plays a dedicated adversarial
 reviewer persona (**Zara**, `agents/reviewer.md`) and runs a
 skeptical audit of the round's work.  This closes the self-
@@ -1941,6 +2015,33 @@ assessment conflict of interest: without an adversarial pass, the
 same agent that drafted the US, implemented it, and decides the
 checkoff produces "looks good" reviews by default, and the
 cumulative quality of `improvements.md` drifts downward.
+
+**Scope: implement rounds only.**  Zara is **skipped** on draft
+rounds (the branch taken when the backlog is drained and Winston +
+John write a new ``[ ]`` US into ``improvements.md``).  Three
+reasons:
+
+1. **No adversarial code surface.**  A draft round produces only a
+   text edit to ``improvements.md`` and a ``COMMIT_MSG`` — there is
+   no code, no tests, no behavior change for Zara's four attack
+   passes (regression risk, AC compliance, SPEC normative checks,
+   structural drift) to bite on.
+2. **Drafting is already dual-reviewed.**  The draft agent runs
+   Winston (architect) and John (PM) as an internal two-pass review
+   of the US before writing it (architecture pattern fit, value /
+   priority sanity).  Adding Zara on top is a third reviewer
+   reviewing planning, not code.
+3. **Empirically high false-positive rate.**  When Zara was run on
+   draft rounds she pivoted to wording-quality critique of the US
+   (vague AC, fuzzy scope) and routinely returned BLOCKED /
+   CHANGES REQUESTED verdicts on perfectly serviceable drafts —
+   feeding the auto-retry loop (§ "Verdict → orchestrator action")
+   with non-actionable churn.  Skipping Zara on drafts removes the
+   noise without losing real signal.
+
+The orchestrator emits ``draft round — skipping review (Zara
+reviews implement rounds only)`` when the skip path runs, so the
+behavior is observable in the log.
 
 **Persona separation.**  Zara is NOT the same persona as Winston
 (architect — drafted the US), John (PM — validated value/priority),
@@ -2551,8 +2652,8 @@ parallel of Mira (memory curator) for ``SPEC.md``.  Same
 discipline, different input: Sid reads SPEC.md, identifies
 stable / historical sections, extracts them to
 ``SPEC/archive/NNN-<slug>.md``, and leaves a short summary stub
-in SPEC.md pointing at the archive.  Cheap model (Sonnet,
-``effort=low``, ``max_turns=1``), runs between rounds not
+in SPEC.md pointing at the archive.  Opus (centralized ``MODEL``),
+``effort=low``, ``max_turns=MAX_TURNS`` — runs between rounds not
 during them, never touches active contracts.
 
 **Trigger conditions.**  Between rounds (after post-check,
@@ -2666,7 +2767,7 @@ layers of defense:
    round_num)`` returns True only when the trigger conditions
    hold.
 4. ``run_spec_archival(project_dir, run_dir)`` in ``evolve/agent.py``
-   spawns Sid via Sonnet + ``effort=low``, writes the
+   spawns Sid via the centralized ``MODEL`` + ``effort=low``, writes the
    ``spec_curation_round_N.md`` audit log, and applies the
    rewrite iff the audit log is well-formed.
 5. ``SPEC/archive/INDEX.md`` is created (or updated) on the

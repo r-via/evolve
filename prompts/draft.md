@@ -25,12 +25,61 @@ and draft a US for it.  If every claim is implemented, you
 signal convergence by writing NO item and returning; the
 orchestrator's Phase 4 check will then write ``CONVERGED``.
 
+## Step 0 — Verify the claim is genuinely missing (MANDATORY)
+
+**Before** Winston's architectural pass, you MUST prove that the
+claim you intend to draft is NOT already implemented in the
+current codebase.  Drafting an already-implemented claim is the
+single most common failure mode of this agent — it produces a US
+whose acceptance criteria the next implement round either
+rediscovers as already done (wasting a full round confirming
+"nothing to do") or worse, refactors working code to match an
+imagined future shape.
+
+**The verification protocol** — your conversation log MUST
+contain a "Step 0" block BEFORE the Winston block, showing
+EVERY proposed US claim explicitly checked against current
+state:
+
+1. **Identify candidate claims.**  Read ``SPEC.md`` (and any
+   ``--spec`` target) and list 3–5 candidate non-implemented
+   claims you might draft.
+2. **Grep / Glob for each candidate's evidence.**  For every
+   candidate, run at least one of:
+   - ``Grep`` for the function names, file names, constants, or
+     CLI flags the claim mentions.
+   - ``Glob`` for the file paths the claim says should exist.
+   - ``Read`` of the relevant module to confirm the symbol is
+     absent / different from what the claim describes.
+3. **Reject candidates whose evidence shows them implemented.**
+   If ``Grep`` finds the function, if ``Glob`` finds the file
+   path, if ``Read`` shows the symbol with the spec'd shape —
+   the claim is **already done**.  Strike it from the candidate
+   list and move on.  Do NOT rationalize a draft on top of
+   working code by claiming "but it could be cleaner / more
+   tested / more documented".  That is scope-creep dressed as
+   spec compliance.
+4. **Pick the first surviving candidate.**  The first candidate
+   whose evidence shows it genuinely absent is the one Winston
+   takes forward.  If ALL candidates are implemented, write
+   nothing to ``improvements.md``, explain in your final text
+   message that every checked claim was already implemented (cite
+   the evidence — file paths, line numbers, function names), and
+   stop.  The orchestrator's Phase 4 will handle convergence.
+
+Any draft committed without a visible Step 0 block — or whose
+Step 0 block does not include concrete grep / glob / read
+evidence for the surviving candidate — is treated as a failed
+draft round (scope-creep diagnostic) and the round is rolled
+back on the next attempt.
+
 ## Three-persona pipeline
 
-Every US passes through two internal personas (Winston, John)
-that you role-play in sequence, then a final-draft rendering.
-Your conversation log MUST contain three headed blocks before
-you write to improvements.md:
+After Step 0, every US passes through two internal personas
+(Winston, John) that you role-play in sequence, then a
+final-draft rendering.  Your conversation log MUST contain four
+headed blocks before you write to improvements.md (Step 0,
+Winston, John, Final draft):
 
 ### Winston (Architect, ``agents/architect.md``) — first pass
 
