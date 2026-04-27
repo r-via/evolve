@@ -1391,7 +1391,7 @@ def _run_rounds(
                         # Skip the normal zero-progress checks for this attempt.
                         if _attempt_sig:
                             _failure_signatures.append(_attempt_sig)
-                            if _is_deterministic_loop(_failure_signatures):
+                            if _is_circuit_breaker_tripped(_failure_signatures):
                                 ui.warn(
                                     f"Deterministic failure loop detected after "
                                     f"{MAX_IDENTICAL_FAILURES} identical review failures."
