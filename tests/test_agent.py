@@ -657,10 +657,9 @@ class TestResultMessageSubtype:
         sdk_mod.ResultMessage = type(result_msg)
         sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
 
-        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}):
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
+             patch("evolve.agent._patch_sdk_parser", lambda: None):
             from evolve.agent import run_claude_agent
-            import evolve.agent as _ag
-            _ag._patch_sdk_parser = lambda: None  # no-op
 
             ui_mock = MagicMock()
             with patch("evolve.agent.get_tui", return_value=ui_mock):
@@ -698,10 +697,9 @@ class TestResultMessageSubtype:
         sdk_mod.ResultMessage = type(result_msg)
         sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
 
-        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}):
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
+             patch("evolve.agent._patch_sdk_parser", lambda: None):
             from evolve.agent import run_claude_agent
-            import evolve.agent as _ag
-            _ag._patch_sdk_parser = lambda: None
 
             ui_mock = MagicMock()
             with patch("evolve.agent.get_tui", return_value=ui_mock):
@@ -737,10 +735,9 @@ class TestResultMessageSubtype:
         sdk_mod.ResultMessage = type("ResultMessage", (), {})
         sdk_mod.AssistantMessage = FakeAssistant
 
-        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}):
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
+             patch("evolve.agent._patch_sdk_parser", lambda: None):
             from evolve.agent import run_claude_agent
-            import evolve.agent as _ag
-            _ag._patch_sdk_parser = lambda: None
 
             ui_mock = MagicMock()
             with patch("evolve.agent.get_tui", return_value=ui_mock):
@@ -775,10 +772,9 @@ class TestResultMessageSubtype:
         sdk_mod.ResultMessage = type(result_msg)
         sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
 
-        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}):
+        with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
+             patch("evolve.agent._patch_sdk_parser", lambda: None):
             from evolve.agent import run_claude_agent
-            import evolve.agent as _ag
-            _ag._patch_sdk_parser = lambda: None
 
             ui_mock = MagicMock()
             with patch("evolve.agent.get_tui", return_value=ui_mock):
