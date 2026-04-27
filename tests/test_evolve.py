@@ -775,7 +775,7 @@ class TestEffortFlag:
         (tmp_path / "README.md").write_text("# Test\n")
         try:
             from unittest.mock import patch as _patch
-            with _patch("evolve.agent.analyze_and_fix"), \
+            with _patch("evolve.agent.analyze_and_fix", return_value=None), \
                  _patch("evolve.agent.run_review_agent"):
                 from evolve.orchestrator import run_single_round
                 run_single_round(
