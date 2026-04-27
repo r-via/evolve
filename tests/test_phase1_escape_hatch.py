@@ -41,7 +41,7 @@ from pathlib import Path
 import pytest
 
 from evolve.agent import build_prompt
-from evolve.orchestrator import _save_subprocess_diagnostic
+from evolve.diagnostics import _save_subprocess_diagnostic
 
 
 # ---------------------------------------------------------------------------

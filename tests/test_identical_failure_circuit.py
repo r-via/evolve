@@ -17,12 +17,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.orchestrator import (
+from evolve.diagnostics import (
     MAX_IDENTICAL_FAILURES,
     _failure_signature,
     _is_circuit_breaker_tripped,
-    _run_rounds,
 )
+from evolve.orchestrator import _run_rounds
 
 
 class TestFailureSignature:
@@ -118,8 +118,8 @@ class TestCircuitBreakerIntegration:
             return 0, "deterministic pytest hang\npytest collecting...", True
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=always_stall), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.diagnostics._save_subprocess_diagnostic"), \
+             patch("evolve.diagnostics._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              patch("evolve.orchestrator._forever_restart"), \
              pytest.raises(SystemExit) as exc:
@@ -154,8 +154,8 @@ class TestCircuitBreakerIntegration:
             return 2, "crash attempt 3 different exit code", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=heterogeneous), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.diagnostics._save_subprocess_diagnostic"), \
+             patch("evolve.diagnostics._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -177,8 +177,8 @@ class TestCircuitBreakerIntegration:
             return 0, "identical stall output", True
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=always_stall), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+             patch("evolve.diagnostics._save_subprocess_diagnostic"), \
+             patch("evolve.diagnostics._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,

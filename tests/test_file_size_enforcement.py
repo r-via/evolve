@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.orchestrator import (
+from evolve.diagnostics import (
     _FILE_TOO_LARGE_LIMIT,
     _detect_file_too_large,
 )
@@ -186,7 +186,7 @@ class TestFileSizeIntegration:
     def test_diagnostic_written_on_oversized_file(self, tmp_path: Path) -> None:
         """When ``_detect_file_too_large`` returns results, a diagnostic
         file with ``FILE TOO LARGE:`` prefix is written."""
-        from evolve.orchestrator import _save_subprocess_diagnostic
+        from evolve.diagnostics import _save_subprocess_diagnostic
 
         run_dir = tmp_path / "session"
         run_dir.mkdir()

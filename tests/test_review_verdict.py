@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from evolve.orchestrator import _check_review_verdict
+from evolve.diagnostics import _check_review_verdict
 from evolve.agent import build_prompt
 
 

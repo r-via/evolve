@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from evolve.git import _setup_forever_branch
-from evolve.orchestrator import _auto_detect_check
+from evolve.diagnostics import _auto_detect_check
 from evolve.party import _forever_restart
 from evolve.state import (
     _check_spec_freshness,

@@ -194,7 +194,7 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
+        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_dry_run_agent") as mock_agent:
             from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path)
@@ -244,7 +244,7 @@ class TestRunDryRun:
 
         mock_result = MagicMock(returncode=0, stdout="ok", stderr="")
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value="pytest") as mock_detect, \
+        with patch("evolve.diagnostics._auto_detect_check", return_value="pytest") as mock_detect, \
              patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
              patch("evolve.agent.run_dry_run_agent"):
             from evolve.orchestrator import run_dry_run
@@ -256,7 +256,7 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
+        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_dry_run_agent"):
             from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path)
@@ -276,7 +276,7 @@ class TestRunDryRun:
             if rd:
                 (rd / "dry_run_report.md").write_text("# Report\n")
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
+        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_dry_run_agent", side_effect=create_report):
             from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path)
@@ -298,7 +298,7 @@ class TestRunDryRun:
 
         import evolve.agent as _agent_mod
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
+        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_dry_run_agent"):
             from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path, model="claude-sonnet-4-20250514")
