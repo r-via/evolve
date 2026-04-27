@@ -577,6 +577,22 @@ while "compacting". If you legitimately compact above the 500-line
 threshold, put `memory: compaction` on its own line in `COMMIT_MSG`;
 otherwise treat any large shrink as a bug.
 
+## SPEC archive read discipline
+
+`SPEC/archive/*.md` files are historical records, NOT current contract.
+You MUST NOT read them unless ALL of:
+
+1. The current US's target explicitly references a concept that a
+   SPEC.md stub points to in the archive.
+2. The stub's summary is insufficient for the target.
+3. You have already read the non-archive sources (SPEC.md, code,
+   memory.md).
+
+The orchestrator logs every Read of `SPEC/archive/*.md` to
+`{runs_base}/memory.md` under `## Archive reads` with round +
+justification.  Three archive reads in a single round without
+justification = scope creep, flagged by Zara at Phase 3.6 review.
+
 ## Watchdog — keep the orchestrator informed
 
 You are running inside a monitored subprocess. The orchestrator watches your

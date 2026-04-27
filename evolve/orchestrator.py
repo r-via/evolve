@@ -1048,6 +1048,62 @@ def _run_curation_pass(
         _probe_warn(f"memory curation: SDK_FAIL at round {round_num}")
 
 
+def _should_run_spec_archival(project_dir: Path, round_num: int, spec: str | None = None) -> bool:
+    """Return True when SPEC archival should run this round.
+
+    Thin wrapper around ``agent._should_run_spec_archival`` that resolves
+    the spec path from the project directory.  SPEC § "SPEC archival (Sid)"
+    AC 3: this function lives in ``evolve/orchestrator.py``.
+    """
+    from evolve.agent import _should_run_spec_archival as _agent_check
+
+    spec_path = project_dir / (spec or "README.md")
+    return _agent_check(spec_path, round_num)
+
+
+def _run_spec_archival_pass(
+    project_dir: Path,
+    run_dir: Path,
+    round_num: int,
+    spec: str | None,
+    ui: TUIProtocol,
+) -> None:
+    """Run SPEC archival (Sid) between rounds if triggered.
+
+    SPEC § "SPEC archival (Sid)".  Delegates to
+    ``agent.run_spec_archival`` which handles prompt building, SDK
+    invocation, shrinkage checks, and abort recovery.  This function
+    is a thin orchestrator-side wrapper that resolves paths and logs
+    the verdict.
+    """
+    from evolve.agent import run_spec_archival
+
+    spec_path = project_dir / (spec or "README.md")
+    if not spec_path.is_file():
+        return
+
+    verdict = run_spec_archival(
+        project_dir=project_dir,
+        run_dir=run_dir,
+        round_num=round_num,
+        spec_path=spec_path,
+    )
+
+    if verdict == "SKIPPED":
+        return  # silent
+    elif verdict == "ARCHIVED":
+        _probe(f"SPEC archival: ARCHIVED at round {round_num}")
+        commit_msg = (
+            f"chore(spec): archival round {round_num}\n\n"
+            f"SPEC sections moved to SPEC/archive/.\n"
+        )
+        _git_commit(project_dir, commit_msg, ui)
+    elif verdict == "ABORTED":
+        _probe_warn(f"SPEC archival: ABORTED at round {round_num} (>80% shrink)")
+    elif verdict == "SDK_FAIL":
+        _probe_warn(f"SPEC archival: SDK_FAIL at round {round_num}")
+
+
 def _save_subprocess_diagnostic(
     run_dir: Path,
     round_num: int,
@@ -1930,6 +1986,14 @@ def _run_rounds(
             _run_curation_pass(
                 project_dir, run_dir, round_num,
                 improvements_path, spec, ui,
+            )
+
+            # --- SPEC archival (Sid) — SPEC § "SPEC archival (Sid)".
+            # Between rounds, after post-check + memory curation,
+            # before the next round's pre-check.  Runs only when
+            # SPEC.md > 2000 lines OR round is a multiple of 20.
+            _run_spec_archival_pass(
+                project_dir, run_dir, round_num, spec, ui,
             )
 
             # --- Structural change detection (SPEC § "Structural change

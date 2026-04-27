@@ -88,6 +88,12 @@ implementation.
    trust.
 5. Check the commit message: does it describe what was actually
    changed, or is it the fallback `chore(evolve): round N`?
+6. **Archive read count** — scan the conversation log for Read calls
+   targeting `SPEC/archive/*.md`.  More than 1 archive Read in a single
+   round without a matching stub reference in the US target text →
+   **MEDIUM** finding ("unnecessary archive reads — the stub should
+   have been sufficient, or the US target doesn't reference the
+   archived concept").
 
 ### Pass 3 — Code and test quality
 
