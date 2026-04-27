@@ -22,10 +22,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import evolve.agent as agent_mod
+import evolve.draft_review as draft_review_mod
 from evolve.agent import DRAFT_EFFORT, REVIEW_EFFORT
 
 
 AGENT_SRC = (Path(agent_mod.__file__)).read_text()
+# US-032 extracted the draft/review SDK callsites into evolve/draft_review.py.
+# Source-grep assertions that previously scanned only agent.py now scan both
+# files so the per-call ``effort=DRAFT_EFFORT`` / ``effort=REVIEW_EFFORT``
+# kwargs are still locked even though they live in a sibling module.
+DRAFT_REVIEW_SRC = (Path(draft_review_mod.__file__)).read_text()
+COMBINED_SRC = AGENT_SRC + "\n" + DRAFT_REVIEW_SRC
 
 
 @pytest.mark.parametrize(
@@ -57,33 +64,36 @@ def test_draft_and_review_call_sites_use_dedicated_constants(kwarg_marker):
 
     Source-grep approach (mirrors the existing
     ``test_evolve.py::test_effort_flag_is_threaded_through_agent`` style
-    that asserts ``agent_src.count("effort=EFFORT") >= 3``).
+    that asserts ``agent_src.count("effort=EFFORT") >= 3``).  Per US-032
+    the call sites live in ``evolve/draft_review.py`` — the assertion is
+    broadened to scan both files so the contract survives the extraction.
     """
-    assert kwarg_marker in AGENT_SRC, (
-        f"agent.py must pass {kwarg_marker} to the corresponding "
-        "ClaudeAgentOptions(...) block — see SPEC § 'Multi-call round "
-        "architecture' table that pins draft/review to effort=low."
+    assert kwarg_marker in COMBINED_SRC, (
+        f"evolve/agent.py + evolve/draft_review.py combined must pass "
+        f"{kwarg_marker} to the corresponding ClaudeAgentOptions(...) block "
+        "— see SPEC § 'Multi-call round architecture' table that pins "
+        "draft/review to effort=low."
     )
 
 
 def test_implement_path_still_uses_EFFORT_global():
     """The implement / sync-readme / dry-run / validate / curation paths
     keep ``effort=EFFORT`` so the operator's ``--effort`` flag still
-    tunes them.  After the per-call override, at least 4 kwarg sites
+    tunes them.  After the per-call override, at least 3 kwarg sites
     in agent.py still bind ``effort=EFFORT`` (analyze_and_fix, readonly
-    agent for dry-run/validate/diff, sync-readme, memory curation).
+    agent for dry-run/validate/diff, sync-readme).
     """
-    # Count includes both the kwarg uses and the docstring/comment
-    # references — see the existing ``>= 3`` test in test_evolve.py.
-    # After US-029, the count is still ≥ 5 because draft/review docstring
-    # mentions are replaced but the comment block at the top of the
-    # multi-call section still references ``effort=EFFORT`` for the
-    # implement path, plus the four kwarg sites that DO still use
-    # the session-wide global.
-    assert AGENT_SRC.count("effort=EFFORT") >= 4, (
+    # Count is the surviving kwarg sites in agent.py.  Pre-US-032 there
+    # were also docstring/comment references in the multi-call section
+    # header which inflated the count by 1 — that section was removed
+    # when the draft/review SDK callsites were extracted to
+    # ``evolve/draft_review.py`` (US-032), so the floor drops to 3.
+    # See the existing ``>= 3`` assertion in test_evolve.py for the
+    # canonical lower bound.
+    assert AGENT_SRC.count("effort=EFFORT") >= 3, (
         "agent.py must keep effort=EFFORT for implement / dry-run / "
-        "validate / sync-readme / curation paths so --effort still "
-        "tunes them per SPEC § 'The --effort flag'."
+        "validate / sync-readme paths so --effort still tunes them "
+        "per SPEC § 'The --effort flag'."
     )
 
 
