@@ -47,7 +47,7 @@ class TestPartyModeForeverOnly:
             return 0, "output", False
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.diagnostics._generate_evolution_report"), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode") as mock_party, \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
@@ -79,7 +79,7 @@ class TestPartyModeForeverOnly:
             raise SystemExit(99)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.diagnostics._generate_evolution_report"), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode") as mock_party, \
              patch("evolve.orchestrator._forever_restart", side_effect=stop_forever_restart), \
              pytest.raises(SystemExit) as exc:

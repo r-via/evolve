@@ -258,8 +258,8 @@ class TestMemoryWipeSanityGateRetry:
             diagnostics.append(reason)
 
         with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.diagnostics._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.diagnostics._generate_evolution_report"), \
+             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,

@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from evolve.costs import TokenUsage, aggregate_usage, build_usage_state, estimate_cost, format_cost
-import evolve.diagnostics as _diag
 from evolve.diagnostics import (
     MAX_IDENTICAL_FAILURES,
     _auto_detect_check,
@@ -244,7 +243,7 @@ def _enforce_convergence_backstop(
     ui.error(f"Premature CONVERGED rejected: {reason}")
     _probe(f"convergence-gate backstop rejected: {reason}")
     converged_path.unlink()
-    _diag._save_subprocess_diagnostic(
+    _save_subprocess_diagnostic(
         run_dir,
         round_num,
         cmd,
@@ -380,7 +379,7 @@ def evolve_loop(
 
     # Auto-detect check command if not provided
     if check_cmd is None:
-        detected = _diag._auto_detect_check(project_dir)
+        detected = _auto_detect_check(project_dir)
         if detected:
             ui_early = get_tui()
             ui_early.info(f"  Auto-detected check command: {detected}")
@@ -836,7 +835,7 @@ def _run_rounds(
                 observable repetition rather than after N failed rounds.
                 """
                 _failure_signatures.append(sig)
-                if _diag._is_circuit_breaker_tripped(_failure_signatures):
+                if _is_circuit_breaker_tripped(_failure_signatures):
                     ui.error(
                         f"Same failure signature {MAX_IDENTICAL_FAILURES} "
                         f"attempts in a row (sig={_failure_signatures[-1]}) "
@@ -900,20 +899,20 @@ def _run_rounds(
                 _attempt_sig: str | None = None
                 if stalled:
                     ui.round_failed(round_num, returncode)
-                    _diag._save_subprocess_diagnostic(
+                    _save_subprocess_diagnostic(
                         run_dir, round_num, cmd, output,
                         reason=f"stalled ({WATCHDOG_TIMEOUT}s without output, killed)",
                         attempt=attempt,
                     )
-                    _attempt_sig = _diag._failure_signature("stalled", returncode, output)
+                    _attempt_sig = _failure_signature("stalled", returncode, output)
                 elif returncode != 0:
                     ui.round_failed(round_num, returncode)
-                    _diag._save_subprocess_diagnostic(
+                    _save_subprocess_diagnostic(
                         run_dir, round_num, cmd, output,
                         reason=f"crashed (exit code {returncode})",
                         attempt=attempt,
                     )
-                    _attempt_sig = _diag._failure_signature("crashed", returncode, output)
+                    _attempt_sig = _failure_signature("crashed", returncode, output)
                 else:
                     # Subprocess exited OK — check for actual progress
                     prev_checked = checked
@@ -926,7 +925,7 @@ def _run_rounds(
                     # SPEC § "Adversarial round review (Phase 3.6)":
                     # The agent writes review_round_N.md during Phase 3.6.
                     # The orchestrator reads it and routes the verdict.
-                    review_verdict, review_findings = _diag._check_review_verdict(
+                    review_verdict, review_findings = _check_review_verdict(
                         run_dir, round_num
                     )
                     if review_verdict in ("BLOCKED", "CHANGES REQUESTED"):
@@ -952,7 +951,7 @@ def _run_rounds(
                                 f"found HIGH/MEDIUM findings that must be addressed.\n"
                                 f"{review_findings}"
                             )
-                        _diag._save_subprocess_diagnostic(
+                        _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
                             reason=reason,
                             attempt=attempt,
@@ -966,7 +965,7 @@ def _run_rounds(
                                 else "review_changes_requested"
                             ),
                         )
-                        _attempt_sig = _diag._failure_signature(
+                        _attempt_sig = _failure_signature(
                             "no-progress:REVIEW", returncode, review_findings
                         )
                         # Fall through to retry registration — the next attempt
@@ -974,7 +973,7 @@ def _run_rounds(
                         # Skip the normal zero-progress checks for this attempt.
                         if _attempt_sig:
                             _failure_signatures.append(_attempt_sig)
-                            if _diag._is_circuit_breaker_tripped(_failure_signatures):
+                            if _is_circuit_breaker_tripped(_failure_signatures):
                                 ui.warn(
                                     f"Deterministic failure loop detected after "
                                     f"{MAX_IDENTICAL_FAILURES} identical review failures."
@@ -1216,7 +1215,7 @@ def _run_rounds(
                         # Override the default "no progress" framing so the
                         # diagnostic is actionable (agent goes to Phase 4)
                         # rather than punitive (agent must edit something).
-                        _diag._save_subprocess_diagnostic(
+                        _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
                             reason=(
                                 "BACKLOG DRAINED: all [ ] items checked off, "
@@ -1226,7 +1225,7 @@ def _run_rounds(
                             ),
                             attempt=attempt,
                         )
-                        _attempt_sig = _diag._failure_signature(
+                        _attempt_sig = _failure_signature(
                             "no-progress:BACKLOG DRAINED",
                             returncode,
                             f"unchecked={unchecked_remaining}",
@@ -1257,12 +1256,12 @@ def _run_rounds(
                             f"the improvements.md change; the next round "
                             f"picks up the first new item."
                         )
-                        _diag._save_subprocess_diagnostic(
+                        _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
                             reason=f"SCOPE CREEP: {reason_str}",
                             attempt=attempt,
                         )
-                        _attempt_sig = _diag._failure_signature(
+                        _attempt_sig = _failure_signature(
                             "no-progress:SCOPE CREEP",
                             returncode,
                             f"new={len(backlog_new_items)}|other={len(scope_creep_other_files)}",
@@ -1324,12 +1323,12 @@ def _run_rounds(
                             reason_str = " AND ".join(no_progress_reasons)
                         else:
                             prefix = "NO PROGRESS"
-                        _diag._save_subprocess_diagnostic(
+                        _save_subprocess_diagnostic(
                             run_dir, round_num, cmd, output,
                             reason=f"{prefix}: {reason_str}",
                             attempt=attempt,
                         )
-                        _attempt_sig = _diag._failure_signature(
+                        _attempt_sig = _failure_signature(
                             f"no-progress:{prefix}", returncode, reason_str
                         )
                     else:
@@ -1348,7 +1347,7 @@ def _run_rounds(
                         # "agent decided no work needed" signal (e.g.
                         # backlog drained), NOT a turn-budget exhaustion.
                         if _agent_subtype == "error_max_turns":
-                            _diag._save_subprocess_diagnostic(
+                            _save_subprocess_diagnostic(
                                 run_dir, round_num, cmd, output,
                                 reason=(
                                     "MAX_TURNS: agent hit turn cap without "
@@ -1357,11 +1356,11 @@ def _run_rounds(
                                 ),
                                 attempt=attempt,
                             )
-                            _attempt_sig = _diag._failure_signature(
+                            _attempt_sig = _failure_signature(
                                 "no-progress:MAX_TURNS", returncode, output
                             )
                         elif _agent_subtype == "error_during_execution":
-                            _diag._save_subprocess_diagnostic(
+                            _save_subprocess_diagnostic(
                                 run_dir, round_num, cmd, output,
                                 reason=(
                                     "SDK ERROR: agent stopped with "
@@ -1370,17 +1369,17 @@ def _run_rounds(
                                 ),
                                 attempt=attempt,
                             )
-                            _attempt_sig = _diag._failure_signature(
+                            _attempt_sig = _failure_signature(
                                 "no-progress:SDK ERROR", returncode, output
                             )
                         else:
                             # No progress — save diagnostic for retry
-                            _diag._save_subprocess_diagnostic(
+                            _save_subprocess_diagnostic(
                                 run_dir, round_num, cmd, output,
                                 reason="no progress (agent ran but changed nothing)",
                                 attempt=attempt,
                             )
-                            _attempt_sig = _diag._failure_signature(
+                            _attempt_sig = _failure_signature(
                                 "no-progress:silent", returncode, output
                             )
 
@@ -1511,13 +1510,13 @@ def _run_rounds(
             # diagnostic for the NEXT round so the agent auto-targets
             # the oversized file for splitting.  Same prefix-chain
             # pattern as BACKLOG VIOLATION / SCOPE CREEP.
-            _oversized = _diag._detect_file_too_large(project_dir)
+            _oversized = _detect_file_too_large(project_dir)
             if _oversized:
                 _ftl_lines = "\n".join(
                     f"  - {p}: {lc} lines" for p, lc in _oversized
                 )
                 _probe_warn(f"FILE TOO LARGE detected:\n{_ftl_lines}")
-                _diag._save_subprocess_diagnostic(
+                _save_subprocess_diagnostic(
                     run_dir, round_num, ["(post-round file-size check)"],
                     f"Oversized files:\n{_ftl_lines}",
                     reason=(
@@ -1652,7 +1651,7 @@ def _run_rounds(
                 )
 
                 # Generate evolution report
-                _diag._generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True, capture_frames=capture_frames)
+                _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True, capture_frames=capture_frames)
 
                 # Display completion summary panel
                 duration_s = time.monotonic() - _rounds_start_time
@@ -1765,7 +1764,7 @@ def _run_rounds(
             )
 
             # Generate evolution report
-            _diag._generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False, capture_frames=capture_frames)
+            _generate_evolution_report(project_dir, run_dir, max_rounds, max_rounds, converged=False, capture_frames=capture_frames)
 
             # Display completion summary panel
             duration_s = time.monotonic() - _rounds_start_time
@@ -2102,7 +2101,7 @@ def run_dry_run(
 
     # Auto-detect check command if not provided
     if check_cmd is None:
-        detected = _diag._auto_detect_check(project_dir)
+        detected = _auto_detect_check(project_dir)
         if detected:
             ui.info(f"  Auto-detected check command: {detected}")
             check_cmd = detected
@@ -2194,7 +2193,7 @@ def run_validate(
 
     # Auto-detect check command if not provided
     if check_cmd is None:
-        detected = _diag._auto_detect_check(project_dir)
+        detected = _auto_detect_check(project_dir)
         if detected:
             ui.info(f"  Auto-detected check command: {detected}")
             check_cmd = detected

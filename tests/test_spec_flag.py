@@ -507,7 +507,7 @@ class TestForeverAtomicAdoptionCommit:
              patch("evolve.orchestrator._ensure_git"), \
              patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.diagnostics._generate_evolution_report"), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              patch("evolve.orchestrator._git_commit", side_effect=capture_commit), \
              pytest.raises(SystemExit):
@@ -561,7 +561,7 @@ class TestForeverAtomicAdoptionCommit:
              patch("evolve.orchestrator._ensure_git"), \
              patch("evolve.orchestrator._ensure_runs_layout"), \
              patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.diagnostics._generate_evolution_report"), \
+             patch("evolve.orchestrator._generate_evolution_report"), \
              patch("evolve.orchestrator._run_party_mode"), \
              patch("evolve.orchestrator._git_commit", side_effect=capture_commit), \
              pytest.raises(SystemExit):

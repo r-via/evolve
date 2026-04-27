@@ -198,7 +198,7 @@ class TestRunValidate:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent"):
             from evolve.orchestrator import run_validate
             run_validate(tmp_path)
@@ -244,7 +244,7 @@ class TestRunValidate:
 
         mock_result = MagicMock(returncode=0, stdout="ok", stderr="")
 
-        with patch("evolve.diagnostics._auto_detect_check", return_value="pytest") as mock_detect, \
+        with patch("evolve.orchestrator._auto_detect_check", return_value="pytest") as mock_detect, \
              patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
              patch("evolve.agent.run_validate_agent"):
             from evolve.orchestrator import run_validate
@@ -266,7 +266,7 @@ class TestRunValidate:
                     "## Summary\nCompliance: 100%\n"
                 )
 
-        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent", side_effect=create_report):
             from evolve.orchestrator import run_validate
             result = run_validate(tmp_path)
@@ -287,7 +287,7 @@ class TestRunValidate:
                     "## Summary\nCompliance: 50%\n"
                 )
 
-        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent", side_effect=create_report):
             from evolve.orchestrator import run_validate
             result = run_validate(tmp_path)
@@ -298,7 +298,7 @@ class TestRunValidate:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent"):
             from evolve.orchestrator import run_validate
             result = run_validate(tmp_path)
@@ -316,7 +316,7 @@ class TestRunValidate:
                     "# Validation Report\nEmpty report\n"
                 )
 
-        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent", side_effect=create_report):
             from evolve.orchestrator import run_validate
             result = run_validate(tmp_path)
@@ -329,7 +329,7 @@ class TestRunValidate:
 
         import evolve.agent as _agent_mod
 
-        with patch("evolve.diagnostics._auto_detect_check", return_value=None), \
+        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
              patch("evolve.agent.run_validate_agent"):
             from evolve.orchestrator import run_validate
             run_validate(tmp_path, model="claude-sonnet-4-20250514")
