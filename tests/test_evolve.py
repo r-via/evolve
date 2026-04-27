@@ -728,18 +728,31 @@ class TestEffortFlag:
         )
 
         # Verify the implement-path SDK invocation sites pass EFFORT=...
-        # After the agent.py multi-round split (US-030/031/032/033), the
-        # call sites live across agent.py + oneshot_agents.py + the
-        # extracted sibling modules. Scan the union of all sites that
-        # honor the operator-tunable ``EFFORT`` global (memory.md
-        # "US-032 draft_review extraction → comment-block effort=EFFORT
-        # count drops" — count kwarg sites only across the sibling set).
+        # After the agent.py multi-round split (US-030/031/032/033) and
+        # the oneshot_agents.py split (US-034), the call sites live
+        # across agent.py + oneshot_agents.py + sync_readme.py + the
+        # other extracted sibling modules. Scan the union of all sites
+        # that honor the operator-tunable ``EFFORT`` global (memory.md
+        # "test_effort_propagates: scan agent.py + oneshot_agents.py
+        # union — round 2 attempt 2 of 20260427_200209" — same lesson
+        # applies to every subsequent extraction; count kwarg sites
+        # across the sibling set).
         evolve_dir = Path(__file__).parent.parent / "evolve"
-        agent_src = (evolve_dir / "agent.py").read_text()
-        oneshot_src = (evolve_dir / "oneshot_agents.py").read_text()
-        total = agent_src.count("effort=EFFORT") + oneshot_src.count("effort=EFFORT")
+        sibling_files = (
+            "agent.py",
+            "oneshot_agents.py",
+            "sync_readme.py",
+            "memory_curation.py",
+            "spec_archival.py",
+        )
+        total = sum(
+            (evolve_dir / fname).read_text().count("effort=EFFORT")
+            for fname in sibling_files
+            if (evolve_dir / fname).exists()
+        )
         assert total >= 3, (
-            "agent.py + oneshot_agents.py must pass effort=EFFORT to each "
+            "agent.py + oneshot_agents.py + sync_readme.py (and other "
+            "extracted siblings) must pass effort=EFFORT to each "
             "operator-tunable ClaudeAgentOptions(...) invocation site "
             "(analyze_and_fix, _run_readonly_claude_agent, "
             "_run_sync_readme_claude_agent)"
