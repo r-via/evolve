@@ -9,3 +9,11 @@
 | 005 | frame-capture-design | 2026-04-27 | SPEC.md > 2000 lines (3075); stable implementation detail, code is self-documenting |
 | 006 | model-selection-rationale | 2026-04-27 | SPEC.md > 2000 lines (3075); historical rationale for Opus-everywhere decision |
 | 007 | development-testing | 2026-04-27 | SPEC.md > 2000 lines (3075); stable reference (test layout, smoke test, drift tests) |
+| 008 | stream-capture-spec | 2026-04-27 | SPEC.md > 2000 lines (2952); stable implementation spec, file naming + format + flush rules |
+| 009 | retry-escape-hatches | 2026-04-27 | SPEC.md > 2000 lines (2952); stable protocols for retry continuity + Phase 1 escape hatch |
+| 010 | structural-change-protocol | 2026-04-27 | SPEC.md > 2000 lines (2952); stable self-evolution safety protocol, fully implemented |
+| 011 | adversarial-review-protocol | 2026-04-27 | SPEC.md > 2000 lines (2952); stable Zara four-pass review + verdict routing |
+| 012 | monitoring-mechanisms | 2026-04-27 | SPEC.md > 2000 lines (2952); stable mechanisms (prior audit, heartbeat, circuit breakers) |
+| 013 | prompt-caching-contract | 2026-04-27 | SPEC.md > 2000 lines (2952); stable SDK caching integration, designed once |
+| 014 | memory-curation-protocol | 2026-04-27 | SPEC.md > 2000 lines (2952); stable Mira protocol, trigger/pass/verdict routing |
+| 015 | cost-tracking-observability | 2026-04-27 | SPEC.md > 2000 lines (2952); stable schemas (cost tracking, state.json, evolution report) |

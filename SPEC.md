@@ -968,119 +968,15 @@ instead of the default.
 
 ---
 
-## Cost and token tracking
+## Cost and token tracking (archived)
 
-Every round produces a `usage_round_N.json` file in the session directory
-containing raw token counts from the Claude Agent SDK response. The
-orchestrator aggregates these into per-session totals in `state.json` and
-`evolution_report.md`.
+Every round produces `usage_round_N.json` with token counts. The
+`estimate_cost` function in `costs.py` converts tokens to USD via a
+built-in rate table (custom rates configurable in `evolve.toml`).
+Aggregated in `state.json` `usage` field and `evolution_report.md`.
+TUI displays per-round and session-total cost.
 
-### Token usage capture
-
-The agent writes `usage_round_N.json` at the end of each round:
-
-```json
-{
-  "round": 3,
-  "model": "claude-opus-4-6",
-  "input_tokens": 45230,
-  "output_tokens": 12400,
-  "cache_creation_tokens": 8200,
-  "cache_read_tokens": 38100,
-  "timestamp": "2026-04-24T16:02:01Z"
-}
-```
-
-The `TokenUsage` dataclass in `costs.py` encapsulates these fields and
-supports addition (accumulating per-round usage into session totals).
-
-### Cost estimation
-
-The `estimate_cost` function in `costs.py` converts token counts to estimated
-USD using a built-in rate table for known Claude models:
-
-```python
-# Built-in rates (updated periodically)
-RATES = {
-    "claude-opus-4-6":          {"input": 15.0, "output": 75.0, "cache_read": 1.5},
-    "claude-sonnet-4-20250514": {"input": 3.0,  "output": 15.0, "cache_read": 0.3},
-}
-# Rates are per 1M tokens
-```
-
-When the model is not in the rate table, token counts are still tracked
-and displayed, but cost estimation shows `"unknown"` instead of a dollar
-amount. This is a presentation concern, not a data loss — the raw token
-counts are always available in `usage_round_N.json` and `state.json`.
-
-**Custom rates.** Projects can override rates in `evolve.toml`:
-
-```toml
-[tool.evolve.rates]
-input_per_1m = 15.0
-output_per_1m = 75.0
-cache_read_per_1m = 1.5
-```
-
-These override the built-in rates for the configured model, allowing
-evolve to estimate costs for new models or custom pricing tiers before
-the built-in table is updated.
-
-### Aggregation in state.json
-
-`state.json` includes a `usage` object updated after every round:
-
-```json
-{
-  "version": 2,
-  "usage": {
-    "total_input_tokens": 234500,
-    "total_output_tokens": 87200,
-    "total_cache_creation_tokens": 42000,
-    "total_cache_read_tokens": 189000,
-    "estimated_cost_usd": 12.40,
-    "rounds_tracked": 8
-  }
-}
-```
-
-### Cost in evolution report
-
-`evolution_report.md` includes a "Cost Summary" section:
-
-```markdown
-## Cost Summary
-| Round | Input Tokens | Output Tokens | Cache Hits | Est. Cost |
-|-------|-------------|---------------|------------|-----------|
-| 1     | 45,230      | 12,400        | 38,100     | $1.24     |
-| 2     | 52,100      | 15,800        | 41,200     | $1.56     |
-...
-**Total: ~$12.40** (claude-opus-4-6)
-```
-
-### TUI cost display
-
-Cost information appears in two places in the TUI:
-
-1. **Per-round header** — estimated cost for the current session so far:
-   ```
-   ╭──────────────────── evolve ─────────────────────╮
-   │ EVOLUTION ROUND 3/10                     ~$3.80 │
-   ```
-
-2. **Completion summary** — total session cost:
-   ```
-   ╭──────────── Evolution Complete ─────────────╮
-   │ ✅ CONVERGED in 8 rounds (12m 34s)          │
-   │                                              │
-   │ 6 improvements completed                    │
-   │ 47 tests passing                            │
-   │ ~$12.40 estimated cost                       │
-   ╰──────────────────────────────────────────────╯
-   ```
-
-`PlainTUI` shows cost as a simple text line. `JsonTUI` emits
-`{"type": "usage", ...}` events (see § "The --json flag").
+→ Full schema + rate table + TUI display: [`SPEC/archive/015-cost-tracking-observability.md`]
 
 ---
 
@@ -1384,84 +1280,15 @@ mentions `memory: compaction`. This is the same family of safeguard as
 zero-progress detection — it catches the failure mode where an agent
 "compacts" by silently wiping the file.
 
-### Dedicated memory curation (Mira)
+### Dedicated memory curation — Mira (archived)
 
-The main round agent's "append-only during work, compact past 500
-lines" contract has a structural weakness: the same entity that
-*writes* memory entries is asked to *decide* which past entries
-stay in the working prompt.  This produces two failure modes in
-practice:
+A dedicated curator agent (Mira, `agents/curator.md`) triages
+`memory.md` between rounds when it exceeds 300 lines or every 10
+rounds. Four passes: duplicate detection, rediscoverability audit,
+historical archival, section hygiene. Verdicts: CURATED, SKIPPED,
+ABORTED (>80% shrink), SDK FAIL.
 
-1. **Authored-it-must-stay bias.**  The agent keeps its own recent
-   entries even when they've become historical noise, because
-   removing them feels like discarding its own work.
-2. **Turn-budget contamination.**  Asking the same agent that just
-   spent a turn implementing a US to also compact memory inflates
-   the turn budget and risks a "compact aggressively to save
-   context" shortcut that silently wipes real signal.
-
-The orchestrator therefore spawns a **dedicated curator agent
-(Mira, `agents/curator.md`)** with a single narrow job: triage the
-existing `memory.md` into KEEP / ARCHIVE / DELETE decisions.  The
-full protocol is in `tasks/memory-curation.md`; in short:
-
-- **When.**  Between rounds (after post-check, before the next
-  round's pre-check) when ANY of: `memory.md` > 300 lines (soft
-  cap); rolling round counter is a multiple of 10; explicit
-  operator request.  Skipped otherwise — Mira does not run on
-  every round.
-- **Persona.**  Mira is NOT the round's draft/implement persona
-  (Winston / John / Amelia) and NOT the reviewer (Zara).  Fresh
-  eyes, no authorship bias.
-- **Model + effort.**  Opus (centralized ``MODEL``), ``effort=low``,
-  ``max_turns=MAX_TURNS`` — see § "Single model: Opus everywhere"
-  for the rationale.  Curation is triage, not architectural
-  reasoning, but Opus at low effort still avoids the misclassification
-  errors Sonnet produced on memory-triage decisions.
-- **Input scope.**  Current `memory.md` + SPEC § "memory.md" + last
-  5 rounds' conversation-log titles + `git log --oneline -30`.
-  Mira does NOT see prior curation audit logs (each curation is
-  fresh — no chain-effect bias where a past curator's mistakes
-  propagate).
-- **Four passes.**  Duplicate detection → rediscoverability audit
-  (can a future agent find this by reading SPEC / code / commit?)
-  → historical archival (entries > 20 rounds old with no forward
-  signal) → section hygiene (empty sections stay as stubs; section
-  order is SPEC-locked; `## Archive` is append-only).
-- **Output.**  Rewritten `memory.md` + audit log at
-  `{run_dir}/memory_curation_round_{N}.md` with a KEEP / ARCHIVE /
-  DELETE ledger and a narrative summary.
-- **Safeguards.**
-  - The rewrite must include `memory: compaction` in the commit
-    message (unchanged from the existing byte-size sanity gate).
-  - If the rewrite would shrink `memory.md` by > 80%, the
-    curation is **aborted** — original file restored, audit log
-    saved with `verdict: ABORTED`, operator warned.  This is a
-    belt-and-suspenders guard on top of the 50% gate: a 60-80%
-    shrink might be legitimate (big session crossed the cap), but
-    > 80% is almost always a prompt misfire.
-  - Archive is soft-delete: removed entries land in `## Archive`
-    at the bottom of `memory.md`, still on disk, still greppable.
-    Only true duplicates are deleted outright, and even those
-    leave a trace in the audit ledger.
-
-**Verdict routing.**
-
-| Verdict     | Condition                                              | Orchestrator action                                                       |
-|-------------|--------------------------------------------------------|---------------------------------------------------------------------------|
-| CURATED     | Rewrite within bounds, audit log present                | Commit with `memory: compaction` marker.  Ledger preserved on disk.       |
-| SKIPPED     | Threshold not hit                                      | No curation run; next round proceeds normally.                            |
-| ABORTED     | Rewrite would shrink by > 80%                          | Restore original `memory.md`; save audit with `verdict: ABORTED`; warn.   |
-| SDK FAIL    | No audit log, or schema malformed                       | Restore original; warn; next round proceeds.                              |
-
-**Why this is worth the extra SDK call.**  Without Mira, the main
-agent's memory contract devolves to either (a) append forever and
-suffer prompt bloat, or (b) compact during the main turn and risk
-wipes.  With Mira, the main agent stays strictly append-only
-(simple contract, no bias), and the curator handles the prune in
-isolation with a dedicated cheaper model.  Net cost is lower than
-the status quo where memory bloat inflates every subsequent
-round's prompt budget.
+→ Full protocol + safeguards: [`SPEC/archive/014-memory-curation-protocol.md`]
 
 ---
 
@@ -1659,131 +1486,13 @@ made no edits, and under-fires when the agent commits a partial fix
 just before hitting the cap. Both bugs disappear once ``subtype`` is
 the source of truth.
 
-### Complete LLM stream capture per agent invocation
+### Complete LLM stream capture (archived)
 
-Every Claude Agent SDK invocation evolve makes — implement (Amelia),
-draft (Winston + John), review (Zara), memory curation (Mira),
-SPEC archival (Sid), sync-readme, dry-run, validate, diff,
-party — MUST persist its **complete stream** to a dedicated file
-under the run directory.  "Complete" is normative: nothing the
-SDK emits about that invocation may be silently dropped.  The
-files are the primary debugging surface when an agent
-misbehaves; truncated or summary logs make post-mortems
-impossible and force operators to re-run with extra
-instrumentation, which (a) costs another round's tokens and
-(b) frequently fails to reproduce the original misbehavior.
+Every SDK invocation persists its complete stream to a per-agent,
+per-round file under the session directory. Files are flushed in
+real-time (no buffering). Format is human-readable Markdown.
 
-**File naming.**  One file per agent invocation per round
-(per attempt for implement, since implement retries within a
-round).  Path is always under the session run directory
-(``.evolve/runs/<timestamp>/``):
-
-| Agent              | File pattern                                       |
-|--------------------|----------------------------------------------------|
-| Implement (Amelia) | ``conversation_loop_{N}_attempt_{M}.md``           |
-| Implement summary  | ``conversation_loop_{N}.md`` (last successful attempt, copied for backward compatibility) |
-| Draft (Winston+John) | ``draft_conversation_round_{N}.md``               |
-| Review (Zara)      | ``review_conversation_round_{N}.md``               |
-| Memory curation (Mira) | ``curation_conversation_round_{N}.md``         |
-| SPEC archival (Sid) | ``archival_conversation_round_{N}.md``             |
-| Sync-readme         | ``sync_readme_conversation.md``                   |
-| Dry-run / validate / diff | ``{mode}_conversation.md``                  |
-| Party               | ``party_conversation.md``                         |
-
-The names use the **agent role** (not the persona) so logs
-remain greppable across model / persona changes.
-
-**What MUST be captured.**  For every message the SDK yields
-during the invocation, the file MUST contain (in stream order,
-deduplicated by block id where the SDK streams partials):
-
-1. ``SystemMessage`` events — at minimum a marker so the
-   session boundary is visible.
-2. ``AssistantMessage`` ``ThinkingBlock``s — the model's
-   extended-thinking blocks, verbatim.  Thinking is the most
-   load-bearing diagnostic signal when an agent goes off the
-   rails ("I will now refactor the working code because the
-   SPEC suggests it could be cleaner") — losing thinking blocks
-   is losing the why.
-3. ``AssistantMessage`` ``TextBlock``s — the model's plain
-   reasoning / narration text, verbatim.
-4. ``AssistantMessage`` ``ToolUseBlock``s — every tool call
-   with **its name and input** (input may be summarised /
-   length-capped at a generous limit, e.g. 2000 chars per
-   field, but never elided to "..." without the original
-   length recorded).
-5. ``ToolResultBlock``s — every tool result with
-   ``is_error`` flag and content (length-capped per field, with
-   the cap recorded in the file header so a reader knows the
-   ceiling).
-6. ``RateLimitEvent`` markers — visible as ``> Rate limited``
-   lines so retry behavior is reconstructible.
-7. The final ``ResultMessage`` — full payload: ``subtype``,
-   ``is_error``, ``num_turns``, ``stop_reason``,
-   ``total_cost_usd``, ``duration_ms``, ``usage``.  This is
-   the authoritative termination signal (§ "Authoritative
-   termination signal from the SDK") and MUST appear as the
-   last entry in the file, formatted on a single
-   ``**Result**: subtype=…, num_turns=…, …`` line so it is
-   greppable across logs.
-
-**What MAY be omitted.**  Partial streamed deltas of a block
-that the SDK ultimately re-emits as a complete block (the
-deduplication-by-id step) — only the final consolidated block
-is logged.  Nothing else.
-
-**Format.**  Markdown, one section per message kind (``###
-Thinking``, ``**ToolName**``, etc.), so a human can scroll the
-file top-to-bottom and reconstruct the run.  Code-block fences
-around tool outputs.  No JSON dumps in place of human-readable
-sections — the file is for humans first, machines second.
-
-**Real-time write — no buffering.**  Each entry MUST be flushed
-to disk **as it is received from the SDK stream**, not buffered
-until the agent finishes.  Concretely: open every conversation
-log with line-buffering (``open(path, "w", buffering=1)``) or
-call ``flush()`` after every ``write()``.  The default Python
-file buffering (~4–8 KB block buffer) is forbidden for these
-files because it defeats the primary use case:
-
-1. **Live tailing.**  Operators run ``tail -f
-   .evolve/runs/<latest>/conversation_loop_N.md`` to watch an
-   agent reason in real time.  A buffered log shows nothing
-   for minutes, then dumps the whole transcript at once when
-   the agent finishes — useless for spotting a stuck agent
-   before the watchdog kills it.
-2. **Crash forensics.**  When an agent hangs (rate-limited
-   forever, infinite tool-loop, OOM) and the watchdog SIGKILLs
-   the round subprocess, an unbuffered log preserves
-   everything up to the kill instant.  A buffered log loses the
-   final 4 KB — which is precisely the part that explains why
-   the agent got stuck.
-3. **Mid-round operator inspection.**  ``grep "Rate limited"
-   .evolve/runs/<latest>/*.md`` only works during a long round
-   if the writes have actually hit disk.  Same for any
-   live-debugging workflow that opens the log alongside the
-   running agent.
-
-The cost of line buffering is negligible (one ``write`` syscall
-per ``\n`` instead of one per buffer fill); the diagnostic
-value is enormous.  A test MUST exist that writes to a
-conversation log path and asserts the on-disk byte count
-strictly increases between successive writes — guarding against
-a future regression that re-introduces block buffering.
-
-**Length cap exemption from the 500-line rule.**  These
-conversation files are data, not source code, and routinely
-exceed the project's 500-line cap on Python files (§ "Hard
-rule: source files MUST NOT exceed 500 lines").  They are
-explicitly out of scope for that rule.
-
-**Operator workflow.**  When a round misbehaves, the operator
-opens ``.evolve/runs/<latest>/`` and reads the agent file
-matching the suspect role.  ``grep -l "subtype=error_max_turns"
-.evolve/runs/<latest>/*.md`` immediately surfaces every agent
-that hit the turn cap; ``grep "Rate limited"`` surfaces
-throttling; ``grep "is_error=True"`` surfaces tool failures.
-This is the contract these files exist to deliver.
+→ Full capture spec + file naming + format rules: [`SPEC/archive/008-stream-capture-spec.md`]
 
 ### Agent-side self-monitoring
 
@@ -1811,507 +1520,41 @@ lost in a target that's too large — without operator intervention. The
 orchestrator's zero-progress retry remains the safety net; agent-side detection
 is the first line of defense and catches the loop one round earlier.
 
-### Retry continuity
+### Retry continuity and Phase 1 escape hatch (archived)
 
-Debug retries of the **same round** must reuse the previous attempt's work;
-otherwise the retry wastes 40 turns re-discovering the same facts. Three rules
-implement this:
+Debug retries reuse prior attempt's work via per-attempt log files
+and enriched diagnostic prompts. When pre-existing test failures
+block progress on the final retry attempt, the agent may bypass
+Phase 1 and proceed with the target (logging the bypass).
 
-1. **Per-attempt log files.** Each attempt of round N writes to its own file:
-   `conversation_loop_N_attempt_1.md`, `conversation_loop_N_attempt_2.md`, etc.
-   Nothing is overwritten. The final successful attempt is also symlinked (or
-   copied) to `conversation_loop_N.md` for backward compatibility with
-   downstream consumers (report generation, party mode, self-monitoring).
-2. **Enriched diagnostic in the retry prompt.** Instead of just the last 3000
-   chars of output, the debug retry prompt includes a dedicated
-   `## Previous attempt log` section with the **full path** to
-   `conversation_loop_N_attempt_{K-1}.md` and an explicit instruction:
-   *"Read this file first. It contains everything the previous attempt
-   already discovered — the tool calls, the dead ends, the working
-   hypotheses. Do not redo that investigation. Continue from where it
-   stopped."*
-3. **Retry-aware self-monitoring.** The agent's first action in any round is
-   to check for prior attempts of the **current** round number on disk (glob
-   `conversation_loop_{current_round}_attempt_*.md`). If any exist, read them
-   **before** looking at rounds N-1 / N-2 — they carry the most relevant
-   context by far. The N-1 / N-2 check remains, but runs after.
+→ Full protocols: [`SPEC/archive/009-retry-escape-hatches.md`]
 
-This closes the gap where retries are currently blind to their own prior
-attempt: the first attempt crashes after 40 turns of investigation, the
-diagnostic gives the retry a 3000-char snippet (usually just the error
-traceback), and the retry restarts the same investigation from scratch.
-Treating each round as a continuum of attempts — not a fresh start each
-time — is the difference between 3 wasted retries and 3 retries that each
-progress further.
+### Structural change self-detection (archived)
 
-### Phase 1 escape hatch for unrelated pre-existing failures
+When evolve is self-evolving, the agent detects structural changes
+(renames, entry-point moves, `__init__.py` edits) and writes a
+`RESTART_REQUIRED` marker. The orchestrator exits with code 3.
+Skipped when driving third-party projects.
 
-Phase 1 is mandatory by contract: *fix any failure from the check command
-before touching the current improvement target*. In practice this is the
-right default — broken tests or lint errors usually point at regressions
-introduced by the previous round and must be cleared first. But it produces
-a specific lockup when:
+→ Full protocol: [`SPEC/archive/010-structural-change-protocol.md`]
 
-- The failures are **pre-existing and unrelated** to the current target
-  (e.g. flaky environment-specific issues, test-isolation bugs, third-party
-  regressions that are genuinely someone else's problem)
-- They resist two debug retries
-- The agent has spent its turn budget on diagnosis without producing any
-  fix
+### Adversarial round review — Phase 3.6 (archived)
 
-In that situation the round cannot make *any* progress — not on Phase 1,
-not on the target — and keeps consuming retries and rounds until
-`max_rounds`. Rounds 1-5 of session `20260423_134609` are the canonical
-example: 50+ cumulative tool calls across attempts investigating a Rich
-`Style.parse` LRU cache issue, zero code edits, same target re-picked
-every round.
+After each implement round, Zara (reviewer persona) runs a four-pass
+adversarial audit. Verdicts: APPROVED (proceed), CHANGES REQUESTED
+(auto-retry), BLOCKED (auto-retry). Draft rounds skip review.
+Minimum 3 findings per review. Auto-fix invariant: no manual
+operator arbitration.
 
-**The escape hatch.** When **all** of the following hold:
+→ Full protocol + verdict routing: [`SPEC/archive/011-adversarial-review-protocol.md`]
 
-- The round is on its **second debug retry** (attempt 3, the final one
-  before exhaustion)
-- Phase 1 errors are still present
-- The failing tests / check output touch **none** of the files the current
-  improvement target names (verified by scanning the target text for file
-  references and cross-checking against the failing output)
+### Prior round audit, heartbeat, and circuit breakers (archived)
 
-…the agent is permitted to:
+Every round ≥ 2 audits the previous round's artifacts for anomalies.
+A 30s heartbeat thread prevents watchdog false kills. The circuit
+breaker exits with code 4 after 3 identical failure signatures.
 
-1. Log the failing tests to `memory.md` under a new `## Blocked Errors`
-   section with the full check output excerpt, timestamps, and a note
-   explaining the Phase 1 bypass
-2. Append a dedicated high-priority item to `improvements.md`:
-   `[ ] [functional] Phase 1 bypass: fix pre-existing failures (<short
-   summary>) that blocked round N — see memory.md § Blocked Errors`
-3. **Proceed with the original Phase 3 target** for this attempt, treating
-   the pre-existing failures as known-broken state to work around (e.g.
-   run tests with `-k 'not broken_test'` or equivalent while building and
-   verifying the target's changes)
-4. At commit time, include in `COMMIT_MSG` a top-level line
-   `Phase 1 bypass: <short summary>` so the escape hatch is visible in
-   git history and the report
-
-The bypass does **not** apply when:
-
-- The failures reference files in the target's scope (those MUST be fixed
-  first — they're the target's responsibility)
-- The round has retries remaining (the retry might yet resolve the issue)
-- The failures are the regression introduced by the current target (those
-  mean the target was implemented incorrectly, not that Phase 1 is
-  unrelated)
-
-This is a **deliberate hole in the "fix errors first" rule**, narrow enough
-that it only triggers on genuinely unresolvable pre-existing state, and
-loud enough (via memory.md + improvements.md + commit message) that the
-bypass never goes unnoticed. The orphaned errors become the top-priority
-item for the next cycle and get dedicated attention instead of starving
-every round.
-
-### Structural change self-detection
-
-Some improvements rearrange the repository itself — file renames, module
-extractions, entry-point changes, package-layout moves. These are **risky
-for autonomous evolution**: the pytest suite mocks subprocess invocations
-and so passes even when the real subprocess launcher is broken (e.g. the
-orchestrator invoking a file that just got moved). A round can land a
-"successful" commit that makes the next round fail to start, and the
-failure repeats forever because the same broken state is on disk.
-
-To prevent silent self-breakage, the agent detects **structural changes**
-before committing and explicitly hands control back to the operator
-rather than continuing.
-
-**Scope: self-evolution only.**  ``RESTART_REQUIRED`` is a
-*self-evolution* safety protocol.  Its purpose is to protect the
-**running orchestrator's Python imports** from going stale after a
-rename / `__init__.py` edit / entry-point move.  That is only a
-problem when the project being evolved IS evolve's own source tree
-— i.e. ``python -m evolve start /path/to/evolve`` where
-``/path/to/evolve`` is the same repository that provides the
-orchestrator's running code.
-
-When evolve is driving a third-party project (the common case —
-``python -m evolve start /path/to/foo``), structural changes in
-``foo/`` never touch ``evolve/``'s module layout.  The round
-subprocess spawns a fresh Python interpreter per round anyway
-(``python -m evolve _round …``), so target-project renames would
-be visible on the next round's first `import` regardless.  The
-agent is therefore instructed to **skip the RESTART_REQUIRED
-write** when ``{project_dir}`` is not the same repository as
-evolve's own source tree.
-
-The orchestrator implements the same check as defense-in-depth
-(``_is_self_evolving`` in ``evolve/orchestrator.py``): even if an
-agent mistakenly writes ``RESTART_REQUIRED`` on a third-party
-project, the orchestrator silently ignores the marker — the file
-stays on disk as an audit trail but no exit-3 fires, no operator
-is paged.
-
-**What counts as structural.** Any of the following, detected via
-`git diff` / `git status` against the pre-round state:
-
-- A file rename (`git diff --diff-filter=R` reports entries)
-- A file creation or deletion that is referenced by `import` / `from X` in
-  another tracked file (`grep -l` across the project)
-- Changes to `pyproject.toml` sections `[project.scripts]`,
-  `[tool.setuptools]`, or dependency lists that move an entry point
-- Changes to `evolve/__init__.py`, `evolve/__main__.py`, or any `__init__.py`
-  that alters module re-exports
-- Creation or deletion of `__main__.py` anywhere in the tree
-- Changes to `conftest.py` or `tests/conftest.py` that affect test
-  collection / import paths
-
-**Agent-side protocol.** When a structural change is detected during
-Phase 3, the agent MUST:
-
-1. Complete the code change as planned and verify tests pass
-2. Write `COMMIT_MSG` with a mandatory `STRUCTURAL:` prefix on the first
-   line, e.g.:
-   ```
-   STRUCTURAL: feat(git): extract git operations from loop.py into evolve/git.py
-
-   <body>
-   ```
-3. Write a `RESTART_REQUIRED` marker in the current run directory with:
-   ```
-   # RESTART_REQUIRED
-   reason: <one-line why the process must restart>
-   verify: <shell command(s) the operator should run to check the new state>
-   resume: <shell command to continue evolution>
-   round: <current round number>
-   timestamp: <ISO-8601>
-   ```
-4. **Skip Phase 4 (convergence) for this round** — leave convergence to
-   the next run after restart. Do not write `CONVERGED` even if the
-   backlog is empty.
-5. Return cleanly from the round subprocess so the orchestrator can
-   commit the change and honor the marker.
-
-**Orchestrator-side protocol.** After the agent's round subprocess
-returns and before starting the next round, the orchestrator:
-
-1. Runs the normal round-end pipeline (commit, push, check, state.json)
-2. Checks for `RESTART_REQUIRED` in the run directory
-3. If present:
-   - Fires a new `on_structural_change` hook with the marker fields as
-     env vars
-   - Renders a blocking red panel via `ui.structural_change_required(marker)`:
-     ```
-     ╭──── Structural Change — Operator Review Required ────╮
-     │ Round <N> committed a structural change:             │
-     │   <commit subject>                                   │
-     │                                                      │
-     │ Reason: <marker.reason>                              │
-     │                                                      │
-     │ Verify before restarting:                            │
-     │   $ <marker.verify>                                  │
-     │                                                      │
-     │ When ready to continue:                              │
-     │   $ <marker.resume>                                  │
-     │                                                      │
-     │ Or abort and revert:                                 │
-     │   $ git reset --hard HEAD~1                          │
-     ╰──────────────────────────────────────────────────────╯
-     ```
-   - Exits the evolution loop with **exit code 3** (new — "structural
-     change, manual restart required")
-4. `--forever` mode does **not** bypass this — structural changes are the
-   one category of commit that always pauses autonomy. Auto-continuing
-   would re-invoke potentially-broken code.
-
-**Detection confidence.** The signals above are heuristic, not perfect.
-False negatives are possible (an agent could do something structural the
-heuristic misses). The existing entry-point-integrity guards (subprocess
-smoke test, pytest-mocked-subprocess regression test) remain in place as
-a backup: if self-detection fails but the change breaks the entry point,
-the next round's subprocess crash triggers the zero-progress retry and
-then the Phase 1 escape hatch. The structural-change protocol is the
-preventive layer; the retry/escape guards are the reactive layer.
-
-### Adversarial round review (Phase 3.6)
-
-After each **implement** round's commit — but before the Phase 4
-convergence check — the agent role-plays a dedicated adversarial
-reviewer persona (**Zara**, `agents/reviewer.md`) and runs a
-skeptical audit of the round's work.  This closes the self-
-assessment conflict of interest: without an adversarial pass, the
-same agent that drafted the US, implemented it, and decides the
-checkoff produces "looks good" reviews by default, and the
-cumulative quality of `improvements.md` drifts downward.
-
-**Scope: implement rounds only.**  Zara is **skipped** on draft
-rounds (the branch taken when the backlog is drained and Winston +
-John write a new ``[ ]`` US into ``improvements.md``).  Three
-reasons:
-
-1. **No adversarial code surface.**  A draft round produces only a
-   text edit to ``improvements.md`` and a ``COMMIT_MSG`` — there is
-   no code, no tests, no behavior change for Zara's four attack
-   passes (regression risk, AC compliance, SPEC normative checks,
-   structural drift) to bite on.
-2. **Drafting is already dual-reviewed.**  The draft agent runs
-   Winston (architect) and John (PM) as an internal two-pass review
-   of the US before writing it (architecture pattern fit, value /
-   priority sanity).  Adding Zara on top is a third reviewer
-   reviewing planning, not code.
-3. **Empirically high false-positive rate.**  When Zara was run on
-   draft rounds she pivoted to wording-quality critique of the US
-   (vague AC, fuzzy scope) and routinely returned BLOCKED /
-   CHANGES REQUESTED verdicts on perfectly serviceable drafts —
-   feeding the auto-retry loop (§ "Verdict → orchestrator action")
-   with non-actionable churn.  Skipping Zara on drafts removes the
-   noise without losing real signal.
-
-The orchestrator emits ``draft round — skipping review (Zara
-reviews implement rounds only)`` when the skip path runs, so the
-behavior is observable in the log.
-
-**Persona separation.**  Zara is NOT the same persona as Winston
-(architect — drafted the US), John (PM — validated value/priority),
-or Amelia (dev — implemented the story).  Persona mixing defeats
-the purpose: the drafter and implementer already believe the work
-is good.  Zara's mandate is to find what they glossed over.
-
-**Input scope.**  Zara receives exactly these artifacts:
-
-1. The US item text (the `[x] [type] [priority] US-NNN: …` line
-   plus its AC block and Definition of Done).
-2. `git diff HEAD^ HEAD -- .` — the round's commit.
-3. `conversation_loop_{round_num}.md` — including the persona
-   blocks that led to the US and the dev's implementation block.
-4. `SPEC.md` — for normative-statement compliance.
-5. `runs/memory.md` (or `.evolve/runs/memory.md`) — cross-round
-   context.
-
-Zara does **not** receive:
-
-- Prior round reviews (each round is reviewed fresh — no chain
-  effect, no reviewer-colludes-with-past-reviewer failure mode).
-- `state.json` or cost data (irrelevant to code quality).
-
-**Four attack passes.** (Full protocol in
-`tasks/review-adversarial-round.md`.)
-
-| Pass | Focus                                       | Key failure modes to find                                          |
-|------|---------------------------------------------|--------------------------------------------------------------------|
-| 1    | Acceptance-criteria audit                   | AC classified as PARTIAL / MISSING with no test evidence → HIGH    |
-| 2    | Claim-vs-reality (dev narrative vs. diff)   | Claim without diff evidence → HIGH; silent diff hunks → MEDIUM      |
-| 3    | Code and test quality                       | Placeholder asserts, swallowed exceptions, self-pass tests         |
-| 4    | SPEC-compliance                             | Implementation violates a MUST / MUST NOT in `SPEC.md` → HIGH      |
-
-**Minimum findings.**  Zara produces **at least 3 findings** per
-review.  If genuinely clean, she enumerates the three highest-risk
-areas checked and cites why each was sound — no "looks good"
-reviews.  A review with fewer than 3 findings is suspected of
-insufficient scrutiny and triggers a retry of the review itself.
-
-**Output.**  Written to `{run_dir}/review_round_{N}.md` with a
-strict schema (verdict, categorised findings, reviewer narrative).
-The file is committed alongside the round's other artifacts and
-becomes part of the evolution audit trail; the prior-round audit
-path (§ "Prior round audit") scans prior review files as an
-additional anomaly signal.
-
-**Verdict → orchestrator action.**
-
-| Verdict           | Condition                                                    | Action                                                                                                              |
-|-------------------|--------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
-| APPROVED          | 0 HIGH findings AND 0 MEDIUM findings                         | Round proceeds to Phase 4 convergence.                                                                              |
-| CHANGES REQUESTED | 1-2 HIGH findings, OR any MEDIUM findings                     | Orchestrator writes `subprocess_error_round_{N}.txt` with a `REVIEW: changes requested` prefix listing the HIGH **and** MEDIUM findings; triggers a debug retry (same mechanism as NO PROGRESS / MEMORY WIPED).  The retry reads the review and addresses every HIGH and MEDIUM finding before re-committing. |
-| BLOCKED           | ≥ 3 HIGH findings, OR any finding tagged `[regression-risk]` | Same auto-retry path as CHANGES REQUESTED — orchestrator writes `subprocess_error_round_{N}.txt` with a `REVIEW: blocked` prefix and triggers a debug retry to auto-fix the findings.  The deterministic-loop guard (§ "Circuit breakers") caps runaway retries; the operator never arbitrates findings manually. |
-
-**Auto-fix invariant.**  Every HIGH and MEDIUM finding is auto-fixed
-by the next attempt — there is **no** verdict that drops the session
-into a "manual operator review" state.  Earlier versions exited with
-code 2 on BLOCKED; that path was removed because (a) operator
-arbitration is exactly the kind of manual loop evolve exists to
-eliminate, and (b) the circuit breaker / deterministic-loop guard
-already provides the safety net for genuinely unfixable findings.
-LOW findings are surfaced in the review file for the audit trail but
-do not gate the verdict — they are not auto-fixed inside the round.
-
-The `REVIEW:` diagnostic prefix is recognised by `build_prompt` in
-`agent.py` alongside the existing prefixes (NO PROGRESS, MEMORY
-WIPED, BACKLOG VIOLATION, PREMATURE CONVERGED) and emits a dedicated
-`## CRITICAL — Previous attempt failed adversarial review` section
-at the top of the retry prompt, with the HIGH findings expanded.
-
-**Interaction with existing mechanisms.**
-
-- Complements `prev_crash_section` (for orchestrator-level failures)
-  and `prev_attempt_section` (for within-round retry continuity).
-  Zara's output is for *cross-phase* continuity: the dev persona
-  committed successfully, but the work still didn't pass skeptical
-  review.
-- Complements the circuit breaker: if three successive retries
-  produce the same CHANGES REQUESTED verdict with the same HIGH
-  signature, the circuit breaker's identical-failure fingerprint
-  includes `REVIEW: changes requested` and exit 4 fires.
-- The minimum-findings rule (≥ 3) prevents Zara from becoming a
-  rubber stamp even on clean code — if she cannot find three
-  substantive things to check, she is under-scrutinising.
-
-**Future extensions (not required for initial implementation):**
-
-- Session-end review — a higher-level Zara pass at convergence
-  that audits the whole session's story arc (did the backlog make
-  sense end-to-end, or did rounds produce churn?).
-- Forever-cycle review — between forever-mode cycles, audit the
-  SPEC proposal adoption for drift from the original spec intent.
-
-### Prior round audit
-
-Every round (≥ 2) runs a pre-flight audit of the previous round's
-artifacts before the agent touches the backlog.  The goal is a simple,
-unavoidable rule: if round N-1 finished in a state that deserves a
-second look, round N has to fix that second-look item *first*, not
-carry on with whatever the improvements.md current target says.
-
-**Signals scanned programmatically (by ``_detect_prior_round_anomalies``
-in ``agent.py``):**
-
-| Signal                         | Source                                                      |
-|--------------------------------|-------------------------------------------------------------|
-| orchestrator diagnostic present | ``subprocess_error_round_{N-1}.txt`` exists                  |
-| post-fix check FAIL            | ``check_round_{N-1}.txt`` contains ``post-fix check: FAIL`` |
-| watchdog stall / SIGKILL       | ``stalled (Ns without output) — killing subprocess`` in log |
-| subprocess killed by signal    | ``Round N failed (exit -K)`` in log                         |
-| pre-check TIMEOUT              | ``pre-check TIMEOUT after Ns`` in log                       |
-| frame capture error            | ``Frame capture failed for X: not well-formed`` in log      |
-| circuit breaker tripped (exit 4) | ``deterministic loop detected`` in log                      |
-
-When any signal fires, ``build_prompt`` injects a dedicated
-``## Prior round audit`` section at the top of the system prompt
-(between ``target_section`` and ``prev_crash_section``) listing every
-anomaly detected and the mandatory action sequence: read the three
-artifacts named above, identify root cause, apply the fix, commit
-with a ``fix(audit):`` prefix, *then* resume the current target.
-
-**Interaction with the existing prev_crash / retry-continuity paths:**
-
-- ``prev_crash_section`` (pre-existing) handles the *strong* signal of
-  an orchestrator diagnostic file and tailors the message per crash
-  type (MEMORY WIPED, BACKLOG VIOLATION, NO PROGRESS, PREMATURE
-  CONVERGED, generic CRASH).  The audit section is *additive*: it
-  lists the diagnostic alongside the softer signals (frame capture
-  errors, watchdog warnings, circuit-breaker notices) that the
-  prev_crash path doesn't surface.
-- ``prev_attempt_section`` (retry continuity) handles within-round
-  continuity when the agent is on attempt 2 or 3.  The audit section
-  handles *cross-round* continuity — the previous round committed,
-  but left behind evidence that something needs attention before the
-  next target.
-
-**Deferral escape hatch.** If an anomaly is genuinely unfixable (a
-flaky external service, a platform-specific bug that doesn't affect
-the evolve project itself), the agent is instructed to document it in
-``runs/memory.md`` under a ``## Known anomalies`` section rather than
-spend every round re-investigating the same known-benign signal.
-Rounds audit against that log: if the signal matches a known-anomaly
-entry, the section is still rendered (so the operator sees it) but
-the agent may acknowledge and proceed.
-
-### Round-wide heartbeat
-
-The parent orchestrator watches each round subprocess with a
-silence-based watchdog (`_run_monitored_subprocess`,
-`WATCHDOG_TIMEOUT` = 120s of no stdout → SIGKILL).  Several operations
-inside a round naturally buffer or suppress output:
-
-- The pre-check / post-check running `pytest` silently while it
-  collects or runs long-running tests;
-- Agent tool calls that pipe output through `| tail`, redirect to
-  `/dev/null`, or pass `-q`/`--quiet` flags;
-- Long agent "thinking" gaps between streaming messages (Opus can
-  spend tens of seconds on extended reasoning before emitting);
-- Git operations on large repos;
-- The Claude Agent SDK subprocess buffering at its own layer.
-
-Without intervention, any of these would race the watchdog and lose
-— the round gets SIGKILL'd mid-work, the agent never completes, the
-debug retry re-enters the same buffering pattern and loses again,
-and the circuit breaker eventually fires because three attempts
-share the same "stalled" signature.
-
-To prevent that, `run_single_round` starts a daemon heartbeat thread
-that prints `[probe] round N alive — Ns elapsed` every 30s for the
-entire round duration.  The heartbeat is cheap (one print per
-30 seconds), safely terminated via a `threading.Event` in a
-`try/finally`, and covers every phase: pre-check, agent invocation,
-agent tool calls, git commit, post-check.  Total round duration is
-still bounded by the user's budget (`--max-cost`), round count
-(`--rounds`), and convergence — the heartbeat removes only the
-120-second silence-based cudgel, not those higher-level bounds.
-
-Pre-check and post-check still use their own `subprocess.run(...,
-timeout=timeout)` to catch genuinely hung commands.  When that
-timeout fires, `check_output` becomes `"TIMEOUT after Ns"`, the
-agent is invoked (or the post-check result recorded) normally, and
-the agent receives the timeout message in its prompt — so it can
-investigate (skip a flaky test, fix a slow fixture, adjust the
-check command) rather than watching the round get murdered.
-
-### Circuit breakers
-
-The debug-retry loop retries each failure up to `MAX_DEBUG_RETRIES` times
-within a round, and in `--forever` mode the orchestrator skips to the next
-round if retries are exhausted. That design is right for **transient**
-failures (a flaky test, an agent timeout that clears on retry) but wrong
-for **deterministic** ones (a pre-check command that hangs on every round,
-an irrecoverable bug that produces the same stack trace every time). Left
-unchecked, forever mode would spin on a deterministic failure forever,
-burning tokens without recovery.
-
-**The rule.** When the same failure signature repeats across
-`MAX_IDENTICAL_FAILURES` (=3) consecutive failed *attempts* — whether
-those attempts are the three debug retries of a single round or span
-multiple rounds in `--forever` — the orchestrator exits with **exit
-code 4** ("deterministic failure loop detected").  Per-attempt (not
-per-round) registration is deliberate: the classic pathology is a
-pre-check command (e.g. `pytest`) that hangs identically on every
-retry, and the first round already exposes three identical failures
-that deserve a fast bail-out rather than burning two more rounds
-before firing.
-
-**Failure signature.** A short SHA-256 digest of:
-1. Failure kind — `"stalled"`, `"crashed"`, or `"no-progress:<prefix>"`
-   where `<prefix>` is one of `NO PROGRESS`, `MEMORY WIPED`, `BACKLOG
-   VIOLATION`, or `silent`.
-2. Subprocess returncode (negative values indicate kill signals).
-3. The trailing 500 bytes of subprocess output (stripped), so that
-   mostly-deterministic failures with varying prefixes (timestamps,
-   round counters) still hash-match on their stable tail.
-
-**When the counter resets.** Any successful round clears the accumulated
-signatures, so a single recovery between otherwise-identical failures
-resets the threshold. This makes the breaker specific to *sustained*
-deterministic failures — it does not fire on occasional repeats
-interleaved with progress.
-
-**Relation to exit code 2.** Exit code 2 fires when a round's retries
-are exhausted with *heterogeneous* failure signatures — e.g. attempt 1
-crashes, attempt 2 stalls, attempt 3 makes no progress.  Mixed
-failures are not strong evidence of a deterministic loop (they might
-just be flaky infrastructure), so non-`--forever` still exits 2 and
-`--forever` still skips to the next round.  Exit code 4 is reserved
-for the *homogeneous* case — three attempts with the same signature,
-which is the real signal that retrying further cannot help.  A
-supervisor (systemd unit, `while true; do evolve start --forever;
-done`, operator tmux loop) can distinguish the two and react
-differently: restart cleanly on 4, alert-and-stop on 2 (or vice
-versa, depending on deployment).
-
-**What to do when you see exit 4.**
-1. Check `runs/<session>/subprocess_error_round_*.txt` for the three
-   most recent rounds — they will contain the same failure reason.
-2. If the failure is in a pre-check command (`pytest`, `npm test`),
-   fix the command or its environment before restarting.
-3. If the failure is structural (the agent itself is broken), use
-   `git log` to find the last round that committed a change, revert
-   if needed, and restart.
-4. A supervisor restart is safe only after root-cause remediation —
-   evolve cannot break its own deterministic loop without human or
-   scripted intervention.
+→ Full mechanisms: [`SPEC/archive/012-monitoring-mechanisms.md`]
 
 ---
 
@@ -2346,93 +1589,23 @@ on_error = "notify-send 'evolve error'"
 
 ---
 
-## Real-time state file
+## Real-time state file (archived)
 
-Each session maintains a `state.json` file updated after every round,
-providing structured status queryable by external tools (CI systems,
-dashboards, monitoring):
+Each session maintains `state.json` updated after every round with
+version, round, status, improvements, backlog, usage, and last_check
+fields. Schema versioned (currently v2). Queryable by external tools.
 
-```json
-{
-  "version": 2,
-  "session": "20260325_153156",
-  "project": "my-tool",
-  "round": 5,
-  "max_rounds": 20,
-  "phase": "improvement",
-  "status": "running",
-  "improvements": {"done": 12, "remaining": 3, "blocked": 1},
-  "backlog": {
-    "pending": 3,
-    "done": 12,
-    "blocked": 1,
-    "added_this_round": 0,
-    "growth_rate_last_5_rounds": -0.6
-  },
-  "usage": {
-    "total_input_tokens": 234500,
-    "total_output_tokens": 87200,
-    "total_cache_creation_tokens": 42000,
-    "total_cache_read_tokens": 189000,
-    "estimated_cost_usd": 12.40,
-    "rounds_tracked": 5
-  },
-  "last_check": {"passed": true, "tests": 143, "duration_s": 1.3},
-  "started_at": "2026-03-25T15:31:56Z",
-  "updated_at": "2026-03-25T16:05:00Z"
-}
-```
-
-The `status` field can be: `running`, `converged`, `max_rounds`, `error`,
-`party_mode`, or `budget_reached`. The schema is versioned for forward
-compatibility.
-
-**Schema versioning.** `state.json` uses a `version` field to signal
-breaking schema changes. Version 1 is the original schema (no `usage` or
-`backlog` fields). Version 2 adds `usage` and `backlog`. External consumers
-should ignore unknown keys for forward compatibility — the version bump is
-for consumers that need to know which fields are guaranteed present.
+→ Full schema + versioning: [`SPEC/archive/015-cost-tracking-observability.md`]
 
 ---
 
-## Evolution report
+## Evolution report (archived)
 
-After each session completes (converged or max rounds reached), evolve writes
-`runs/<session>/evolution_report.md` — a summary of what happened:
+`evolution_report.md` is written after each session with timeline,
+cost summary, and statistics. Generated from conversation logs,
+commits, check results, and usage files.
 
-```markdown
-# Evolution Report
-**Project:** my-tool
-**Session:** 20260324_160000
-**Rounds:** 8/20
-**Status:** CONVERGED
-
-## Timeline
-| Round | Action | Files Changed | Tests |
-|-------|--------|---------------|-------|
-| 1 | fix: parser crash on empty input | parser.py | 42→43 |
-| 2 | feat: add input validation | validator.py, parser.py | 43→47 |
-...
-
-## Cost Summary
-| Round | Input Tokens | Output Tokens | Cache Hits | Est. Cost |
-|-------|-------------|---------------|------------|-----------|
-| 1     | 45,230      | 12,400        | 38,100     | $1.24     |
-| 2     | 52,100      | 15,800        | 41,200     | $1.56     |
-...
-**Total: ~$12.40** (claude-opus-4-6)
-
-## Summary
-- 6 improvements completed
-- 2 bugs fixed
-- 12 files modified
-- ~$12.40 estimated API cost
-```
-
-The report is generated by parsing conversation logs, commit messages,
-check results, and usage files from the session directory. It serves both
-human review (post-session summary) and CI/CD integration (PR description
-content).
+→ Full format: [`SPEC/archive/015-cost-tracking-observability.md`]
 
 ---
 
@@ -2539,67 +1712,14 @@ Types: `fix`, `feat`, `refactor`, `perf`, `docs`, `test`, `chore`
 
 ---
 
-## Prompt caching
+## Prompt caching (archived)
 
-Every agent round's prompt concatenates the persona system text,
-``SPEC.md``, ``README.md``, and project context — tens of
-thousands of tokens of static-ish content.  If the underlying
-runtime does not cache this stable portion between calls, every
-round pays the full input-token cost even though the content
-rarely changes.
+The SDK's native caching fires on stable leading-prefix system
+prompts. Evolve passes `system_prompt` as a single string, keeps
+static content first, per-round content last. No explicit
+`cache_control` markers needed.
 
-**SDK contract (claude-agent-sdk 0.1.50).**  The Python SDK's
-``ClaudeAgentOptions.system_prompt`` signature is ``str |
-SystemPromptPreset | None`` — it does NOT accept the Anthropic
-API's ``list[dict]`` shape with explicit ``cache_control``
-markers.  Passing a list silently mis-serialises and the API call
-arrives with no usable system prompt (symptom: model returns
-zero tool calls on well-formed rounds).
-
-**How caching actually happens.**  The underlying Claude Code
-CLI that the SDK wraps applies prompt caching natively on stable
-system prompts across calls — the caller does NOT need to set
-``cache_control`` explicitly.  When the same (or leading-prefix
-identical) system prompt is sent within the cache TTL, the CLI
-translates it into a ``cache_control`` API call under the hood
-and the response's ``ResultMessage.usage`` carries
-``cache_read_input_tokens > 0``.
-
-**Caller contract (what evolve code must do).**
-
-- Pass ``system_prompt`` as a **single string** to
-  ``ClaudeAgentOptions``.  Never a list-of-dicts.
-- Keep the **leading portion** of the prompt stable across
-  rounds — put per-round variable content (check results,
-  memory, attempt marker, prior audit, crash diagnostics)
-  **after** the static content.  The CLI's caching is prefix-
-  based: the cached portion is whatever's identical up to the
-  first byte that differs.
-- Observe cache hits via ``ResultMessage.usage.cache_read_input_tokens``
-  and record them in ``usage_round_N.json``.
-
-**Wrong patterns (will silently disable caching):**
-
-- Two-block ``system_prompt=[dict, dict]`` with explicit
-  ``cache_control`` (doesn't match the SDK signature — see
-  symptom above).
-- Per-round content interleaved with static content (breaks the
-  leading-prefix hash).
-- A timestamp or counter in the first ~200 bytes of the system
-  prompt (invalidates the prefix every call).
-
-**Acceptance criteria for verification:**
-
-1. A session-level integration test runs two rounds back-to-back
-   with identical inputs and asserts that the second round's
-   ``usage_round_2.json`` has ``cache_read_tokens > 0`` —
-   evidence the native caching fires.
-2. No call site in evolve passes ``system_prompt=[...]`` as a
-   list; grep/lint guard in CI.
-3. ``build_prompt`` and its siblings place per-round variable
-   content **after** the static (system.md + SPEC/README)
-   portion.  A unit test asserts ordering on the rendered
-   prompt.
+→ Full contract + wrong patterns + verification criteria: [`SPEC/archive/013-prompt-caching-contract.md`]
 
 ---
 
