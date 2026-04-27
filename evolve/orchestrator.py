@@ -376,7 +376,7 @@ def evolve_loop(
 
     # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
     # check") — pure observability, runs once before the first round.
-    _diag._emit_stale_readme_advisory(project_dir, spec, get_tui())
+    _emit_stale_readme_advisory(project_dir, spec, get_tui())
 
     # Auto-detect check command if not provided
     if check_cmd is None:
@@ -2098,7 +2098,7 @@ def run_dry_run(
 
     # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
     # check") — pure observability, runs once at startup.
-    _diag._emit_stale_readme_advisory(project_dir, spec, ui)
+    _emit_stale_readme_advisory(project_dir, spec, ui)
 
     # Auto-detect check command if not provided
     if check_cmd is None:
@@ -2190,7 +2190,7 @@ def run_validate(
 
     # Startup-time stale-README advisory (SPEC § "Stale-README pre-flight
     # check") — pure observability, runs once at startup.
-    _diag._emit_stale_readme_advisory(project_dir, spec, ui)
+    _emit_stale_readme_advisory(project_dir, spec, ui)
 
     # Auto-detect check command if not provided
     if check_cmd is None:
