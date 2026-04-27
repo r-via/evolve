@@ -26,30 +26,34 @@ import evolve.draft_review as draft_review_mod
 import evolve.memory_curation as memory_curation_mod
 import evolve.oneshot_agents as oneshot_agents_mod
 import evolve.spec_archival as spec_archival_mod
+import evolve.sync_readme as sync_readme_mod
 from evolve.agent import DRAFT_EFFORT, REVIEW_EFFORT
 
 
 AGENT_SRC = (Path(agent_mod.__file__)).read_text()
 # US-032 extracted the draft/review SDK callsites into evolve/draft_review.py.
 # US-033 extracted the dry-run / validate / diff / sync-readme SDK
-# callsites into evolve/oneshot_agents.py.  Earlier US-031 extracted the
-# memory curation callsite into evolve/memory_curation.py and round 6
-# extracted SPEC archival into evolve/spec_archival.py.  Source-grep
-# assertions that previously scanned only agent.py now scan the union of
-# the agent.py implement path + every extracted sibling so the per-call
-# ``effort=DRAFT_EFFORT`` / ``effort=REVIEW_EFFORT`` and the session-wide
-# ``effort=EFFORT`` kwargs are still locked even though they live in
-# sibling modules.
+# callsites into evolve/oneshot_agents.py.  US-034 then split the
+# sync-readme block out into evolve/sync_readme.py.  Earlier US-031
+# extracted the memory curation callsite into evolve/memory_curation.py
+# and round 6 extracted SPEC archival into evolve/spec_archival.py.
+# Source-grep assertions that previously scanned only agent.py now scan
+# the union of the agent.py implement path + every extracted sibling so
+# the per-call ``effort=DRAFT_EFFORT`` / ``effort=REVIEW_EFFORT`` and the
+# session-wide ``effort=EFFORT`` kwargs are still locked even though
+# they live in sibling modules.
 DRAFT_REVIEW_SRC = (Path(draft_review_mod.__file__)).read_text()
 ONESHOT_AGENTS_SRC = (Path(oneshot_agents_mod.__file__)).read_text()
 MEMORY_CURATION_SRC = (Path(memory_curation_mod.__file__)).read_text()
 SPEC_ARCHIVAL_SRC = (Path(spec_archival_mod.__file__)).read_text()
+SYNC_README_SRC = (Path(sync_readme_mod.__file__)).read_text()
 COMBINED_SRC = (
     AGENT_SRC + "\n"
     + DRAFT_REVIEW_SRC + "\n"
     + ONESHOT_AGENTS_SRC + "\n"
     + MEMORY_CURATION_SRC + "\n"
-    + SPEC_ARCHIVAL_SRC
+    + SPEC_ARCHIVAL_SRC + "\n"
+    + SYNC_README_SRC
 )
 
 
