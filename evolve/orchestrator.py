@@ -18,9 +18,17 @@ from evolve.costs import TokenUsage, aggregate_usage, build_usage_state, estimat
 import evolve.diagnostics as _diag
 from evolve.diagnostics import (
     MAX_IDENTICAL_FAILURES,
+    _auto_detect_check,
+    _check_review_verdict,
     _DEFAULT_README_STALE_THRESHOLD_DAYS,
+    _detect_file_too_large,
+    _emit_stale_readme_advisory,
+    _failure_signature,
     _FILE_TOO_LARGE_LIMIT,
+    _generate_evolution_report,
+    _is_circuit_breaker_tripped,
     _README_STALE_ADVISORY_FMT,
+    _save_subprocess_diagnostic,
 )
 from evolve.git import _ensure_git, _git_commit, _git_show_at, _setup_forever_branch
 from evolve.hooks import fire_hook, load_hooks
