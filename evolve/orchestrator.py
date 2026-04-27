@@ -845,6 +845,35 @@ def _run_rounds(
                     sys.exit(4)
 
             for attempt in range(1, MAX_DEBUG_RETRIES + 2):  # 1..MAX_DEBUG_RETRIES+1
+                # Surface the retry reason before re-launching the subprocess
+                # so operators understand why a second "[probe] round N
+                # starting" line appears without a fresh round_header block
+                # (the header is only printed once per round in _run_rounds,
+                # while retries happen inside this inner loop).  Source the
+                # reason from the diagnostic file written by the previous
+                # attempt — every retry-triggering branch calls
+                # _save_subprocess_diagnostic with a human-readable reason,
+                # so this single read covers all retry paths.
+                if attempt > 1:
+                    diag_path = run_dir / f"subprocess_error_round_{round_num}.txt"
+                    retry_reason = ""
+                    if diag_path.is_file():
+                        try:
+                            first_line = diag_path.read_text().splitlines()[0]
+                            m = re.match(
+                                r"^Round \d+ — (.+) \(attempt \d+\)$",
+                                first_line,
+                            )
+                            if m:
+                                retry_reason = m.group(1)
+                        except (OSError, IndexError):
+                            pass
+                    _probe_warn(
+                        f"round {round_num} retry "
+                        f"{attempt}/{MAX_DEBUG_RETRIES + 1}"
+                        + (f" — reason={retry_reason}" if retry_reason else "")
+                    )
+
                 # Snapshot conversation log size before subprocess so we can detect new output
                 convo = run_dir / f"conversation_loop_{round_num}.md"
                 convo_size_before = convo.stat().st_size if convo.is_file() else 0
