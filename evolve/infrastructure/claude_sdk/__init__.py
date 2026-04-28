@@ -13,6 +13,11 @@ from evolve.infrastructure.claude_sdk.runtime import (
     _run_agent_with_retries,
 )
 
+from evolve.infrastructure.claude_sdk.runner import (
+    _build_multimodal_prompt,
+    run_claude_agent,
+)
+
 __all__ = [
     "MODEL",
     "MAX_TURNS",
@@ -24,4 +29,6 @@ __all__ = [
     "_is_benign_runtime_error",
     "_should_retry_rate_limit",
     "_run_agent_with_retries",
+    "_build_multimodal_prompt",
+    "run_claude_agent",
 ]

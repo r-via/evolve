@@ -125,7 +125,7 @@ class TestRunClaudeAgentImages:
 
         sdk.query = _query
 
-        with patch("evolve.sdk_runner.get_tui", return_value=MagicMock()):
+        with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=MagicMock()):
             from evolve.agent import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test prompt", proj, round_num=1,
@@ -156,7 +156,7 @@ class TestRunClaudeAgentThinking:
 
         sdk.query = _query
 
-        with patch("evolve.sdk_runner.get_tui", return_value=MagicMock()):
+        with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=MagicMock()):
             from evolve.agent import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,
@@ -184,7 +184,7 @@ class TestRunClaudeAgentUsage:
 
         sdk.query = _query
 
-        with patch("evolve.sdk_runner.get_tui", return_value=MagicMock()):
+        with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=MagicMock()):
             from evolve.agent import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,
@@ -215,7 +215,7 @@ class TestRunClaudeAgentUsageSaveError:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.sdk_runner.get_tui", return_value=mock_tui):
+        with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=mock_tui):
             with patch("evolve.costs.TokenUsage.save", side_effect=OSError("disk full")):
                 from evolve.agent import run_claude_agent
                 # Should not raise
@@ -469,7 +469,7 @@ class TestRunClaudeAgentFullStream:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.sdk_runner.get_tui", return_value=mock_tui):
+        with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=mock_tui):
             from evolve.agent import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,

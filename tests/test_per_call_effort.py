@@ -26,6 +26,7 @@ import evolve.draft_review as draft_review_mod
 import evolve.memory_curation as memory_curation_mod
 import evolve.oneshot_agents as oneshot_agents_mod
 import evolve.sdk_runner as sdk_runner_mod
+import evolve.infrastructure.claude_sdk.runner as infra_runner_mod
 import evolve.spec_archival as spec_archival_mod
 import evolve.sync_readme as sync_readme_mod
 from evolve.agent import DRAFT_EFFORT, REVIEW_EFFORT
@@ -50,6 +51,10 @@ DRAFT_REVIEW_SRC = (Path(draft_review_mod.__file__)).read_text()
 ONESHOT_AGENTS_SRC = (Path(oneshot_agents_mod.__file__)).read_text()
 MEMORY_CURATION_SRC = (Path(memory_curation_mod.__file__)).read_text()
 SDK_RUNNER_SRC = (Path(sdk_runner_mod.__file__)).read_text()
+# US-071: sdk_runner.py is now a shim; the real ``effort=EFFORT`` kwarg
+# lives in ``evolve/infrastructure/claude_sdk/runner.py``.  Include both
+# so the source-grep finds the kwarg regardless of migration state.
+INFRA_RUNNER_SRC = (Path(infra_runner_mod.__file__)).read_text()
 SPEC_ARCHIVAL_SRC = (Path(spec_archival_mod.__file__)).read_text()
 SYNC_README_SRC = (Path(sync_readme_mod.__file__)).read_text()
 COMBINED_SRC = (
@@ -58,6 +63,7 @@ COMBINED_SRC = (
     + ONESHOT_AGENTS_SRC + "\n"
     + MEMORY_CURATION_SRC + "\n"
     + SDK_RUNNER_SRC + "\n"
+    + INFRA_RUNNER_SRC + "\n"
     + SPEC_ARCHIVAL_SRC + "\n"
     + SYNC_README_SRC
 )
