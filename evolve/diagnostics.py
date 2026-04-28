@@ -72,9 +72,9 @@ _FILE_TOO_LARGE_LIMIT = 500
 _DDD_LAYERS = ("domain", "application", "infrastructure", "interfaces")
 _DDD_ALLOWED = {
     "domain": set(),
-    "application": {"domain"},
-    "infrastructure": {"domain"},
-    "interfaces": {"application", "domain", "infrastructure"},
+    "application": {"domain", "application"},
+    "infrastructure": {"domain", "infrastructure"},
+    "interfaces": {"application", "domain", "infrastructure", "interfaces"},
 }
 
 

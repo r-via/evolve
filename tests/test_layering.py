@@ -27,9 +27,9 @@ _LAYER_PREFIXES = [
 # Allowed target layers per source layer
 _ALLOWED = {
     "domain": set(),  # nothing from evolve
-    "application": {"domain"},
-    "infrastructure": {"domain"},
-    "interfaces": {"application", "domain", "infrastructure"},
+    "application": {"domain", "application"},
+    "infrastructure": {"domain", "infrastructure"},
+    "interfaces": {"application", "domain", "infrastructure", "interfaces"},
 }
 
 
