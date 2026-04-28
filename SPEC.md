@@ -511,67 +511,12 @@ remedy (mark, fix, or exclude), verify the suite comes back under
 20 s, then resume the original target.
 
 **Single-source-of-truth: agents must NOT run the check command
-themselves.**
+themselves (archived).** The orchestrator is the sole actor that
+runs pre-check and post-check. Agents reason from check output in
+their prompt. One narrow escape hatch: a `timeout`-wrapped
+single-file verification when the agent needs mid-turn feedback.
 
-The orchestrator is the only actor that invokes the check command
-— once in pre-check (before the agent runs) and once in post-check
-(after the agent commits).  The agent receives both outputs in its
-prompt and is **forbidden** from running the check command via its
-own Bash tool.  Two reasons:
-
-1. **Cost and time explosion.**  Each agent-side run is another
-   full test-suite execution layered on top of the orchestrator's
-   two.  A chatty agent that runs pytest after every edit turns one
-   round's budget of ``2×20s`` into ``10×20s`` trivially.
-2. **Watchdog / heartbeat budget.**  The agent's Bash calls run
-   inside the round subprocess where the round-wide heartbeat
-   keeps the parent watchdog quiet; a long agent-side pytest
-   (especially piped through ``| tail``) still consumes real wall
-   time, eating into the ``--max-cost`` budget and the operator's
-   patience.
-3. **Single authoritative signal.**  Two independent pytest runs
-   can disagree (flaky test, different CWD, environment drift).
-   One orchestrator-controlled run is the source of truth.
-
-The agent reasons from the orchestrator's pre-check output
-(``## Check results`` section in the prompt), makes targeted edits,
-and trusts the orchestrator's post-check to verify.  If the agent
-needs finer granularity (single-file test, ``--durations=5``,
-``-x``), it MUST edit the test file or fixtures and let the
-orchestrator's next round re-run — not spawn a separate suite.
-The system prompt in ``prompts/system.md`` encodes this as the
-default rule.
-
-**Narrow escape hatch: ``timeout``-wrapped verification.**
-
-There is one narrow case where the agent genuinely needs fresh
-pytest output mid-turn: it has just edited one or more test files
-and the orchestrator's post-check (running at round end) cannot
-help because the agent must decide whether to proceed with the
-current commit or revert.  In that case the agent is permitted to
-run the check command ONCE, but **only when wrapped in the
-system-level ``timeout`` utility** with the same budget the
-orchestrator uses:
-
-```bash
-timeout {check_timeout} pytest tests/test_foo.py -x -q
-```
-
-(The ``{check_timeout}`` placeholder is substituted into the
-system prompt at round start from the resolved ``--timeout`` /
-``EVOLVE_TIMEOUT`` / ``evolve.toml`` value — whatever the
-orchestrator itself uses.)
-
-A bare ``pytest`` / ``npm test`` / ``cargo test`` call without the
-``timeout`` prefix is forbidden regardless of justification — it
-bypasses the quality invariant and can stall the round for
-minutes.  The agent is instructed to prefer ``-x`` plus a single-
-file scope to keep the run well under the ceiling.
-
-**Future enforcement.**  A permission-callback hook on the SDK's
-Bash tool could auto-reject or auto-wrap check-like commands that
-arrive without ``timeout``; this is deferred to a separate backlog
-item (the current implementation is prompt-level only).
+→ Full rationale + escape hatch + future enforcement: [`SPEC/archive/017-check-command-ownership.md`]
 
 ### The --model flag
 
@@ -960,115 +905,14 @@ evolve diff [<project-dir>] [--spec SPEC.md]
 - Produces a shorter, more actionable report
 - Designed for quick "how far are we?" checks, not formal validation
 
-### `evolve update`
+### `evolve update` (archived)
 
-One-shot subcommand that pulls the latest commit of evolve itself
-from the upstream git repository, so an operator running a
-long-lived ``--forever`` session (or just keeping their install
-current) doesn't have to drop into the source tree, ``git pull``,
-and re-install manually.
+One-shot subcommand that pulls the latest evolve commit from upstream.
+Handles editable (`git merge --ff-only`) and non-editable (`pip install
+--upgrade`) installs. Safety: refuses dirty trees, active sessions,
+non-fast-forward. Exit codes: 0 (updated), 1 (blocked), 2 (error).
 
-```bash
-# Pull latest main from upstream
-evolve update
-
-# Dry-run: show what would change without applying
-evolve update --dry-run
-
-# Pull a specific ref instead of the default branch
-evolve update --ref some-branch
-evolve update --ref v1.2.3
-```
-
-**How it works.**
-
-1. Resolves the install location via ``pip show evolve`` and
-   inspects whether the install is **editable** (``pip install -e
-   .``) or **non-editable** (snapshot copy under
-   ``site-packages/``).
-2. Editable install — the install location IS the git working
-   tree.  ``evolve update``:
-   - Refuses to proceed if the working tree is dirty (uncommitted
-     changes, untracked tracked-paths) — the operator must
-     explicitly stash, commit, or discard before updating.
-     Exception: if the only dirty path is ``.evolve/`` (run
-     artifacts), the dirty check ignores it.
-   - Runs ``git fetch origin`` followed by ``git merge --ff-only
-     <ref>``.  Refuses non-fast-forward (the operator must rebase
-     or reset manually — ``evolve update`` is for staying in sync,
-     not for rewriting history).
-   - Editable installs reflect file changes immediately in the
-     next ``python -m evolve`` invocation, so no reinstall step is
-     needed.
-3. Non-editable install — the install location is a snapshot under
-   ``site-packages/`` and ``git`` cannot operate on it.
-   ``evolve update``:
-   - Resolves the upstream repo URL from package metadata
-     (``Project-URL: source = https://github.com/…``).
-   - Clones (or fetches into) ``~/.cache/evolve/upstream/`` —
-     a per-user cache so repeated updates re-use the clone.
-   - Checks out the requested ref.
-   - Runs ``pip install --upgrade <cache-path>`` so the
-     ``site-packages`` snapshot is replaced with the new version.
-4. Either path emits the resulting commit SHA + branch + commit
-   subject on stdout, plus a one-line summary of what changed
-   (``N files updated, M insertions, K deletions``).
-
-**Safety rails.**
-
-- ``evolve update`` MUST NOT run while another ``evolve start``
-  session is active in the same project tree.  The orchestrator
-  may be importing modules, mid-round; pulling new files under it
-  is the same hazard as a structural commit (§ "Structural change
-  self-detection").  The detection is best-effort: a ``.evolve/
-  state.json`` whose ``status`` is not in {``CONVERGED``,
-  ``ERROR``, ``ABORTED``} blocks the update with a clear error
-  pointing at the active session.  ``--force`` bypasses (operator
-  takes responsibility).
-- ``evolve update`` MUST NOT touch the operator's project tree —
-  it only updates evolve's own source / install.  The current
-  working directory's ``.evolve/runs/``, ``improvements.md``,
-  ``memory.md``, ``SPEC.md`` are never modified.
-- The check is **opt-in** — there is no automatic "pull on every
-  start" path.  Self-updating during a round would invalidate the
-  in-flight orchestrator's imports without the structural-restart
-  protocol; the operator runs ``evolve update`` between sessions,
-  not within them.
-
-**Exit codes:**
-
-| Exit Code | Meaning |
-|-----------|---------|
-| 0 | Updated successfully (or already up-to-date — no fetch needed) |
-| 1 | Update needed but blocked (dirty tree, non-fast-forward, active session) — operator action required |
-| 2 | Error — could not detect install mode, no upstream URL in metadata, network failure, etc. |
-
-**Use cases.**
-
-- **Long unattended runs.**  Operator launches
-  ``evolve-watch start . --check pytest --forever`` for a
-  weekend, returns Monday, runs ``evolve update`` to pick up
-  upstream improvements before re-launching the watcher.
-- **Self-evolution + upstream merge.**  Evolve has been
-  self-evolving on a fork; the operator periodically runs
-  ``evolve update --ref upstream/main`` to merge mainstream
-  improvements into the fork between rounds.
-- **CI cron job.**  Nightly job runs ``evolve update --dry-run``
-  and emails the operator if a new commit landed upstream — they
-  decide when to apply.
-
-**Implementation notes.**
-
-- Lives in ``evolve/cli.py`` as a sibling subcommand to
-  ``start`` / ``status`` / ``history`` / ``clean``.  Helper
-  logic that wraps ``git`` / ``pip`` calls goes into
-  ``evolve/infrastructure/git/`` (after the DDD migration) or
-  ``evolve/git.py`` (today).
-- Tests MUST cover: editable detection, dirty-tree refusal,
-  non-fast-forward refusal, active-session detection, upstream
-  URL resolution from metadata, and ``--dry-run`` mode (the
-  latter outputs the planned ``git`` / ``pip`` invocations
-  without executing them).
+→ Full spec + safety rails + use cases: [`SPEC/archive/019-evolve-update-subcommand.md`]
 
 ### Project-specific prompts
 
@@ -1881,75 +1725,14 @@ if [ $EXIT_CODE -eq 0 ]; then
 fi
 ```
 
-## evolve-watch auto-restart wrapper
+## evolve-watch auto-restart wrapper (archived)
 
-``evolve-watch`` is a relentless external supervisor that wraps
-``evolve start`` and respawns it on **every** non-zero exit until
-the project converges.  It is the canonical way to run evolve
-unattended (overnight, ``--forever`` sessions, CI nightlies):
-without it, every ``RESTART_REQUIRED`` marker (exit 3),
-``--rounds`` boundary (exit 1), transient error (exit 2), and
-circuit-breaker trip (exit 4) forces an operator to re-issue the
-command manually, which defeats long-running self-evolution.  The
-wrapper is shipped as a separate entry point so it is
-**out-of-process**: it survives the orchestrator respawn even
-when the structural change moves or renames the ``evolve``
-package's own files.
+External supervisor that wraps `evolve start` and respawns on every
+non-zero exit until convergence. Two stop conditions: exit 0 (converged)
+or operator signal (SIGINT/SIGTERM). No restart cap. stderr-only logging.
+Entry point: `evolve/watcher.py`, ~120 lines.
 
-**Usage.**  Drop-in replacement for ``evolve``:
-
-```bash
-# Forever-run with auto-restart until convergence
-evolve-watch start . --check pytest --forever
-
-# Bounded-rounds run (the wrapper restarts past each round budget
-# until convergence — exit 1 is just another restart trigger)
-evolve-watch start . --check pytest --rounds 100
-```
-
-Every CLI argument is forwarded to ``evolve`` unchanged on the
-first invocation.  On every non-zero exit the wrapper injects
-``--resume`` (idempotently — already-present ``--resume`` is not
-duplicated) and respawns ``python -m evolve <args>``.
-
-**Stop conditions — exactly two.**  The wrapper exits in only
-these cases:
-
-1. **Convergence (exit 0).**  ``evolve`` reports the project
-   matches the spec.  The wrapper propagates 0 and stops.
-2. **Operator signal.**  ``SIGINT`` (Ctrl+C) or ``SIGTERM``
-   received by the wrapper is forwarded to the running ``evolve``
-   child; the wrapper waits up to 10s for clean exit (then
-   ``SIGKILL``s), and propagates the child's exit code without
-   restarting.  This is how the operator interrupts an unattended
-   session.
-
-**No restart cap by design.**  Earlier versions of the wrapper
-shipped with a sliding-window cap (5 restarts per 30 minutes,
-exit 5 on cap hit).  That cap was removed because it conflicted
-with the wrapper's stated purpose: long unattended self-evolution
-runs that survive structural commits, hit ``--rounds`` budgets,
-encounter transient SDK errors, and even trip orchestrator
-circuit-breakers — *all of which* the operator wants the wrapper
-to recover from.  Deterministic-failure-loop detection is the
-orchestrator's circuit-breaker territory (§ "Circuit breakers"),
-not the wrapper's.  An operator who needs a bounded version
-simply runs plain ``evolve`` without the wrapper.
-
-**stderr-only logging.**  All wrapper messages
-(``[evolve-watch <ts>] …``) go to stderr, never stdout.  This
-keeps ``evolve``'s ``--json`` mode parseable when piped:
-
-```bash
-evolve-watch start . --check pytest --json > evolve-output.jsonl
-# stderr carries the wrapper events; stdout stays pure JSONL
-```
-
-**Implementation.**  Single self-contained module
-(``evolve/watcher.py``, ~120 lines), no dependencies beyond
-stdlib, entry point ``evolve-watch`` registered in
-``pyproject.toml``.  Installed automatically by
-``pip install -e .`` alongside the main ``evolve`` command.
+→ Full spec: [`SPEC/archive/018-evolve-watch-wrapper.md`]
 
 ---
 

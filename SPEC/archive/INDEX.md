@@ -18,3 +18,6 @@
 | 014 | memory-curation-protocol | 2026-04-27 | SPEC.md > 2000 lines (2952); stable Mira protocol, trigger/pass/verdict routing |
 | 015 | cost-tracking-observability | 2026-04-27 | SPEC.md > 2000 lines (2952); stable schemas (cost tracking, state.json, evolution report) |
 | 016 | spec-archival-implementation | 2026-04-27 | SPEC.md > 2000 lines (2072); feature shipped (US-025), acceptance criteria met, migration bootstrap complete |
+| 017 | check-command-ownership | 2026-04-28 | SPEC.md > 2000 lines (2091); settled design constraint, rule encoded in prompts/system.md |
+| 018 | evolve-watch-wrapper | 2026-04-28 | SPEC.md > 2000 lines (2091); stable wrapper mechanism, fully implemented |
+| 019 | evolve-update-subcommand | 2026-04-28 | SPEC.md > 2000 lines (2091); complete subcommand spec, fully designed |
