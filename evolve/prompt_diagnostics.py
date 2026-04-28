@@ -267,10 +267,6 @@ def build_prev_crash_section(
             f"```\n{prev_crash}\n```\n"
         )
     if "MAX_TURNS" in prev_crash:
-        # SDK subtype=error_max_turns — the agent hit the turn cap
-        # before finishing.  Per SPEC § "Authoritative termination
-        # signal from the SDK": retry with "fix-only, defer
-        # investigation" header.
         return (
             f"\n## CRITICAL — Agent hit max_turns cap (error_max_turns)\n"
             f"The previous attempt exhausted the SDK turn budget without "
@@ -287,9 +283,6 @@ def build_prev_crash_section(
             f"```\n{prev_crash}\n```\n"
         )
     if "SDK ERROR" in prev_crash:
-        # SDK subtype=error_during_execution — the agent hit an SDK
-        # error.  Surface it verbatim per SPEC § "Authoritative
-        # termination signal from the SDK".
         return (
             f"\n## CRITICAL — Agent stopped with SDK execution error\n"
             f"The previous attempt's Claude Agent SDK session ended with "
@@ -371,12 +364,6 @@ def build_prev_crash_section(
             f"```\n{prev_crash}\n```\n"
         )
     if "PREMATURE CONVERGED" in prev_crash:
-        # Convergence-gate orchestrator backstop (SPEC.md § "Convergence").
-        # The previous round wrote CONVERGED but the orchestrator's
-        # independent re-verification of the two documented gates
-        # rejected it. The agent MUST address the listed gate
-        # violations (rebuild stale backlog, or resolve unresolved
-        # `- [ ]` items) before attempting to write CONVERGED again.
         return (
             f"\n## CRITICAL — Premature CONVERGED\n"
             f"The previous round wrote CONVERGED but the orchestrator's "
@@ -387,6 +374,15 @@ def build_prev_crash_section(
             f"current spec, and close every unchecked ``- [ ]`` item "
             f"(or tag it with ``[needs-package]`` or "
             f"``[blocked: ...]``).\n"
+            f"```\n{prev_crash}\n```\n"
+        )
+    if "LAYERING VIOLATION" in prev_crash:
+        return (
+            f"\n## CRITICAL — DDD layering violation\n"
+            f"The previous round left inward-violating DDD layer imports "
+            f"(SPEC.md § 'Source code layout — DDD').  Fix the violating "
+            f"imports listed below as your next action — move them to the "
+            f"correct layer or use function-local lazy imports.\n"
             f"```\n{prev_crash}\n```\n"
         )
     return f"\n## CRITICAL — Previous round CRASHED (fix this first!)\n```\n{prev_crash}\n```\n"

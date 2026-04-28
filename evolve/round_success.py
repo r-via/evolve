@@ -69,6 +69,7 @@ def _handle_round_success(
     # Lazy-imports preserve patch surfaces.
     from evolve.orchestrator import (
         _detect_file_too_large,
+        _detect_layering_violation,
         _detect_tdd_violation,
         _enforce_convergence_backstop,
         _FILE_TOO_LARGE_LIMIT,
@@ -200,6 +201,21 @@ def _handle_round_success(
             run_dir, round_num, ["(post-round TDD check)"],
             f"Violation: {_tdd_viol}",
             reason=f"TDD VIOLATION: {_tdd_viol}",
+            attempt=0,
+        )
+
+    # DDD layering violation detection (advisory for next round)
+    _layer_viols = _detect_layering_violation(project_dir)
+    if _layer_viols:
+        _lv_lines = "\n".join(
+            f"  - {f} imports {m} (layer {s} -> layer {t})"
+            for f, m, s, t in _layer_viols
+        )
+        _probe_warn(f"LAYERING VIOLATION detected:\n{_lv_lines}")
+        _save_subprocess_diagnostic(
+            run_dir, round_num, ["(post-round layering check)"],
+            f"Violations:\n{_lv_lines}",
+            reason=f"LAYERING VIOLATION: {len(_layer_viols)} inward-violating edge(s):\n{_lv_lines}",
             attempt=0,
         )
 

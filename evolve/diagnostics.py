@@ -33,6 +33,7 @@ __all__ = [
     "_generate_evolution_report",
     "_is_circuit_breaker_tripped",
     "_save_subprocess_diagnostic",
+    "_detect_layering_violation",
     "_detect_tdd_violation",
     "_detect_us_format_violation",
     "MAX_IDENTICAL_FAILURES",
@@ -66,6 +67,15 @@ _DEFAULT_README_STALE_THRESHOLD_DAYS = 30
 MAX_IDENTICAL_FAILURES = 3
 
 _FILE_TOO_LARGE_LIMIT = 500
+
+# DDD layer classification — mirrors tests/test_layering.py logic.
+_DDD_LAYERS = ("domain", "application", "infrastructure", "interfaces")
+_DDD_ALLOWED = {
+    "domain": set(),
+    "application": {"domain"},
+    "infrastructure": {"domain"},
+    "interfaces": {"application", "domain", "infrastructure"},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -121,30 +131,7 @@ def _emit_stale_readme_advisory(
     spec: str | None,
     ui: TUIProtocol,
 ) -> None:
-    """Emit the startup-time stale-README advisory (SPEC § "Stale-README pre-flight check").
-
-    When ``--spec`` points at a file other than ``README.md``, compares
-    ``mtime(spec_file) - mtime(README.md)``.  If the spec is newer by more
-    than the configured threshold (days), emits a single-line
-    ``ui.info`` advisory.  Threshold resolution order (first wins):
-
-    1. ``EVOLVE_README_STALE_THRESHOLD_DAYS`` environment variable
-    2. ``[tool.evolve] readme_stale_threshold_days`` in evolve.toml /
-       ``pyproject.toml``
-    3. Built-in default (30)
-
-    A threshold of ``0`` disables the advisory entirely.  The advisory is
-    pure observability: it never blocks the run, never modifies any file,
-    and is never emitted during rounds.  When ``spec`` is ``None`` or
-    equals ``"README.md"``, README IS the spec and the advisory is a
-    no-op.
-
-    Args:
-        project_dir: Root directory of the project.
-        spec: Path to the spec file relative to ``project_dir``, or
-            ``None`` when README.md is the spec.
-        ui: The TUI to emit the advisory through.
-    """
+    """Emit startup stale-README advisory when spec is newer than README."""
     # No-op when README IS the spec.
     if not spec or spec == "README.md":
         return
@@ -194,35 +181,14 @@ def _emit_stale_readme_advisory(
 
 
 def _failure_signature(kind: str, returncode: int, output: str) -> str:
-    """Fingerprint a failed round attempt for circuit-breaker detection.
-
-    Two attempts with the same fingerprint are treated as the same failure
-    — evidence that retrying is futile.  Only the trailing 500 bytes of
-    ``output`` are hashed so mostly-deterministic failures with varying
-    prefixes (timestamps, progress counters) still match.
-
-    Args:
-        kind: Failure category — ``"stalled"``, ``"crashed"``, or
-            ``"no-progress"``.
-        returncode: Subprocess exit code (may be negative for signals).
-        output: Captured subprocess output (stdout+stderr merged).
-
-    Returns:
-        A 16-char hex digest suitable for equality comparison and logging.
-    """
+    """Fingerprint a failed round for circuit-breaker detection (16-char hex)."""
     tail = output[-500:].strip() if output else ""
     payload = f"{kind}|{returncode}|{tail}".encode("utf-8", errors="replace")
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
 def _is_circuit_breaker_tripped(signatures: list[str]) -> bool:
-    """Return True when the last ``MAX_IDENTICAL_FAILURES`` signatures match.
-
-    Implements the threshold test for SPEC § "Circuit breakers".  A caller
-    appends each failed-round signature to ``signatures`` (and clears the
-    list on any successful round), then queries this helper to decide
-    whether the loop has entered a deterministic failure cycle.
-    """
+    """True when last MAX_IDENTICAL_FAILURES signatures match (SPEC § Circuit breakers)."""
     if len(signatures) < MAX_IDENTICAL_FAILURES:
         return False
     return len(set(signatures[-MAX_IDENTICAL_FAILURES:])) == 1
@@ -234,17 +200,7 @@ def _is_circuit_breaker_tripped(signatures: list[str]) -> bool:
 
 
 def _check_review_verdict(run_dir: Path, round_num: int) -> tuple[str | None, str]:
-    """Read the adversarial review file and return the verdict.
-
-    Returns:
-        (verdict, findings) where verdict is one of
-        "APPROVED", "CHANGES REQUESTED", "BLOCKED", or None (file absent),
-        and findings is the raw text of HIGH and MEDIUM-severity findings
-        (empty string when verdict is APPROVED or None).  HIGH and MEDIUM
-        are both surfaced because the orchestrator auto-fixes them on the
-        next attempt — the operator never arbitrates findings manually
-        (SPEC § "Adversarial round review (Phase 3.6)").
-    """
+    """Read review_round_N.md and return (verdict, findings)."""
     review_path = run_dir / f"review_round_{round_num}.md"
     if not review_path.is_file():
         return None, ""
@@ -296,12 +252,7 @@ def _check_review_verdict(run_dir: Path, round_num: int) -> tuple[str | None, st
 def _detect_file_too_large(
     project_dir: Path,
 ) -> list[tuple[str, int]]:
-    """Return ``(path, line_count)`` for every ``evolve/**/*.py`` or
-    ``tests/**/*.py`` file that exceeds :data:`_FILE_TOO_LARGE_LIMIT` lines.
-
-    The scan is cheap (pure line-count via ``Path.read_text`` splitlines),
-    does not invoke ``wc -l``, and silently skips unreadable files.
-    """
+    """Return ``(path, line_count)`` for files exceeding the 500-line cap."""
     oversized: list[tuple[str, int]] = []
     for pattern in ("evolve/**/*.py", "tests/**/*.py"):
         for p in sorted(project_dir.glob(pattern)):
@@ -312,6 +263,57 @@ def _detect_file_too_large(
             if count > _FILE_TOO_LARGE_LIMIT:
                 oversized.append((str(p.relative_to(project_dir)), count))
     return oversized
+
+
+# ---------------------------------------------------------------------------
+# DDD layering violation detection
+# ---------------------------------------------------------------------------
+
+
+def _detect_layering_violation(
+    project_dir: Path,
+) -> list[tuple[str, str, str, str]]:
+    """Scan DDD-layer files for inward-violating imports.
+
+    Returns list of ``(file, imported_module, source_layer, target_layer)``
+    tuples.  Legacy flat modules under ``evolve/`` are excluded per SPEC
+    migration carve-out.
+    """
+    import ast as _ast
+
+    evolve_dir = project_dir / "evolve"
+    if not evolve_dir.is_dir():
+        return []
+    violations: list[tuple[str, str, str, str]] = []
+    for py_file in sorted(evolve_dir.rglob("*.py")):
+        rel = py_file.relative_to(evolve_dir)
+        parts = rel.parts
+        if not parts or parts[0] not in _DDD_LAYERS:
+            continue  # legacy — whitelisted
+        src_layer = parts[0]
+        allowed = _DDD_ALLOWED[src_layer]
+        try:
+            tree = _ast.parse(py_file.read_text(), filename=str(py_file))
+        except (SyntaxError, OSError):
+            continue
+        for node in _ast.walk(tree):
+            mod = None
+            if isinstance(node, _ast.ImportFrom) and node.module:
+                mod = node.module
+            elif isinstance(node, _ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith("evolve."):
+                        mod = alias.name
+                        break
+            if not mod or not mod.startswith("evolve."):
+                continue
+            mod_parts = mod.split(".")
+            tgt = mod_parts[1] if len(mod_parts) >= 2 and mod_parts[1] in _DDD_LAYERS else "legacy"
+            if tgt not in allowed:
+                violations.append((
+                    str(rel), mod, src_layer, tgt,
+                ))
+    return violations
 
 
 # ---------------------------------------------------------------------------
@@ -436,16 +438,7 @@ def _save_subprocess_diagnostic(
     reason: str,
     attempt: int,
 ) -> None:
-    """Write a diagnostic file for a failed/stalled subprocess round.
-
-    Args:
-        run_dir: Session directory to write the diagnostic into.
-        round_num: The round number that failed.
-        cmd: The command that was executed.
-        output: Captured subprocess output (may be truncated).
-        reason: Human-readable description of the failure.
-        attempt: Which retry attempt produced this failure.
-    """
+    """Write subprocess_error_round_N.txt for a failed/stalled round."""
     error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
     # When this diagnostic is about to be read by the FINAL retry (attempt 3),
     # prepend an explicit Phase 1 escape hatch banner so the agent's prompt

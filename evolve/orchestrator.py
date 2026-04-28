@@ -21,6 +21,7 @@ from evolve.diagnostics import (
     _check_review_verdict,
     _DEFAULT_README_STALE_THRESHOLD_DAYS,
     _detect_file_too_large,
+    _detect_layering_violation,
     _detect_tdd_violation,
     _detect_us_format_violation,
     _emit_stale_readme_advisory,
