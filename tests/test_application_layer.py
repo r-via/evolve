@@ -16,6 +16,14 @@ from evolve.application.convergence_check import check_convergence
 from evolve.application.draft_us import draft_us
 from evolve.application.review_round import review_round
 from evolve.application.analyze_and_fix import analyze_and_fix
+from evolve.application.curate_memory import curate_memory
+from evolve.application.archive_spec import archive_spec
+from evolve.application.party_session import run_party_session
+from evolve.application.dry_run import dry_run
+from evolve.application.validate import validate
+from evolve.application.sync_readme import sync_readme
+from evolve.application.diff import diff
+from evolve.application.update import update
 from evolve.domain.round import RoundKind, RoundResult
 from evolve.domain.convergence import ConvergenceGate
 from evolve.domain.improvement import USItem
@@ -140,8 +148,99 @@ class TestApplicationPurity:
             "draft_us.py",
             "review_round.py",
             "analyze_and_fix.py",
+            "curate_memory.py",
+            "archive_spec.py",
+            "party_session.py",
+            "dry_run.py",
+            "validate.py",
+            "sync_readme.py",
+            "diff.py",
+            "update.py",
         }
         actual = {f.name for f in self.APP_DIR.glob("*.py")}
         assert expected.issubset(actual), (
             f"Missing application files: {expected - actual}"
         )
+
+
+# ── Memory/SPEC-lifecycle stubs (US-061) ────────────────────
+
+
+class TestCurateMemory:
+    def test_importable(self):
+        assert callable(curate_memory)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="curate_memory stub"):
+            curate_memory()
+
+
+class TestArchiveSpec:
+    def test_importable(self):
+        assert callable(archive_spec)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="archive_spec stub"):
+            archive_spec()
+
+
+# ── Party session stub (US-061) ─────────────────────────────
+
+
+class TestPartySession:
+    def test_importable(self):
+        assert callable(run_party_session)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(
+            NotImplementedError, match="run_party_session stub"
+        ):
+            run_party_session()
+
+
+# ── One-shot use-case stubs (US-061) ────────────────────────
+
+
+class TestDryRun:
+    def test_importable(self):
+        assert callable(dry_run)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="dry_run stub"):
+            dry_run()
+
+
+class TestValidate:
+    def test_importable(self):
+        assert callable(validate)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="validate stub"):
+            validate()
+
+
+class TestSyncReadme:
+    def test_importable(self):
+        assert callable(sync_readme)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="sync_readme stub"):
+            sync_readme()
+
+
+class TestDiff:
+    def test_importable(self):
+        assert callable(diff)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="diff stub"):
+            diff()
+
+
+class TestUpdate:
+    def test_importable(self):
+        assert callable(update)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="update stub"):
+            update()
