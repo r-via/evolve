@@ -318,8 +318,8 @@ class TestResultMessageSubtype:
                 ))
 
         assert subtype == "error_max_turns"
-        # ui.warn should be called with the error signal
-        warn_calls = [str(c) for c in ui_mock.warn.call_args_list]
+        # ui.agent_warn should be called with the error signal
+        warn_calls = [str(c) for c in ui_mock.agent_warn.call_args_list]
         assert any("error_max_turns" in c for c in warn_calls)
         assert any("40 turns" in c for c in warn_calls)
 
