@@ -21,3 +21,6 @@
 | 017 | check-command-ownership | 2026-04-28 | SPEC.md > 2000 lines (2091); settled design constraint, rule encoded in prompts/system.md |
 | 018 | evolve-watch-wrapper | 2026-04-28 | SPEC.md > 2000 lines (2091); stable wrapper mechanism, fully implemented |
 | 019 | evolve-update-subcommand | 2026-04-28 | SPEC.md > 2000 lines (2091); complete subcommand spec, fully designed |
+| 020 | zero-progress-diagnostic-carveouts | 2026-04-28 | SPEC.md > 2000 lines (2099); stable diagnostic mechanisms (scope creep + backlog drained), fully implemented |
+| 021 | agent-self-monitoring | 2026-04-28 | SPEC.md > 2000 lines (2099); stable self-healing mechanism, fully implemented |
+| 022 | timeout-design-rationale | 2026-04-28 | SPEC.md > 2000 lines (2099); settled design rationale for 20s default + timeout behavior |

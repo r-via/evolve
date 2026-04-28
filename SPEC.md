@@ -626,28 +626,12 @@ deliberately aggressive.
 --timeout 60     # Bump only when genuinely large
 ```
 
-**Why 20 seconds as the default.**  A fast test suite is a
-quality invariant, not a target.  When tests run in ≤ 20 s the
-agent can run, verify, fix, verify, iterate — all within a
-reasonable round budget.  When they creep past 20 s, the evolve
-loop degrades: heartbeats stretch, the agent waits longer between
-edit-and-verify cycles, the watchdog overhead grows, and overall
-throughput drops.  The 20-second ceiling forces the agent to
-investigate slowness (mark a flaky/slow test, tighten a fixture,
-drop an expensive integration dep) rather than silently paper
-over it with a bigger budget.
+**Design rationale and timeout behavior (archived).** The 20-second
+default is a quality invariant forcing fast test suites. On timeout,
+the orchestrator injects `"TIMEOUT after 20s"` into the agent's
+prompt, triggering slowness-investigation mode.
 
-**What happens on TIMEOUT.**
-
-The pre-check / post-check ``subprocess.run(check_cmd, timeout=20)``
-raises ``TimeoutExpired``.  The orchestrator writes
-``check_output = "TIMEOUT after 20s"`` and passes that into the
-agent's next prompt.  The agent recognises the TIMEOUT token and
-switches into slowness-investigation mode: run `pytest
---durations=5` *outside* the watchdog (typically by asking the
-operator), identify the offending test, apply the appropriate
-remedy (mark, fix, or exclude), verify the suite comes back under
-20 s, then resume the original target.
+→ Full rationale + behavior: [`SPEC/archive/022-timeout-design-rationale.md`]
 
 **Single-source-of-truth: agents must NOT run the check command
 themselves (archived).** The orchestrator is the sole actor that
@@ -1436,60 +1420,14 @@ silently burn rounds until `max_rounds`. The debug retry now kicks in, and the
 agent receives a "CRITICAL — Previous round made NO PROGRESS" header
 instructing it to start with Edit/Write immediately and defer exploration.
 
-**Carve-out: scope creep (rebuild + implement in one round).**
+**Carve-outs: scope creep and backlog drained (archived).** The
+orchestrator detects two special cases in zero-progress analysis:
+(1) rebuild + implement mixed in one round (`SCOPE CREEP:` diagnostic),
+(2) all items checked off but CONVERGED not written (`BACKLOG DRAINED:`
+diagnostic). Both trigger targeted retry prompts instead of generic
+no-progress retries.
 
-A round that adds new ``[ ]`` items to ``improvements.md`` AND
-modifies non-improvements files (code / tests / docs) in the
-same commit is mixing two round kinds: Phase 2 backlog rebuild
-and Phase 3 implementation.  Earlier versions of the system
-prompt explicitly encouraged this ("your round target becomes
-the FIRST of the newly rebuilt items") and the symptom reported
-by operators was exactly that pattern: a rebuild round that
-drafts multiple US items AND starts coding the first one, 300+
-seconds per round, no clean commit boundary between planning
-output and code changes.
-
-The orchestrator now detects the mix — ``backlog_new_items > 0``
-AND ``git diff-tree --name-only HEAD`` lists files outside
-``improvements.md`` / ``memory.md`` / the runs base — and emits
-a dedicated ``SCOPE CREEP:`` diagnostic.  ``build_prompt`` in
-``agent.py`` surfaces a ``## CRITICAL — Scope creep: rebuild
-mixed with implementation`` section instructing the retry to:
-
-1. ``git reset HEAD~1`` (if the commit went through).
-2. Stage ONLY the ``improvements.md`` rebuild.
-3. Discard the code / test / doc edits — the next round's fresh
-   agent will re-derive them from the rebuilt backlog.
-4. Write ``chore(spec): rebuild backlog after spec change`` (or
-   similar) and stop the round.
-
-The next round picks up the first new item and implements it
-cleanly.  Rebuild rounds produce a clean commit boundary
-between planning and coding; the git history shows them as
-distinct actions rather than one mashed-up commit.
-
-**Carve-out: backlog drained, ``CONVERGED`` skipped.**
-
-There is one case where ``imp_unchanged=True`` + ``no_commit_msg=True``
-is *not* a failure: every ``[ ]`` item in `improvements.md` has
-been checked off but the agent stopped short of writing
-``CONVERGED``.  The round had nothing to implement — the correct
-next step is Phase 4 (verify README claims, then converge), not a
-zero-progress retry that pushes the agent to fabricate filler
-work.
-
-The orchestrator detects this state — ``_count_unchecked(imp) ==
-0`` AND ``imp_unchanged`` AND no ``CONVERGED`` marker — and emits
-a dedicated ``BACKLOG DRAINED: all [ ] items checked off, but
-agent did not write CONVERGED`` diagnostic instead of the generic
-``NO PROGRESS`` one.  ``build_prompt`` in ``agent.py`` recognises
-the prefix and surfaces a ``## CRITICAL — Backlog drained,
-CONVERGED skipped`` section that steers the retry straight to
-Phase 4 (re-read the spec line by line, verify each claim, write
-``CONVERGED`` or add exactly one new US item covering a genuinely
-missing claim).  Explicit guard in the prompt: do NOT fabricate
-filler improvements to make the round look productive — that is
-worse than not converging.
+→ Full protocols: [`SPEC/archive/020-zero-progress-diagnostic-carveouts.md`]
 
 ### Single model: Opus everywhere
 
@@ -1587,31 +1525,14 @@ real-time (no buffering). Format is human-readable Markdown.
 
 → Full capture spec + file naming + format rules: [`SPEC/archive/008-stream-capture-spec.md`]
 
-### Agent-side self-monitoring
+### Agent-side self-monitoring (archived)
 
-On top of the orchestrator's zero-progress detection, the agent itself
-inspects the last two rounds' conversation logs (`conversation_loop_{N-1}.md`
-and `conversation_loop_{N-2}.md`) at the start of every round and refuses to
-repeat a stuck pattern. Specifically, before doing any work the agent:
+The agent inspects the last two rounds' conversation logs at round
+start, detects stuck loops (same target, no Edit/Write calls), and
+splits or blocks the target. First line of defense before orchestrator
+zero-progress retry.
 
-1. Reads the previous two conversation logs from the current run directory
-2. Extracts the improvement target each round was attempting
-3. Flags a **stuck loop** if the current target matches either of them and the
-   prior round(s) contain no `Edit`/`Write` tool calls — i.e. pure
-   reconnaissance followed by a placeholder commit
-4. When stuck is detected, the agent does **not** resume the original target.
-   Instead, it:
-   - Splits the target in `improvements.md` into smaller independent items
-     (one per file, per uncovered line range, per behavior), or
-   - Marks the target as blocked with `[blocked: target too broad — split required]`
-     and picks a different unchecked item
-5. Logs the decision to `memory.md` so future rounds don't re-attempt the same
-   broken split
-
-This makes the agent self-healing for the most common failure mode — getting
-lost in a target that's too large — without operator intervention. The
-orchestrator's zero-progress retry remains the safety net; agent-side detection
-is the first line of defense and catches the loop one round earlier.
+→ Full protocol: [`SPEC/archive/021-agent-self-monitoring.md`]
 
 ### Retry continuity and Phase 1 escape hatch (archived)
 
