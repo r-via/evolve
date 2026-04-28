@@ -1,5 +1,4 @@
 """Round lifecycle — attempt-outcome diagnosis and round-success handling."""
-
 from __future__ import annotations
 
 import subprocess
@@ -7,14 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from evolve.tui import TUIProtocol
-
-# Re-export from round_success.py (US-041 split); preserves patch surfaces.
 from evolve.round_success import _handle_round_success  # noqa: F401
 
 
 @dataclass
 class _AttemptOutcome:
-    """Result of ``_diagnose_attempt_outcome``."""
     attempt_sig: str | None
     checked: int
     unchecked: int
@@ -24,32 +20,17 @@ class _AttemptOutcome:
 
 
 def _diagnose_attempt_outcome(
-    *,
-    run_dir: Path,
-    round_num: int,
-    project_dir: Path,
-    improvements_path: Path,
-    cmd: list[str],
-    output: str,
-    stalled: bool,
-    returncode: int,
-    attempt: int,
-    checked: int,
-    unchecked: int,
-    imp_snapshot_before: bytes,
-    mem_size_before: int,
-    head_sha_before: str,
-    convo_size_before: int,
-    round_start_head_sha: str,
-    round_start_imp: bytes,
-    ui: TUIProtocol,
-    hooks: dict[str, str],
-    session_name: str,
+    *, run_dir: Path, round_num: int, project_dir: Path,
+    improvements_path: Path, cmd: list[str], output: str,
+    stalled: bool, returncode: int, attempt: int,
+    checked: int, unchecked: int, imp_snapshot_before: bytes,
+    mem_size_before: int, head_sha_before: str,
+    convo_size_before: int, round_start_head_sha: str,
+    round_start_imp: bytes, ui: TUIProtocol,
+    hooks: dict[str, str], session_name: str,
     failure_signatures: list[str],
 ) -> _AttemptOutcome:
     """Diagnose a single round attempt's outcome."""
-    # Lazy-import via evolve.orchestrator to preserve test patches —
-    # tests patch many of these via ``patch("evolve.orchestrator.X")``.
     from evolve.orchestrator import (
         MAX_IDENTICAL_FAILURES,
         WATCHDOG_TIMEOUT,
@@ -280,16 +261,8 @@ def _diagnose_attempt_outcome(
         and not converged_written
     )
 
-    # Convergence-already-detected carve-out.  A draft round invoked
-    # on a drained backlog with the CONVERGED marker already present
-    # is the correct terminal state: the agent observed convergence,
-    # decided there is nothing to draft, and returned without edits.
-    # Without this carve-out the round falls through to the silent
-    # "agent ran but changed nothing" no-progress catchall and the
-    # parent loop's convergence check (which would normally read
-    # CONVERGED and exit cleanly) is never reached because the round
-    # is marked as failed.  Treating this as a successful round lets
-    # the parent loop see CONVERGED and stop the session.
+    # Convergence carve-out: CONVERGED present + drained backlog + no edits
+    # = correct terminal state; let parent loop see CONVERGED and stop.
     if converged_written and unchecked_remaining == 0 and imp_unchanged:
         return _AttemptOutcome(
             attempt_sig=None, checked=checked, unchecked=unchecked,
