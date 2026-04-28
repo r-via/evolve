@@ -25,3 +25,7 @@
 | 021 | agent-self-monitoring | 2026-04-28 | SPEC.md > 2000 lines (2099); stable self-healing mechanism, fully implemented |
 | 022 | timeout-design-rationale | 2026-04-28 | SPEC.md > 2000 lines (2099); settled design rationale for 20s default + timeout behavior |
 | 023 | sdk-mock-testing-rule | 2026-04-28 | SPEC.md > 2000 lines (2020); settled testing rule — 3 approved patterns, 3 forbidden patterns, leak heuristic |
+| 024 | readme-separation-policy | 2026-04-28 | Every 20 rounds (round 20); settled README/SPEC separation policy + stale-README check, fully implemented |
+| 025 | sync-readme-subcommand | 2026-04-28 | Every 20 rounds (round 20); complete subcommand spec, fully designed and implemented |
+| 026 | diff-subcommand | 2026-04-28 | Every 20 rounds (round 20); complete subcommand spec, fully designed and implemented |
+| 027 | sdk-termination-signal | 2026-04-28 | Every 20 rounds (round 20); settled ResultMessage inspection contract, fully implemented |

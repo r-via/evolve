@@ -546,52 +546,14 @@ When both gates pass, Opus writes `CONVERGED` with justification.
 
 ---
 
-## README as a user-level summary (when `--spec` is set)
+## README as a user-level summary (archived)
 
-When `--spec` points at a file other than `README.md`, the two documents
-serve **orthogonal purposes** and evolve separately:
+When `--spec` points at a separate file, README serves as a user-level
+summary maintained by the operator. `evolve sync-readme` is the only
+sanctioned way evolve writes to README. A stale-README advisory fires
+at startup when the spec is >30 days newer.
 
-- **SPEC.md** — the contract evolve converges to. Exhaustive, dense,
-  may include internal implementation details. Changes often as the
-  system grows.
-- **README.md** — a user-level **summary** that helps a reader discover
-  what the software does and how to use it. Deliberately incomplete
-  relative to SPEC. Changes slowly, in response to user-visible
-  behavior changes, not to internal refactors.
-
-**The evolution loop never writes to `README.md`.** Party mode only
-produces `<spec>_proposal.md` (never a README proposal). README is
-authored and maintained by the human operator.
-
-When the operator wants to refresh README to reflect the current spec
-(e.g. after a batch of user-visible feature adds), they invoke the
-dedicated one-shot subcommand `evolve sync-readme` (see CLI flags §
-"evolve sync-readme"). This is never automatic and never runs as part
-of a round — it is an explicit, human-initiated action.
-
-### Stale-README pre-flight check (lightweight observability)
-
-At the start of every `evolve start` (before any round), the orchestrator
-compares `mtime(spec_file)` and `mtime(README.md)`. If the spec is
-significantly newer — default threshold **30 days** — the TUI prints a
-single-line advisory:
-
-```
-ℹ️  README has not been updated in 42 days — consider `evolve sync-readme`
-```
-
-This is pure observability. It does not block anything, does not modify
-any file, and does not appear during rounds (only once at startup). It
-is the only automated reference the evolution loop makes to the README.
-Threshold configurable via `evolve.toml`:
-
-```toml
-[tool.evolve]
-readme_stale_threshold_days = 30   # or 0 to disable the advisory entirely
-```
-
-(When `--spec` is unset, README IS the spec — this section does not
-apply, and no advisory is ever emitted.)
+→ Full policy + stale-README check: [`SPEC/archive/024-readme-separation-policy.md`]
 
 ---
 
@@ -930,103 +892,22 @@ work identically.
 ╰──────────────────────────────────────────╯
 ```
 
-### `evolve sync-readme`
+### `evolve sync-readme` (archived)
 
-One-shot subcommand that refreshes `README.md` to reflect the current spec.
-Never runs as part of the evolution loop — always invoked explicitly by the
-operator:
+One-shot subcommand that refreshes `README.md` to reflect the current
+spec. Default mode writes `README_proposal.md`; `--apply` commits
+directly. Exit codes: 0 (written), 1 (already in sync), 2 (error).
+Never runs during rounds.
 
-```bash
-# Produce a proposal for review (default; does not modify README.md)
-evolve sync-readme [<project-dir>] [--spec SPEC.md]
+→ Full spec + usage: [`SPEC/archive/025-sync-readme-subcommand.md`]
 
-# Apply the refresh directly, committing the updated README
-evolve sync-readme [<project-dir>] --apply [--spec SPEC.md]
-```
+### `evolve diff` (archived)
 
-**How it works:**
+One-shot subcommand showing spec-vs-implementation delta. Lighter than
+`--validate`: `--effort low`, major-feature presence check, no test
+run. Exit codes: 0 (compliant), 1 (gaps found), 2 (error).
 
-1. Loads the spec file (resolved from `--spec`, `evolve.toml`, `EVOLVE_SPEC`,
-   or default `README.md` — same resolution order as every other flag).
-2. Loads the current `README.md`.
-3. Launches the agent in a dedicated one-shot session with a sync-focused
-   prompt: *"Update the README to reflect the current spec. Preserve the
-   README's tutorial voice — brevity, examples, links to the spec for
-   internals. Do not copy the spec verbatim. Do not invent features that
-   aren't in the spec."*
-4. Writes the output to `README_proposal.md` at the project root (default
-   mode) or directly to `README.md` with a git commit (`--apply` mode).
-5. Exits.
-
-**Exit codes:**
-
-| Exit Code | Meaning |
-|-----------|---------|
-| 0 | Proposal written (or applied) successfully |
-| 1 | README already in sync — no changes proposed |
-| 2 | Error — spec file missing, agent failure, etc. |
-
-**When to use it:**
-
-- After adopting a batch of SPEC changes that introduced user-visible
-  features and the README is now misleading
-- After a `--forever` run accumulated many cycles and the README has
-  drifted from the current behavior
-- When the startup advisory (`ℹ️  README has not been updated in N days`)
-  prompts you
-
-**What it does NOT do:**
-
-- Run during rounds
-- Block convergence
-- Add items to `improvements.md`
-- Touch any file other than `README.md` (and `README_proposal.md` in
-  default mode)
-
-The subcommand is the **only** sanctioned way evolve ever writes to
-`README.md` when `--spec` points at a separate file. This separation —
-evolution loop touches spec + code, `sync-readme` touches README — is
-intentional: it keeps the two concerns orthogonal and avoids the
-failure mode where automated sync creates silent drift between user
-docs and actual behavior.
-
-### `evolve diff`
-
-One-shot subcommand that shows the delta between the current spec and the
-implementation. Lighter-weight than `--validate` — focused on quickly
-identifying gaps rather than exhaustive claim-by-claim verification.
-
-```bash
-evolve diff [<project-dir>] [--spec SPEC.md]
-```
-
-**How it works:**
-
-1. Loads the spec file (same resolution as every other flag)
-2. Launches the agent in read-only mode with `--effort low` and a
-   gap-detection prompt: *"Scan the spec for major features and
-   architectural claims. For each one, check whether it is present in
-   the codebase. Report gaps — do not verify exhaustively."*
-3. Produces `runs/<session>/diff_report.md` with:
-   - Each major spec section with ✅ (present) or ❌ (missing)
-   - Overall compliance percentage
-   - Specific gaps identified with brief descriptions
-4. No files are modified, no git commits are created
-
-**Exit codes:**
-
-| Exit Code | Meaning |
-|-----------|---------|
-| 0 | All major spec sections present — compliant |
-| 1 | One or more gaps found |
-| 2 | Error — spec file missing, agent failure, etc. |
-
-**Differences from `--validate`:**
-- Uses `--effort low` by default (cheaper, faster)
-- Checks for presence/absence of major features, not line-by-line verification
-- Does not run the check command
-- Produces a shorter, more actionable report
-- Designed for quick "how far are we?" checks, not formal validation
+→ Full spec + differences from --validate: [`SPEC/archive/026-diff-subcommand.md`]
 
 ### `evolve update` (archived)
 
@@ -1469,53 +1350,14 @@ Tests that assert the budget MUST import the constant rather than
 hard-coding a number, so the value can be tuned in one place without
 a sweeping diff.
 
-### Authoritative termination signal from the SDK
+### Authoritative termination signal from the SDK (archived)
 
-Whether a round hit ``max_turns`` is **not** inferred from indirect tells
-(missing ``COMMIT_MSG``, ``imp_unchanged``, etc.) — those remain useful
-fallbacks but conflate distinct failure modes. The Claude Agent SDK's
-``ResultMessage`` is the authoritative source and MUST be inspected:
+The SDK's `ResultMessage.subtype` (`success`, `error_max_turns`,
+`error_during_execution`) is the authoritative source for round
+termination cause. All callsites capture and log it; the orchestrator
+branches retry logic on the precise cause.
 
-```python
-@dataclass
-class ResultMessage:
-    subtype: str           # "success" | "error_max_turns" | "error_during_execution"
-    is_error: bool
-    num_turns: int
-    stop_reason: str | None
-    duration_ms: int
-    ...
-```
-
-Every callsite of ``claude_agent_sdk.query`` in ``evolve/agent.py``
-(implement, draft, review, memory curator, and any future agents)
-captures the **final** ``ResultMessage`` of the stream and:
-
-1. Logs ``subtype`` and ``num_turns`` on a dedicated line in the
-   conversation log (e.g. ``Done: 40 messages, 62 tool calls,
-   subtype=error_max_turns, num_turns=40``) so post-mortem analysis no
-   longer has to guess from tool-call counts.
-2. Prints a console-visible warning when ``is_error=True`` —
-   ``⚠ Agent stopped: error_max_turns after 40 turns`` — surfaced via
-   ``ui.agent_warn`` so the operator sees the signal in the TUI in
-   real time, not only in the log file.
-3. Returns the ``subtype`` to the orchestrator as part of the agent's
-   result tuple, so ``run_single_round`` can branch the retry logic on
-   a precise cause:
-   - ``error_max_turns`` → retry with a "fix-only, defer investigation"
-     prompt header AND record the granularity violation against the
-     current target (candidate for split on next rebuild).
-   - ``error_during_execution`` → retry with the SDK error surfaced
-     verbatim in the diagnostic.
-   - ``success`` + ``imp_unchanged`` → genuine "agent decided no work
-     needed" path (e.g. backlog drained, see carve-out above) — do
-     NOT conflate with a turn-budget exhaustion.
-
-Until this signal is wired through, the orchestrator's zero-progress
-heuristic over-fires on ``success`` rounds where the agent legitimately
-made no edits, and under-fires when the agent commits a partial fix
-just before hitting the cap. Both bugs disappear once ``subtype`` is
-the source of truth.
+→ Full contract + routing rules: [`SPEC/archive/027-sdk-termination-signal.md`]
 
 ### Complete LLM stream capture (archived)
 
