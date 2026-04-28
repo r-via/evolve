@@ -1,1 +1,43 @@
-"""evolve.infrastructure.diagnostics — subprocess-error files."""
+"""evolve.infrastructure.diagnostics — detection, reporting, subprocess diagnostics."""
+
+from evolve.infrastructure.diagnostics.detector import (
+    MAX_IDENTICAL_FAILURES,
+    _auto_detect_check,
+    _check_review_verdict,
+    _DDD_ALLOWED,
+    _DDD_LAYERS,
+    _DEFAULT_README_STALE_THRESHOLD_DAYS,
+    _detect_file_too_large,
+    _detect_layering_violation,
+    _detect_tdd_violation,
+    _detect_us_format_violation,
+    _emit_stale_readme_advisory,
+    _failure_signature,
+    _FILE_TOO_LARGE_LIMIT,
+    _is_circuit_breaker_tripped,
+    _README_STALE_ADVISORY_FMT,
+    _save_subprocess_diagnostic,
+    _US_HEADER_RE,
+    _US_REQUIRED_SECTIONS,
+)
+
+__all__ = [
+    "MAX_IDENTICAL_FAILURES",
+    "_auto_detect_check",
+    "_check_review_verdict",
+    "_DDD_ALLOWED",
+    "_DDD_LAYERS",
+    "_DEFAULT_README_STALE_THRESHOLD_DAYS",
+    "_detect_file_too_large",
+    "_detect_layering_violation",
+    "_detect_tdd_violation",
+    "_detect_us_format_violation",
+    "_emit_stale_readme_advisory",
+    "_failure_signature",
+    "_FILE_TOO_LARGE_LIMIT",
+    "_is_circuit_breaker_tripped",
+    "_README_STALE_ADVISORY_FMT",
+    "_save_subprocess_diagnostic",
+    "_US_HEADER_RE",
+    "_US_REQUIRED_SECTIONS",
+]

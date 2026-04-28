@@ -32,7 +32,7 @@ class TestDetectTddViolation:
         result.returncode = 0
         result.stdout = "\n".join(files) + "\n" if files else ""
         return patch(
-            "evolve.diagnostics.subprocess.run", return_value=result
+            "evolve.infrastructure.diagnostics.detector.subprocess.run", return_value=result
         )
 
     def test_production_only_commit_detected(self, tmp_path: Path):
@@ -92,7 +92,7 @@ class TestDetectTddViolation:
         result_mock = MagicMock()
         result_mock.returncode = 1
         with patch(
-            "evolve.diagnostics.subprocess.run",
+            "evolve.infrastructure.diagnostics.detector.subprocess.run",
             return_value=result_mock,
         ):
             result = _detect_tdd_violation(

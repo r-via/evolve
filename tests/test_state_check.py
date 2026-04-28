@@ -19,12 +19,12 @@ class TestAutoDetectCheck:
     def test_detects_pytest_from_pyproject(self, tmp_path: Path):
         """Detects pytest when pyproject.toml exists and pytest is on PATH."""
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'foo'\n")
-        with patch("evolve.diagnostics.shutil.which", side_effect=lambda x: "/usr/bin/pytest" if x == "pytest" else None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=lambda x: "/usr/bin/pytest" if x == "pytest" else None):
             assert _auto_detect_check(tmp_path) == "pytest"
 
     def test_detects_pytest_from_setup_py(self, tmp_path: Path):
         (tmp_path / "setup.py").write_text("from setuptools import setup\n")
-        with patch("evolve.diagnostics.shutil.which", side_effect=lambda x: "/usr/bin/pytest" if x == "pytest" else None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=lambda x: "/usr/bin/pytest" if x == "pytest" else None):
             assert _auto_detect_check(tmp_path) == "pytest"
 
     def test_detects_pytest_from_test_files(self, tmp_path: Path):
@@ -32,44 +32,44 @@ class TestAutoDetectCheck:
         tests_dir = tmp_path / "tests"
         tests_dir.mkdir()
         (tests_dir / "test_foo.py").write_text("def test_x(): pass\n")
-        with patch("evolve.diagnostics.shutil.which", side_effect=lambda x: "/usr/bin/pytest" if x == "pytest" else None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=lambda x: "/usr/bin/pytest" if x == "pytest" else None):
             assert _auto_detect_check(tmp_path) == "pytest"
 
     def test_detects_npm_test(self, tmp_path: Path):
         (tmp_path / "package.json").write_text('{"name": "foo"}\n')
-        with patch("evolve.diagnostics.shutil.which", side_effect=lambda x: "/usr/bin/npm" if x == "npm" else None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=lambda x: "/usr/bin/npm" if x == "npm" else None):
             assert _auto_detect_check(tmp_path) == "npm test"
 
     def test_detects_cargo_test(self, tmp_path: Path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\n")
-        with patch("evolve.diagnostics.shutil.which", side_effect=lambda x: "/usr/bin/cargo" if x == "cargo" else None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=lambda x: "/usr/bin/cargo" if x == "cargo" else None):
             assert _auto_detect_check(tmp_path) == "cargo test"
 
     def test_detects_go_test(self, tmp_path: Path):
         (tmp_path / "go.mod").write_text("module example.com/foo\n")
-        with patch("evolve.diagnostics.shutil.which", side_effect=lambda x: "/usr/bin/go" if x == "go" else None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=lambda x: "/usr/bin/go" if x == "go" else None):
             assert _auto_detect_check(tmp_path) == "go test ./..."
 
     def test_detects_make_test(self, tmp_path: Path):
         (tmp_path / "Makefile").write_text("test:\n\t@echo running tests\n")
-        with patch("evolve.diagnostics.shutil.which", side_effect=lambda x: "/usr/bin/make" if x == "make" else None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=lambda x: "/usr/bin/make" if x == "make" else None):
             assert _auto_detect_check(tmp_path) == "make test"
 
     def test_make_without_test_target(self, tmp_path: Path):
         """Makefile without a 'test' target should not match."""
         (tmp_path / "Makefile").write_text("build:\n\t@echo building\n")
-        with patch("evolve.diagnostics.shutil.which", side_effect=lambda x: "/usr/bin/make" if x == "make" else None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=lambda x: "/usr/bin/make" if x == "make" else None):
             assert _auto_detect_check(tmp_path) is None
 
     def test_returns_none_empty_dir(self, tmp_path: Path):
         """Empty directory returns None."""
-        with patch("evolve.diagnostics.shutil.which", return_value=None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", return_value=None):
             assert _auto_detect_check(tmp_path) is None
 
     def test_pytest_not_on_path(self, tmp_path: Path):
         """Python project but pytest not installed — skip to next."""
         (tmp_path / "pyproject.toml").write_text("[project]\n")
-        with patch("evolve.diagnostics.shutil.which", return_value=None):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", return_value=None):
             assert _auto_detect_check(tmp_path) is None
 
     def test_priority_order_python_over_node(self, tmp_path: Path):
@@ -78,7 +78,7 @@ class TestAutoDetectCheck:
         (tmp_path / "package.json").write_text("{}\n")
         def which_side(x):
             return f"/usr/bin/{x}" if x in ("pytest", "npm") else None
-        with patch("evolve.diagnostics.shutil.which", side_effect=which_side):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=which_side):
             assert _auto_detect_check(tmp_path) == "pytest"
 
     def test_falls_through_to_npm_when_no_pytest(self, tmp_path: Path):
@@ -87,7 +87,7 @@ class TestAutoDetectCheck:
         (tmp_path / "package.json").write_text("{}\n")
         def which_side(x):
             return f"/usr/bin/{x}" if x == "npm" else None
-        with patch("evolve.diagnostics.shutil.which", side_effect=which_side):
+        with patch("evolve.infrastructure.diagnostics.detector.shutil.which", side_effect=which_side):
             assert _auto_detect_check(tmp_path) == "npm test"
 
 
