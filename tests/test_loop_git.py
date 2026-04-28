@@ -16,7 +16,7 @@ class TestEnsureGit:
     def test_not_a_git_repo(self, tmp_path: Path):
         """Exits with code 2 if not a git repo."""
         mock_result = MagicMock(returncode=1)
-        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result):
+        with patch("evolve.git.subprocess.run", return_value=mock_result):
             with pytest.raises(SystemExit) as exc:
                 _ensure_git(tmp_path)
             assert exc.value.code == 2
@@ -33,7 +33,7 @@ class TestEnsureGit:
                 return status_clean
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)  # should not raise
 
     def test_uncommitted_changes_triggers_commit(self, tmp_path: Path):
@@ -48,7 +48,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="M file.py\n")
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         # Should have called git add -A and git commit
@@ -60,7 +60,7 @@ class TestEnsureGit:
         """Error message should reference the project directory."""
         mock_ui = MagicMock()
         mock_result = MagicMock(returncode=1)
-        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result):
+        with patch("evolve.git.subprocess.run", return_value=mock_result):
             with pytest.raises(SystemExit):
                 _ensure_git(tmp_path, ui=mock_ui)
         mock_ui.error.assert_called_once()
@@ -78,7 +78,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="M dirty.py\n")
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         commit_calls = [(c, kw) for c, kw in calls if "commit" in c]
@@ -104,7 +104,7 @@ class TestEnsureGit:
                 )
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         cmd_strs = [" ".join(c) for c in calls]
@@ -123,7 +123,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="M file.py\n")
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path, ui=mock_ui)
 
         mock_ui.uncommitted.assert_called_once()
@@ -139,7 +139,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="")
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path, ui=mock_ui)
 
         mock_ui.uncommitted.assert_not_called()
@@ -148,7 +148,7 @@ class TestEnsureGit:
         """When a custom ui is passed, it should be used instead of get_tui()."""
         mock_ui = MagicMock()
         mock_result = MagicMock(returncode=1)
-        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
+        with patch("evolve.git.subprocess.run", return_value=mock_result), \
              patch("evolve.git.get_tui") as mock_get_tui:
             with pytest.raises(SystemExit):
                 _ensure_git(tmp_path, ui=mock_ui)
@@ -161,7 +161,7 @@ class TestEnsureGit:
         """When ui=None, get_tui() is called to get the default UI."""
         mock_ui = MagicMock()
         mock_result = MagicMock(returncode=1)
-        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
+        with patch("evolve.git.subprocess.run", return_value=mock_result), \
              patch("evolve.git.get_tui", return_value=mock_ui):
             with pytest.raises(SystemExit):
                 _ensure_git(tmp_path)
@@ -179,7 +179,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="   \n  \n")
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         cmd_strs = [" ".join(c) for c in calls]
@@ -197,7 +197,7 @@ class TestEnsureGit:
                 return MagicMock(returncode=0, stdout="M file.py\n")
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _ensure_git(tmp_path)
 
         for cmd, kwargs in calls:
@@ -219,7 +219,7 @@ class TestGitCommit:
                 return MagicMock(returncode=0)  # no diff = nothing to commit
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "test msg")
 
         # Should NOT have called git commit
@@ -237,7 +237,7 @@ class TestGitCommit:
                 return MagicMock(returncode=0, stderr="")
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "feat: test")
 
         cmd_strs = [" ".join(str(c) for c in cmd) for cmd in calls]
@@ -253,7 +253,7 @@ class TestGitCommit:
                 return MagicMock(returncode=1, stderr="remote rejected")
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "feat: test")  # should not raise
 
     def test_commit_push_no_upstream_retries_with_set_upstream(self, tmp_path: Path):
@@ -275,7 +275,7 @@ class TestGitCommit:
                 )
             return MagicMock(returncode=0)
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=side_effect):
+        with patch("evolve.git.subprocess.run", side_effect=side_effect):
             _git_commit(tmp_path, "feat: test")
 
         cmd_strs = [" ".join(str(c) for c in cmd) for cmd in calls]
