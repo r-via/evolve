@@ -16,7 +16,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov"]
+# `rich` and `cairosvg` are also declared in [project] dependencies so
+# evolve installs ready-to-use; the optional groups remain so users can
+# explicitly opt into a richer extras set (and to keep the SPEC §
+# "Optional dependency groups" claim aligned with packaging metadata).
+rich = ["rich"]
+vision = ["cairosvg"]
+dev = ["pytest", "pytest-cov", "rich"]
 
 [project.scripts]
 evolve = "evolve.cli:main"

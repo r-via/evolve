@@ -31,6 +31,13 @@ from evolve.diagnostics import (
 )
 from evolve.git import _ensure_git, _git_commit, _git_show_at, _setup_forever_branch
 from evolve.hooks import fire_hook, load_hooks
+from evolve.orchestrator_constants import (
+    MAX_DEBUG_RETRIES,
+    _BACKLOG_VIOLATION_HEADER,
+    _BACKLOG_VIOLATION_PREFIX,
+    _MEMORY_COMPACTION_MARKER,
+    _MEMORY_WIPE_THRESHOLD,
+)
 from evolve.orchestrator_helpers import (
     _PROBE_OK_PREFIX,
     _PROBE_PREFIX,
@@ -70,36 +77,9 @@ from evolve.subprocess_monitor import WATCHDOG_TIMEOUT, _run_monitored_subproces
 from evolve.tui import TUIProtocol, get_tui
 
 
-# Maximum number of debug retries when a round fails, stalls, or makes no progress.
-MAX_DEBUG_RETRIES = 2
-
-# Memory-wipe sanity gate constants — keep the runtime check aligned with
-# SPEC.md § "memory.md" — "Byte-size sanity gate".  Changing either value
-# here is the single source of truth for both the detection logic in
-# _run_rounds and the tests that exercise it.
-#
-#   _MEMORY_COMPACTION_MARKER — the literal string the agent must include
-#       in its commit message (on its own line, per SPEC) to legitimise a
-#       large memory.md shrink.  Absence of the marker on a >threshold
-#       shrink triggers a debug retry with the "silently wiped memory.md"
-#       diagnostic header.
-#   _MEMORY_WIPE_THRESHOLD   — fractional shrink floor below which memory.md
-#       is considered wiped.  0.5 means "memory.md after the round is
-#       smaller than half of its pre-round size" → retry.
-_MEMORY_COMPACTION_MARKER = "memory: compaction"
-_MEMORY_WIPE_THRESHOLD = 0.5
-
-# Backlog discipline rule 1 (empty-queue gate) constants — keep the runtime
-# check aligned with SPEC.md § "Backlog discipline".  The agent is forbidden
-# from adding a new `- [ ]` item while any other `- [ ]` item already exists
-# in improvements.md.  When detected, the orchestrator triggers a debug retry
-# whose diagnostic prefix carries the documented header so agent.py's prompt
-# builder can render the dedicated section.
-_BACKLOG_VIOLATION_PREFIX = "BACKLOG VIOLATION"
-_BACKLOG_VIOLATION_HEADER = (
-    "CRITICAL \u2014 Backlog discipline violation: "
-    "new item added while queue non-empty"
-)
+# MAX_DEBUG_RETRIES, _MEMORY_COMPACTION_MARKER, _MEMORY_WIPE_THRESHOLD,
+# _BACKLOG_VIOLATION_PREFIX, _BACKLOG_VIOLATION_HEADER are imported from
+# evolve.orchestrator_constants (US-043 follow-up: 500-line cap fix).
 
 
 def _run_rounds(
@@ -484,44 +464,22 @@ def _run_rounds(
             sys.exit(1)
 
 
-# US-038: run_single_round + _run_single_round_body extracted to
-# evolve/round_runner.py.  Re-export keeps patch surfaces intact —
-# tests/test_round_runner_module.py asserts is-identity.
+# Re-exports — every symbol below was extracted to a sibling module
+# (US-036, US-038, US-040, US-042) to keep this file under the SPEC §
+# "Hard rule" 500-line cap.  ``is``-identity is locked by the matching
+# ``tests/test_<module>_module.py`` files.
 from evolve.round_runner import _run_single_round_body, run_single_round  # noqa: E402
-
-# US-040: _diagnose_attempt_outcome + _handle_round_success extracted
-# to evolve/round_lifecycle.py to keep this module under the SPEC
-# § "Hard rule: source files MUST NOT exceed 500 lines" cap.  The
-# helpers lazy-import their orchestrator-resident dependencies
-# (``_save_subprocess_diagnostic`` etc.) via ``from evolve.orchestrator
-# import ...`` inside their bodies, preserving ``patch("evolve.
-# orchestrator.X")`` test surfaces.  Tests/test_round_lifecycle_module.py
-# asserts ``is``-identity for both symbols.
 from evolve.round_lifecycle import (  # noqa: E402
     _AttemptOutcome,
     _diagnose_attempt_outcome,
     _handle_round_success,
 )
-
-
-# Re-exports for backward compatibility — the four one-shot orchestrator
-# entry points were extracted to ``evolve/orchestrator_oneshots.py`` (US-036)
-# to satisfy the SPEC § "Hard rule: source files MUST NOT exceed 500 lines"
-# cap.  Tests and ``evolve/cli.py`` continue to ``from evolve.orchestrator
-# import run_dry_run`` (etc.) and to ``patch("evolve.orchestrator.run_X")``
-# via this re-export — ``is``-identical bindings are guaranteed by
-# ``tests/test_orchestrator_oneshots_module.py``.
 from evolve.orchestrator_oneshots import (  # noqa: E402
     run_diff,
     run_dry_run,
     run_sync_readme,
     run_validate,
 )
-
-# US-042: ``evolve_loop`` extracted to evolve/orchestrator_startup.py
-# (verified by tests/test_orchestrator_startup_module.py).
 from evolve.orchestrator_startup import evolve_loop  # noqa: E402
-
-# _run_party_mode and _forever_restart extracted to evolve/party.py
-# (re-exported via ``from evolve.party import …`` above).
+# _run_party_mode and _forever_restart re-exported from evolve.party above.
 
