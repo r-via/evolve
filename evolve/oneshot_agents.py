@@ -1,41 +1,20 @@
-"""One-shot agents — dry-run, validate, diff, and sync-readme.
+"""One-shot agents — dry-run, validate, diff, sync-readme.
 
 SPEC § "The --dry-run flag", "The --validate flag", "evolve diff",
-"evolve sync-readme" — read-only / single-shot agent invocations
-extracted from ``evolve/agent.py`` (US-033) to satisfy the SPEC §
-"Hard rule: source files MUST NOT exceed 500 lines" cap.  Mirrors
-the extraction pattern used by US-027 (diagnostics), US-030
-(agent_runtime), US-031 (memory_curation), the round-6
-spec_archival split, and US-032 (draft_review).
+"evolve sync-readme".  Extracted from ``evolve/agent.py`` (US-033);
+``diff`` and ``sync-readme`` further extracted to dedicated leaf
+modules (US-034 / US-047).  Public symbols are re-exported from
+``evolve.agent`` for backward compatibility.
 
-Public symbols are re-exported from ``evolve.agent`` for backward
-compatibility with the existing test suite (``patch("evolve.agent.
-run_dry_run_agent", ...)``, ``from evolve.agent import
-_run_validate_claude_agent``, etc.) and with the orchestrator's
-late-binding imports inside ``_run_rounds``-adjacent helpers.
-
-Leaf-module invariant: this file imports ONLY from stdlib,
-``evolve.tui``, ``evolve.state``, and ``evolve.agent_runtime`` at
-module top.  Spec-fixed runtime constants (``MODEL`` /
-``MAX_TURNS``) come from the leaf module ``evolve.agent_runtime`` —
-no cycle.  The agent.py-resident dependencies
-(``_load_project_context`` in build functions; ``_patch_sdk_parser``
-/ ``EFFORT`` in the SDK runners; ``_run_agent_with_retries`` in
-the public ``run_*_agent`` wrappers) are imported lazily inside
-function bodies so that:
-
-1. tests that ``patch("evolve.agent.X")`` continue to intercept
-   (memory.md round-7 lesson: "the extracted function must look X
-   up via ``evolve.agent``, NOT the original source module");
-2. module load order remains acyclic;
-3. indented imports do NOT trip the leaf-invariant regex
-   ``^from evolve\\.`` (memory.md round-7 entry).
-
-``EFFORT`` is mutated at runtime in ``evolve.agent`` by
-``_resolve_config`` per memory.md "--effort plumbing: 3-attempt
-pattern" — the function-local imports inside the SDK runners
-honor that mutation while keeping the module-level import set
-leaf-clean.
+Leaf-module invariant: imports ONLY from stdlib, ``evolve.state``,
+and ``evolve.agent_runtime`` at module top.  ``get_tui``,
+``_load_project_context``, ``_patch_sdk_parser``, ``EFFORT``, and
+``_run_agent_with_retries`` are imported lazily inside function
+bodies so ``patch("evolve.agent.X")`` test interception keeps
+working and module-load order remains acyclic (memory.md round-7
+lesson: indented imports don't trip the leaf-invariant regex
+``^from evolve\\.``; the extracted function must look X up via
+``evolve.agent``, not the original source module).
 """
 
 from __future__ import annotations
@@ -44,14 +23,6 @@ from pathlib import Path
 
 from evolve.agent_runtime import MAX_TURNS, MODEL
 from evolve.state import _runs_base
-
-# NOTE: ``get_tui`` is intentionally imported lazily inside each SDK runner
-# below, NOT at module top.  Tests do ``patch("evolve.agent.get_tui",
-# return_value=mock_tui)`` and rely on the runner looking the name up via
-# ``evolve.agent`` (the re-export binding) — a top-level
-# ``from evolve.tui import get_tui`` here would bypass that patch
-# (memory.md round-7 lesson: "the extracted function must look X up via
-# ``evolve.agent``, NOT the original source module").
 
 
 # ---------------------------------------------------------------------------
@@ -463,137 +434,15 @@ def run_validate_agent(
 
 
 # ---------------------------------------------------------------------------
-# evolve diff — lightweight spec-vs-implementation gap detection
-# ---------------------------------------------------------------------------
-#
-# SPEC § "evolve diff" — one-shot subcommand that shows the delta between
-# the spec and the implementation.  Lighter-weight than --validate: uses
-# --effort low, does not run the check command, checks for presence/absence
-# of major features rather than exhaustive claim-by-claim verification.
-# Exit codes: 0 = compliant, 1 = gaps found, 2 = error.
-
-
-def build_diff_prompt(
-    project_dir: Path,
-    run_dir: Path | None = None,
-    spec: str | None = None,
-) -> str:
-    """Build the prompt for the ``evolve diff`` one-shot subcommand.
-
-    The agent scans the spec for major features/architectural claims and
-    checks whether each is present in the codebase.  Produces a
-    ``diff_report.md`` with per-section compliance and overall percentage.
-
-    Args:
-        project_dir: Root directory of the project.
-        run_dir: Session directory where the report will be written.
-        spec: Path to the spec file relative to project_dir (default: README.md).
-
-    Returns:
-        The fully assembled prompt string.
-    """
-    from evolve.agent import _load_project_context
-
-    ctx = _load_project_context(project_dir, spec=spec)
-    readme = ctx["readme"]
-    improvements = ctx["improvements"] or "(none)"
-
-    rdir = str(run_dir or ".evolve/runs")
-
-    return f"""\
-You are a lightweight spec compliance agent. You are running in DIFF mode.
-You MUST NOT modify any project files. Your only writable action is to
-create `{rdir}/diff_report.md`.
-
-Your task: scan the spec for major features and architectural claims. For
-each one, check whether it is present in the codebase. Report gaps — do
-NOT verify exhaustively (that is what --validate is for). Focus on
-presence/absence of major capabilities, not line-by-line correctness.
-
-Use Read, Grep, and Glob tools to examine the codebase. Do NOT use Edit, Write, or Bash.
-
-At the end, write `{rdir}/diff_report.md` with the following format:
-
-# Diff Report
-
-## Sections
-
-For EACH major section or feature area in the spec, write one line:
-- ✅ **Section/feature name** — present (brief evidence)
-- ❌ **Section/feature name** — missing (brief description of gap)
-
-## Summary
-
-- **Total sections**: N
-- **Present**: N (✅)
-- **Missing**: N (❌)
-- **Compliance**: XX%
-
-## Gaps
-
-For each ❌ item, briefly describe what is missing.
-
-IMPORTANT: Keep it concise. This is a quick gap-detection pass, not an
-exhaustive audit. Check for the presence of major features, modules, CLI
-flags, and architectural patterns described in the spec.
-
-## Spec (specification)
-{readme if readme else "(no spec found)"}
-
-## Current improvements.md
-{improvements}"""
-
-
-async def _run_diff_claude_agent(
-    prompt: str,
-    project_dir: Path,
-    run_dir: Path,
-) -> None:
-    """Run the Claude agent in diff mode with restricted tools.
-
-    Thin wrapper around :func:`_run_readonly_claude_agent`.
-
-    Args:
-        prompt: The diff prompt.
-        project_dir: Root directory of the project (used as cwd).
-        run_dir: Session directory for the conversation log and report.
-    """
-    await _run_readonly_claude_agent(
-        prompt, project_dir, run_dir,
-        log_filename="diff_conversation.md",
-        log_header="Diff Analysis",
-    )
-
-
-def run_diff_agent(
-    project_dir: Path,
-    run_dir: Path | None = None,
-    max_retries: int = 5,
-    spec: str | None = None,
-) -> None:
-    """Run the agent for the ``evolve diff`` one-shot subcommand.
-
-    Builds a diff prompt and invokes the agent with write-related tools
-    disabled.  Includes the same retry logic as the other agents.
-
-    Args:
-        project_dir: Root directory of the project.
-        run_dir: Session run directory for conversation logs and report.
-        max_retries: Maximum SDK call attempts on rate-limit errors.
-        spec: Path to the spec file relative to project_dir (default: README.md).
-    """
-    from evolve.agent import _run_agent_with_retries
-
-    rdir = run_dir or _runs_base(project_dir)
-    rdir.mkdir(parents=True, exist_ok=True)
-
-    prompt = build_diff_prompt(project_dir, rdir, spec=spec)
-
-    _run_agent_with_retries(
-        lambda: _run_diff_claude_agent(prompt, project_dir, rdir),
-        fail_label="Diff agent",
-        max_retries=max_retries,
-    )
+# evolve diff — extracted to evolve/diff_agent.py (US-047, mirrors US-034
+# sync_readme pattern).  Re-exported for ``patch("evolve.agent.X")`` /
+# ``from evolve.agent import X`` compatibility through the chain
+# ``agent`` → ``oneshot_agents`` → ``diff_agent``.
+from evolve.diff_agent import (  # noqa: E402
+    build_diff_prompt,
+    _run_diff_claude_agent,
+    run_diff_agent,
+)
 
 
 # ---------------------------------------------------------------------------
