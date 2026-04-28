@@ -335,6 +335,11 @@ class TestEffortFlag:
             "sync_readme.py",
             "memory_curation.py",
             "spec_archival.py",
+            # Round-7 sdk_runner extraction moved run_claude_agent (with
+            # its ``effort=EFFORT`` kwarg) out of agent.py — include it in
+            # the union scan so the operator-tunable ``--effort`` plumbing
+            # contract survives the split.
+            "sdk_runner.py",
         )
         total = sum(
             (evolve_dir / fname).read_text().count("effort=EFFORT")
