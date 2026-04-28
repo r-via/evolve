@@ -1,9 +1,18 @@
-"""evolve-watch — auto-restart wrapper for ``evolve start``.
+"""evolve-watch — relentless auto-restart wrapper for ``evolve start``.
 
-Watches for exit code 3 (``RESTART_REQUIRED`` structural change — see
-SPEC § "Structural change self-detection" and § "Exit codes") and
-respawns evolve with ``--resume`` so the next session picks up where
-the previous one left off.  Any other exit code is propagated.
+Wraps ``evolve start`` and respawns it on **any** non-zero exit code
+until the project converges (exit 0).  There is no restart cap —
+operator-issued ``SIGINT``/``SIGTERM`` is the only way to stop the
+loop short of a successful convergence.
+
+Use cases
+---------
+
+- ``--forever`` runs that should self-heal across structural commits
+  (exit 3), max-rounds boundaries (exit 1), transient errors (exit 2),
+  and circuit-breaker trips (exit 4).
+- Long unattended sessions (overnight, CI nightly) where the operator
+  wants a single command that "runs until done".
 
 Usage
 -----
@@ -13,18 +22,29 @@ Usage
     evolve-watch start . --check pytest --forever
     evolve-watch start . --check pytest --rounds 100
 
-The wrapper passes every CLI argument through to ``evolve`` unchanged
-on the first invocation; on every structural restart it injects
-``--resume`` (idempotently) and respawns.
+Every CLI argument is forwarded to ``evolve`` unchanged on the first
+invocation; on every restart the wrapper injects ``--resume``
+(idempotently) so the next session picks up the previous one's state.
 
-Safety net
-----------
+Stop conditions
+---------------
 
-If evolve exits with code 3 more than ``MAX_RESTARTS_PER_WINDOW``
-times in a ``RESTART_WINDOW_SECONDS`` window, the watcher gives up
-with exit code 5 — assuming the structural-change loop is itself
-broken (a round writes ``RESTART_REQUIRED`` every time, which would
-otherwise restart forever).  Defaults: 5 restarts per 30 minutes.
+The wrapper exits in **only** two cases:
+
+1. ``evolve`` exits with code 0 — convergence reached, the wrapper
+   propagates 0 and stops.
+2. The operator sends ``SIGINT`` (Ctrl+C) or ``SIGTERM`` to the
+   wrapper — the signal is forwarded to the running ``evolve``
+   child, the wrapper waits up to 10s for the child to settle (then
+   ``SIGKILL``s if needed), and propagates the child's exit code
+   without restarting.
+
+Every other exit code (1, 2, 3, 4, anything else) triggers a restart.
+There is no rate-limit cap by design: the operator explicitly chose a
+relentless wrapper, and a deterministic-failure loop is the
+orchestrator's circuit-breaker territory (§ "Circuit breakers"), not
+the wrapper's.  If you need a bounded version, run plain ``evolve``
+without the wrapper.
 """
 
 from __future__ import annotations
@@ -33,23 +53,9 @@ import signal
 import subprocess
 import sys
 import time
-from collections import deque
 
-#: Exit code evolve uses when it commits a structural change and the
-#: orchestrator must be restarted to reload its own modules
-#: (SPEC § "Exit codes").
-STRUCTURAL_RESTART_EXIT = 3
-
-#: Exit code the watcher itself returns when it gives up after too many
-#: structural restarts in a short window.
-WATCHER_GIVE_UP_EXIT = 5
-
-#: Maximum number of structural restarts allowed within
-#: ``RESTART_WINDOW_SECONDS`` before the watcher bails.
-MAX_RESTARTS_PER_WINDOW = 5
-
-#: Sliding-window length (seconds) for the restart-rate safety net.
-RESTART_WINDOW_SECONDS = 1800  # 30 minutes
+#: Convergence is the only natural stop condition for the watcher.
+CONVERGED_EXIT = 0
 
 #: Subcommands of evolve that accept ``--resume``.  The watcher injects
 #: ``--resume`` immediately after the subcommand token so it lands in
@@ -88,7 +94,7 @@ def _log(msg: str) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     """Entry point — pass every CLI arg through to ``evolve`` and
-    auto-restart on structural exits."""
+    restart on every non-zero exit until convergence (exit 0)."""
     argv = list(argv if argv is not None else sys.argv[1:])
     if not argv:
         print(
@@ -98,54 +104,57 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(2)
 
-    restart_history: deque[float] = deque()
     current_args = argv
     child: subprocess.Popen | None = None
+    operator_signaled = False
 
     def _forward(sig: int, _frame: object) -> None:
+        nonlocal operator_signaled
+        operator_signaled = True
         if child is not None and child.poll() is None:
             child.send_signal(sig)
 
     signal.signal(signal.SIGINT, _forward)
     signal.signal(signal.SIGTERM, _forward)
 
+    restart_count = 0
     while True:
-        _log(f"spawning: evolve {' '.join(current_args)}")
+        if restart_count == 0:
+            _log(f"spawning: evolve {' '.join(current_args)}")
+        else:
+            _log(
+                f"restart #{restart_count} — respawning with --resume "
+                f"after non-zero exit"
+            )
         child = _spawn_evolve(current_args)
         try:
             rc = child.wait()
         except KeyboardInterrupt:
-            # SIGINT was forwarded to child — wait for it to settle.
+            # Defensive: the signal handler should have set the flag
+            # and forwarded the signal already, but Python may also
+            # raise KeyboardInterrupt here on the main thread.
+            operator_signaled = True
             try:
                 rc = child.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 child.kill()
                 rc = child.wait()
 
-        if rc != STRUCTURAL_RESTART_EXIT:
-            _log(f"evolve exited with code {rc} — propagating")
+        if operator_signaled:
+            _log(
+                f"operator signal received — evolve exited with code "
+                f"{rc}, propagating without restart"
+            )
             sys.exit(rc)
 
-        now = time.time()
-        restart_history.append(now)
-        while restart_history and now - restart_history[0] > RESTART_WINDOW_SECONDS:
-            restart_history.popleft()
+        if rc == CONVERGED_EXIT:
+            _log("evolve converged (exit 0) — stopping watcher")
+            sys.exit(CONVERGED_EXIT)
 
-        if len(restart_history) > MAX_RESTARTS_PER_WINDOW:
-            _log(
-                f"evolve restarted {len(restart_history)} times in "
-                f"{RESTART_WINDOW_SECONDS // 60} min — giving up to "
-                f"avoid an infinite loop (every round writes "
-                f"RESTART_REQUIRED).  Inspect "
-                f".evolve/runs/<latest>/RESTART_REQUIRED for the "
-                f"structural reason; manual fix required."
-            )
-            sys.exit(WATCHER_GIVE_UP_EXIT)
-
+        restart_count += 1
         _log(
-            f"structural change detected (exit 3) — restart "
-            f"{len(restart_history)}/{MAX_RESTARTS_PER_WINDOW} in "
-            f"window, respawning with --resume"
+            f"evolve exited with code {rc} — restarting (no cap, only "
+            f"convergence stops the watcher)"
         )
         current_args = _add_resume(current_args)
         # Brief breathing room: let the OS release file handles, let
