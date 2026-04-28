@@ -8,39 +8,13 @@ from pathlib import Path
 
 from evolve.tui import TUIProtocol
 
-# US-041: ``_handle_round_success`` extracted to evolve/round_success.py
-# to keep this module under the SPEC § "Hard rule: source files MUST NOT
-# exceed 500 lines" cap.  Re-export preserves
-# ``patch("evolve.round_lifecycle._handle_round_success")`` test surfaces
-# and the orchestrator's ``from evolve.round_lifecycle import
-# _handle_round_success`` re-export chain.  ``is``-identity locked by
-# ``tests/test_round_success_module.py``.
+# Re-export from round_success.py (US-041 split); preserves patch surfaces.
 from evolve.round_success import _handle_round_success  # noqa: F401
 
 
 @dataclass
 class _AttemptOutcome:
-    """Result of ``_diagnose_attempt_outcome``.
-
-    Fields:
-        attempt_sig: Failure signature for the circuit breaker.  ``None``
-            on the success path; non-None on every retry-worthy outcome.
-        checked: Updated count of ``[x]`` items in improvements.md.
-        unchecked: Updated count of ``[ ]`` items in improvements.md.
-        round_succeeded: ``True`` when this attempt closed the round
-            (escape hatch hit OR ``made_progress`` path).  Caller breaks
-            out of the attempt loop.
-        is_review_retry: ``True`` when the BLOCKED / CHANGES REQUESTED
-            path took over.  Helper has already fired ``on_error`` and
-            registered the sig with the circuit breaker — caller MUST
-            skip the standard ``_register_and_check_circuit`` /
-            ``capture_frame`` / ``fire_hook`` / retry-warn block and
-            ``continue`` to the next attempt.
-        review_retry_circuit_tripped: ``True`` when ``is_review_retry``
-            AND the circuit breaker tripped on registration.  Caller
-            MUST ``return`` from ``_run_rounds`` immediately (clean exit
-            — no ``sys.exit(4)``, matching legacy behaviour).
-    """
+    """Result of ``_diagnose_attempt_outcome``."""
     attempt_sig: str | None
     checked: int
     unchecked: int
@@ -73,13 +47,7 @@ def _diagnose_attempt_outcome(
     session_name: str,
     failure_signatures: list[str],
 ) -> _AttemptOutcome:
-    """Diagnose a single round attempt's outcome.
-
-    Replaces the L599-L1089 block of the original ``_run_rounds`` body.
-    Side effects: writes ``subprocess_error_round_N.txt`` for retry-worthy
-    outcomes, fires ``on_error`` for review failures, and (in the review
-    branch) registers the sig with ``failure_signatures``.
-    """
+    """Diagnose a single round attempt's outcome."""
     # Lazy-import via evolve.orchestrator to preserve test patches —
     # tests patch many of these via ``patch("evolve.orchestrator.X")``.
     from evolve.orchestrator import (
@@ -92,6 +60,7 @@ def _diagnose_attempt_outcome(
         _count_checked,
         _count_unchecked,
         _detect_backlog_violation,
+        _detect_us_format_violation,
         _failure_signature,
         _is_circuit_breaker_tripped,
         _probe_warn,
@@ -257,6 +226,19 @@ def _diagnose_attempt_outcome(
         except Exception as e:  # pragma: no cover — defensive
             _probe_warn(f"backlog-violation check skipped: {e}")
 
+    # 5. US format validation (pre-commit check)
+    us_format_violations: list[str] = []
+    if not imp_unchanged:
+        try:
+            pre_lines = imp_snapshot_before.decode(
+                "utf-8", errors="replace"
+            ).splitlines()
+            us_format_violations = _detect_us_format_violation(
+                improvements_path, pre_lines
+            )
+        except Exception as e:  # pragma: no cover — defensive
+            _probe_warn(f"US format validation skipped: {e}")
+
     # Scope creep — rebuild + implement in one round
     scope_creep = False
     scope_creep_other_files: list[str] = []
@@ -324,6 +306,22 @@ def _diagnose_attempt_outcome(
         (_round_head_moved or _round_imp_changed)
         and _attempt_had_no_new_issues
     ):
+        # US format validation — advisory diagnostic (does not block)
+        if us_format_violations:
+            _v_summary = "\n".join(
+                f"  - {v}" for v in us_format_violations
+            )
+            _save_subprocess_diagnostic(
+                run_dir, round_num,
+                ["(post-round US format check)"],
+                f"Violations:\n{_v_summary}",
+                reason=(
+                    f"US FORMAT VIOLATION: "
+                    f"{len(us_format_violations)} item(s) lack "
+                    f"required US template sections:\n{_v_summary}"
+                ),
+                attempt=0,
+            )
         return _AttemptOutcome(
             attempt_sig=None, checked=checked, unchecked=unchecked,
             round_succeeded=True,

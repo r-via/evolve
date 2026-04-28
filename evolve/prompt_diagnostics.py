@@ -320,6 +320,23 @@ def build_prev_crash_section(
             f"review.\n"
             f"```\n{prev_crash}\n```\n"
         )
+    if "US FORMAT VIOLATION" in prev_crash:
+        return (
+            f"\n## CRITICAL — US format violation: new item lacks "
+            f"required sections\n"
+            f"The previous round added one or more new `- [ ]` items "
+            f"to `improvements.md` that do not follow the required US "
+            f"template.  Every new item MUST have:\n\n"
+            f"- A header matching `- [ ] [type] US-NNN: summary`\n"
+            f"- `**As** <role>, **I want** <capability> **so that** "
+            f"<value>.`\n"
+            f"- `**Acceptance criteria (must all pass before the item "
+            f"is [x]'d):**` with ≥ 2 testable criteria\n"
+            f"- `**Definition of done:**` with concrete artifacts\n\n"
+            f"**This attempt MUST rewrite the malformed item(s)** with "
+            f"all required sections before committing.\n"
+            f"```\n{prev_crash}\n```\n"
+        )
     if "FILE TOO LARGE" in prev_crash:
         return (
             f"\n## CRITICAL — File too large\n"

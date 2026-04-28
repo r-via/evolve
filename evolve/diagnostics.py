@@ -33,6 +33,7 @@ __all__ = [
     "_generate_evolution_report",
     "_is_circuit_breaker_tripped",
     "_save_subprocess_diagnostic",
+    "_detect_us_format_violation",
     "MAX_IDENTICAL_FAILURES",
 ]
 
@@ -327,6 +328,80 @@ def _detect_file_too_large(
             if count > _FILE_TOO_LARGE_LIMIT:
                 oversized.append((str(p.relative_to(project_dir)), count))
     return oversized
+
+
+# ---------------------------------------------------------------------------
+# US format validation
+# ---------------------------------------------------------------------------
+
+# Regex for valid US header: - [ ] [type] (optional more tags) US-NNN: summary
+_US_HEADER_RE = re.compile(
+    r"^- \[ \] \[\w+\](?:\s+\[\w+\])* US-\d{3,}: "
+)
+
+# Required section headers in the US body
+_US_REQUIRED_SECTIONS = ("**As**", "**Acceptance criteria", "**Definition of done")
+
+
+def _detect_us_format_violation(
+    improvements_path: Path, pre_round_lines: list[str]
+) -> list[str]:
+    """Detect newly-added ``[ ]`` items lacking the US template structure.
+
+    Diffs new ``[ ]`` lines against ``pre_round_lines``, checks each
+    against the US header regex and verifies the item body contains the
+    three required section headers (``**As**``, ``**Acceptance criteria``,
+    ``**Definition of done``).
+
+    Args:
+        improvements_path: Path to ``improvements.md`` post-round.
+        pre_round_lines: Lines from ``improvements.md`` before the round.
+
+    Returns:
+        List of violation descriptions (empty = pass).
+    """
+    if not improvements_path.is_file():
+        return []
+    try:
+        post_text = improvements_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    post_lines = post_text.splitlines()
+    pre_set = set(pre_round_lines)
+    # Find newly-added unchecked item header lines
+    new_headers: list[tuple[int, str]] = []
+    for i, line in enumerate(post_lines):
+        if line.strip().startswith("- [ ]") and line not in pre_set:
+            new_headers.append((i, line))
+    if not new_headers:
+        return []
+    violations: list[str] = []
+    for idx, header in new_headers:
+        # Check header format
+        header_stripped = header.strip()
+        if not _US_HEADER_RE.match(header_stripped):
+            violations.append(
+                f"Item at line {idx + 1} has malformed header "
+                f"(expected `- [ ] [type] US-NNN: ...`): "
+                f"{header_stripped[:120]}"
+            )
+            continue
+        # Collect body lines until next item or EOF
+        body_lines: list[str] = []
+        for j in range(idx + 1, len(post_lines)):
+            if post_lines[j].strip().startswith("- ["):
+                break
+            body_lines.append(post_lines[j])
+        body_text = "\n".join(body_lines)
+        missing = [
+            s for s in _US_REQUIRED_SECTIONS if s not in body_text
+        ]
+        if missing:
+            violations.append(
+                f"Item at line {idx + 1} missing required sections: "
+                f"{', '.join(missing)}: {header_stripped[:120]}"
+            )
+    return violations
 
 
 # ---------------------------------------------------------------------------
