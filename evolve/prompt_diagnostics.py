@@ -152,7 +152,9 @@ def _detect_prior_round_anomalies(
     return anomalies
 
 
-def build_prev_crash_section(prev_crash: str) -> str:
+def build_prev_crash_section(
+    prev_crash: str, run_dir: Path | None = None
+) -> str:
     """Render the appropriate ``## CRITICAL`` diagnostic section.
 
     Dispatches on the diagnostic prefix in ``prev_crash`` (the contents
@@ -160,6 +162,11 @@ def build_prev_crash_section(prev_crash: str) -> str:
     distinct orchestrator-detected failure mode and gets a tailored
     instruction block.  See SPEC.md § "Zero progress detection" and
     sibling carve-outs.
+
+    ``run_dir`` is used by the BACKLOG DRAINED branch to give the agent
+    a literal absolute path for the ``CONVERGED`` marker file — without
+    it, the agent receives an unresolved ``{run_dir}`` placeholder and
+    silently skips the write, looping until the orchestrator gives up.
 
     Returns an empty string when ``prev_crash`` is falsy.
     """
@@ -205,6 +212,12 @@ def build_prev_crash_section(prev_crash: str) -> str:
         # commit body, no edits.  The retry must NOT go fishing
         # for something to do; the correct next step is Phase 4
         # (verify README claims, then write CONVERGED).
+        converged_path = (
+            str((Path(run_dir) / "CONVERGED").resolve())
+            if run_dir is not None
+            else "<run_dir>/CONVERGED  (resolve <run_dir> to the current "
+            "round's run directory under .evolve/runs/)"
+        )
         return (
             f"\n## CRITICAL — Backlog drained, CONVERGED skipped\n"
             f"The previous round's improvements.md has zero unchecked "
@@ -212,14 +225,18 @@ def build_prev_crash_section(prev_crash: str) -> str:
             f"round was not a failure — you had nothing to implement — "
             f"but stopping without writing ``CONVERGED`` triggers the "
             f"zero-progress retry loop.\n\n"
+            f"**Writing CONVERGED is YOUR job, not the orchestrator's.** "
+            f"The orchestrator only reads the file you write; it never "
+            f"creates it.  If you skip the write, the run never ends.\n\n"
             f"**This attempt MUST go straight to Phase 4:**\n\n"
             f"1. Re-read the spec (README.md or ``--spec``) line by line.\n"
             f"2. For EACH section / claim, confirm the implementation "
             f"   actually exists and works.  Do NOT trust the ``[x]`` "
             f"   checkboxes alone — walk the spec.\n"
-            f"3. If every claim checks out → write "
-            f"   ``{{run_dir}}/CONVERGED`` with a one-line justification "
-            f"   per documented gate.\n"
+            f"3. If every claim checks out → use the Write tool to create "
+            f"   the file at this exact path:\n"
+            f"      ``{converged_path}``\n"
+            f"   with a one-line justification per documented gate.\n"
             f"4. If ONE claim is not yet implemented → add exactly one "
             f"   new ``[ ]`` US item for it (Winston → John → final-draft "
             f"   pipeline per SPEC § 'Item format'), leave the backlog "
