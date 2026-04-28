@@ -8,7 +8,7 @@ enum members match SPEC names, and domain files contain zero
 from pathlib import Path
 
 from evolve.domain.improvement import USItem, BacklogState, Backlog
-from evolve.domain.round import RoundKind, RoundResult
+from evolve.domain.round import RoundKind, RoundResult, RoundAttempt, Round
 from evolve.domain.convergence import ConvergenceVerdict, ConvergenceGate
 from evolve.domain.agent_invocation import AgentRole, AgentSubtype, AgentResult
 from evolve.domain.review_verdict import ReviewVerdict, Finding
@@ -115,6 +115,63 @@ class TestRoundResult:
         )
         assert result.subtype is None
         assert result.num_turns is None
+
+
+# ── US-059: Round and RoundAttempt ────────────────────────────
+
+
+class TestRoundAttempt:
+    def test_fields(self):
+        attempt = RoundAttempt(
+            attempt_num=1,
+            subtype="error_max_turns",
+            diagnostic="agent hit max turns",
+            succeeded=False,
+        )
+        assert attempt.attempt_num == 1
+        assert attempt.subtype == "error_max_turns"
+        assert attempt.diagnostic == "agent hit max turns"
+        assert attempt.succeeded is False
+
+    def test_defaults(self):
+        attempt = RoundAttempt(attempt_num=2)
+        assert attempt.subtype is None
+        assert attempt.diagnostic is None
+        assert attempt.succeeded is False
+
+
+class TestRound:
+    def test_fields(self):
+        attempt = RoundAttempt(attempt_num=1, succeeded=True)
+        result = RoundResult(
+            round_num=3, kind=RoundKind.IMPLEMENT, succeeded=True
+        )
+        rnd = Round(
+            round_num=3,
+            kind=RoundKind.IMPLEMENT,
+            attempts=[attempt],
+            result=result,
+        )
+        assert rnd.round_num == 3
+        assert rnd.kind == RoundKind.IMPLEMENT
+        assert len(rnd.attempts) == 1
+        assert rnd.attempts[0] is attempt
+        assert rnd.result is result
+
+    def test_defaults(self):
+        rnd = Round(round_num=1, kind=RoundKind.DRAFT)
+        assert rnd.attempts == []
+        assert rnd.result is None
+
+    def test_multiple_attempts(self):
+        a1 = RoundAttempt(attempt_num=1, succeeded=False, diagnostic="stall")
+        a2 = RoundAttempt(attempt_num=2, succeeded=True)
+        rnd = Round(
+            round_num=5, kind=RoundKind.IMPLEMENT, attempts=[a1, a2]
+        )
+        assert len(rnd.attempts) == 2
+        assert rnd.attempts[0].succeeded is False
+        assert rnd.attempts[1].succeeded is True
 
 
 class TestConvergenceVerdict:

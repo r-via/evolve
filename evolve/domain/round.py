@@ -5,9 +5,9 @@ Pure enums + dataclasses — no I/O, no evolve imports.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 
 class RoundKind(Enum):
@@ -27,3 +27,23 @@ class RoundResult:
     succeeded: bool
     subtype: Optional[str] = None  # SDK ResultMessage.subtype
     num_turns: Optional[int] = None
+
+
+@dataclass
+class RoundAttempt:
+    """One subprocess invocation within a round's retry loop."""
+
+    attempt_num: int
+    subtype: Optional[str] = None  # SDK ResultMessage.subtype
+    diagnostic: Optional[str] = None
+    succeeded: bool = False
+
+
+@dataclass
+class Round:
+    """Aggregate root for a single evolution round."""
+
+    round_num: int
+    kind: RoundKind
+    attempts: List[RoundAttempt] = field(default_factory=list)
+    result: Optional[RoundResult] = None
