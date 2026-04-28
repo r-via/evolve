@@ -62,6 +62,145 @@ Completed; shims removed.
 
 → Full step-by-step history: [`SPEC/archive/001-package-migration.md`]
 
+### Source code layout — Domain-Driven Design (DDD)
+
+Evolve's source tree under ``evolve/`` MUST follow a Domain-Driven
+Design layered architecture.  This is normative: evolve
+self-corrects against this layout, and the import-graph linter
+(see "Enforcement" below) rejects any inward-violating edge.
+
+**Why DDD here.**  The legacy flat layout (``agent.py``,
+``orchestrator.py``, ``state.py``, …) conflates domain
+(business concepts: Round, US, Improvement, Verdict),
+application (use cases: run_round, draft_us, review_round),
+and infrastructure (Claude SDK adapter, git, filesystem) in
+single multi-thousand-line modules.  The horizontal split
+forced by § "Hard rule: source files MUST NOT exceed 500 lines"
+keeps individual files under cap but does NOT enforce
+separation of concerns — splitting ``orchestrator.py`` into
+``orchestrator_helpers.py`` + ``orchestrator_constants.py`` +
+``orchestrator_startup.py`` is layer-blind.  DDD imposes the
+missing structural axis.
+
+**Layered structure.**  Code MUST be organised into four layers,
+implemented as sibling sub-packages under ``evolve/``:
+
+```
+evolve/
+├── domain/              # pure business concepts, no I/O, no SDK
+│   ├── round.py             # Round, RoundKind, RoundResult, RoundAttempt
+│   ├── improvement.py       # USItem, BacklogState, Backlog
+│   ├── agent_invocation.py  # AgentRole, AgentSubtype, AgentResult
+│   ├── review_verdict.py    # ReviewVerdict (APPROVED/CHANGES_REQUESTED/BLOCKED), Finding
+│   ├── convergence.py       # ConvergenceVerdict, ConvergenceGate
+│   ├── memory.py            # MemoryEntry, MemoryLog, CompactionDecision
+│   └── spec_compliance.py   # SpecClaim, ClaimVerification
+├── application/         # use cases, orchestration; depends only on domain
+│   ├── run_round.py         # the "run one round" use case
+│   ├── run_loop.py          # the "run N rounds" use case
+│   ├── draft_us.py          # the "draft one US" use case
+│   ├── review_round.py      # the "adversarial-review one round" use case
+│   ├── analyze_and_fix.py   # the implement use case
+│   ├── curate_memory.py     # the "curate memory.md" use case
+│   ├── archive_spec.py      # the "archive SPEC.md sections" use case
+│   ├── retry_policy.py      # debug-retry / circuit-breaker decisions
+│   ├── convergence_check.py # the "decide CONVERGED" use case
+│   ├── party_session.py     # multi-agent party mode
+│   └── {dry_run,validate,sync_readme,diff,update}.py  # one-shot use cases
+├── infrastructure/      # adapters; depends on domain, never the reverse
+│   ├── claude_sdk/          # SDK client, prompt builder, retries, runtime constants
+│   ├── git/                 # git CLI adapter
+│   ├── filesystem/          # run-dir, state.json, conversation logs, frames
+│   ├── hooks/               # external-hook execution
+│   ├── costs/               # token tracking, pricing, budget
+│   ├── diagnostics/         # subprocess-error files
+│   └── reporting/           # evolution_report.md
+└── interfaces/          # entry points; depend on application
+    ├── cli/                 # argparse, config resolution, subcommand dispatch
+    ├── tui/                 # Rich / plain / JSON TUIs
+    └── watcher.py           # the evolve-watch supervisor
+```
+
+**Dependency rule — strictly inward.**
+
+- ``domain`` imports nothing from evolve.
+- ``application`` imports from ``domain`` only.
+- ``infrastructure`` imports from ``domain`` (and may implement
+  domain ports / interfaces declared there).  It MUST NOT be
+  imported by ``domain`` or ``application`` directly — those
+  layers depend on abstractions, and receive infrastructure
+  implementations via dependency injection at the
+  ``interfaces`` boundary.
+- ``interfaces`` import from ``application`` and from
+  ``infrastructure`` (for wiring), and may import ``domain``
+  for type signatures.  Nothing imports from ``interfaces``.
+
+**Bounded contexts.**  The high-level contexts that group
+related domain types and use cases are:
+
+1. **Orchestration** — Round, RoundKind, retry policy, watchdog,
+   convergence (``application/run_round.py``,
+   ``application/run_loop.py``, ``application/retry_policy.py``,
+   ``application/convergence_check.py``).
+2. **Authoring** — drafting and reviewing US items
+   (``application/draft_us.py``, ``application/review_round.py``,
+   ``application/analyze_and_fix.py``).
+3. **Memory & SPEC lifecycle** — memory curation, SPEC archival
+   (``application/curate_memory.py``,
+   ``application/archive_spec.py``).
+4. **Cost & budget** — token usage, pricing, budget enforcement
+   (``infrastructure/costs/``).
+5. **Operator interface** — CLI args, TUI rendering, hooks,
+   watcher (``interfaces/cli/``, ``interfaces/tui/``,
+   ``interfaces/watcher.py``, ``infrastructure/hooks/``).
+
+Cross-context calls go through ``application`` use cases, never
+direct module-to-module imports across contexts.
+
+**Ubiquitous language.**  Every domain concept that appears in
+``SPEC.md`` (Round, US, Improvement, Convergence, Memory,
+Backlog, Subtype, Verdict, Carve-out, …) MUST map to a single
+named type in ``evolve/domain/``.  No synonyms across modules.
+No primitive obsession (``str`` standing in for an
+``AgentSubtype`` literal, ``dict`` standing in for a
+``ReviewVerdict``).  When the SPEC introduces a new term, the
+implementing round introduces a matching domain type in the
+same commit.
+
+**Enforcement.**  A CI-enforced test (``tests/test_layering.py``)
+parses the import graph of every ``*.py`` under ``evolve/``
+using the ``ast`` module and fails the build on any
+inward-violating edge.  Same mechanism that enforces § "Hard
+rule: source files MUST NOT exceed 500 lines".  The
+orchestrator's debug-retry diagnostic surfaces a
+``LAYERING VIOLATION:`` header when a round leaves any
+violating import behind, so the next attempt picks the fix as
+its target.
+
+**Migration carve-out.**  Restructuring proceeds incrementally,
+one bounded context per round, with the legacy flat layout
+(``evolve/agent.py``, ``evolve/orchestrator.py``,
+``evolve/round_lifecycle.py``, …) and the DDD layout coexisting
+during migration.  Shims at the legacy paths re-export the new
+locations for backward compatibility — same playbook as the
+legacy ``loop.py`` → ``evolve/`` package migration archived
+above.  Shims are deleted once the migration of a context is
+complete; until then they are explicitly whitelisted in the
+import-graph linter.  The migration is **not** a single mega-PR:
+each round picks ONE module from the flat layout, identifies
+its layer + context, splits accordingly, updates imports,
+delivers passing tests, then hands off to the next round.
+
+**Self-correction loop.**  When the orchestrator detects a
+layering violation (import-graph test fails), it emits a
+``LAYERING VIOLATION:`` diagnostic with the offending
+edge(s).  ``build_prompt`` recognises the prefix and surfaces a
+``## CRITICAL — DDD layering violation`` section in the next
+attempt's prompt.  Combined with the TDD self-correction loop
+(§ "Test-Driven Development (TDD)" — ``TDD VIOLATION:``
+diagnostic), evolve has two normative engineering disciplines
+it can verify and roll back against round-by-round.
+
 ### Config resolution
 
 Settings are resolved via a data-driven loop over field definitions, with each
