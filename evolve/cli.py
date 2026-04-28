@@ -184,6 +184,23 @@ def main():
         help="Reasoning effort level (default: low for diff subcommand)",
     )
 
+    # --- update ---
+    update_p = sub.add_parser(
+        "update",
+        help="Pull latest evolve from upstream (one-shot, never runs during rounds)",
+    )
+    update_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Show what would change without applying",
+    )
+    update_p.add_argument(
+        "--ref",
+        default=None,
+        help="Specific git ref to pull (default: origin/HEAD)",
+    )
+
     # --- _round (internal) ---
     if len(sys.argv) > 1 and sys.argv[1] == "_round":
         args = _parse_round_args()
@@ -308,6 +325,13 @@ def main():
             spec=spec,
             model=args.model or "claude-opus-4-6",
             effort=getattr(args, "effort", "low"),
+        ))
+
+    elif args.command == "update":
+        from evolve.updater import run_update
+        sys.exit(run_update(
+            dry_run=getattr(args, "dry_run", False),
+            ref=getattr(args, "ref", None),
         ))
 
     elif args.command == "_round":
