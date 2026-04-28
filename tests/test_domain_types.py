@@ -1,4 +1,4 @@
-"""Tests for evolve.domain types — US-052.
+"""Tests for evolve.domain types — US-052 + US-053.
 
 Verifies all domain types are importable, have correct fields,
 enum members match SPEC names, and domain files contain zero
@@ -10,6 +10,10 @@ from pathlib import Path
 from evolve.domain.improvement import USItem, BacklogState, Backlog
 from evolve.domain.round import RoundKind, RoundResult
 from evolve.domain.convergence import ConvergenceVerdict, ConvergenceGate
+from evolve.domain.agent_invocation import AgentRole, AgentSubtype, AgentResult
+from evolve.domain.review_verdict import ReviewVerdict, Finding
+from evolve.domain.memory import MemoryEntry, MemoryLog, CompactionDecision
+from evolve.domain.spec_compliance import SpecClaim, ClaimVerification
 
 
 # ── Importability & field presence ──────────────────────────────
@@ -160,8 +164,178 @@ class TestDomainPurity:
         )
 
     def test_all_domain_files_exist(self):
-        expected = {"__init__.py", "improvement.py", "round.py", "convergence.py"}
+        expected = {
+            "__init__.py",
+            "improvement.py",
+            "round.py",
+            "convergence.py",
+            "agent_invocation.py",
+            "review_verdict.py",
+            "memory.py",
+            "spec_compliance.py",
+        }
         actual = {f.name for f in self.DOMAIN_DIR.glob("*.py")}
         assert expected.issubset(actual), (
             f"Missing domain files: {expected - actual}"
         )
+
+
+# ── US-053: agent_invocation types ────────────────────────────
+
+
+class TestAgentRole:
+    def test_members(self):
+        assert AgentRole.DRAFT.value == "draft"
+        assert AgentRole.IMPLEMENT.value == "implement"
+        assert AgentRole.REVIEW.value == "review"
+        assert AgentRole.CURATE.value == "curate"
+        assert AgentRole.ARCHIVE.value == "archive"
+
+    def test_member_count(self):
+        assert len(AgentRole) == 5
+
+
+class TestAgentSubtype:
+    def test_members(self):
+        assert AgentSubtype.SUCCESS.value == "success"
+        assert AgentSubtype.ERROR_MAX_TURNS.value == "error_max_turns"
+        assert AgentSubtype.ERROR_DURING_EXECUTION.value == "error_during_execution"
+
+    def test_member_count(self):
+        assert len(AgentSubtype) == 3
+
+
+class TestAgentResult:
+    def test_fields(self):
+        result = AgentResult(
+            role=AgentRole.IMPLEMENT,
+            subtype=AgentSubtype.SUCCESS,
+            num_turns=40,
+            duration_ms=12345,
+        )
+        assert result.role == AgentRole.IMPLEMENT
+        assert result.subtype == AgentSubtype.SUCCESS
+        assert result.num_turns == 40
+        assert result.duration_ms == 12345
+
+    def test_defaults(self):
+        result = AgentResult(
+            role=AgentRole.DRAFT,
+            subtype=AgentSubtype.ERROR_MAX_TURNS,
+            num_turns=60,
+        )
+        assert result.duration_ms is None
+
+
+# ── US-053: review_verdict types ──────────────────────────────
+
+
+class TestReviewVerdict:
+    def test_members(self):
+        assert ReviewVerdict.APPROVED.value == "approved"
+        assert ReviewVerdict.CHANGES_REQUESTED.value == "changes_requested"
+        assert ReviewVerdict.BLOCKED.value == "blocked"
+
+    def test_member_count(self):
+        assert len(ReviewVerdict) == 3
+
+
+class TestFinding:
+    def test_fields(self):
+        finding = Finding(
+            severity="HIGH",
+            description="Missing test",
+            file_path="evolve/agent.py",
+            line=42,
+        )
+        assert finding.severity == "HIGH"
+        assert finding.description == "Missing test"
+        assert finding.file_path == "evolve/agent.py"
+        assert finding.line == 42
+
+    def test_defaults(self):
+        finding = Finding(severity="LOW", description="Minor style")
+        assert finding.file_path is None
+        assert finding.line is None
+
+
+# ── US-053: memory types ──────────────────────────────────────
+
+
+class TestMemoryEntry:
+    def test_fields(self):
+        entry = MemoryEntry(
+            section="Errors",
+            title="SDK crash",
+            round_ref="round 5",
+            body="SDK threw RuntimeError on teardown",
+        )
+        assert entry.section == "Errors"
+        assert entry.title == "SDK crash"
+        assert entry.round_ref == "round 5"
+        assert entry.body == "SDK threw RuntimeError on teardown"
+
+    def test_defaults(self):
+        entry = MemoryEntry(section="Insights", title="Cache hit")
+        assert entry.round_ref is None
+        assert entry.body == ""
+
+
+class TestCompactionDecision:
+    def test_members(self):
+        assert CompactionDecision.KEEP.value == "keep"
+        assert CompactionDecision.ARCHIVE.value == "archive"
+        assert CompactionDecision.DELETE.value == "delete"
+
+    def test_member_count(self):
+        assert len(CompactionDecision) == 3
+
+
+class TestMemoryLog:
+    def test_defaults(self):
+        log = MemoryLog()
+        assert log.entries == []
+
+    def test_with_entries(self):
+        entry = MemoryEntry(section="Errors", title="Crash")
+        log = MemoryLog(entries=[entry])
+        assert len(log.entries) == 1
+        assert log.entries[0].title == "Crash"
+
+
+# ── US-053: spec_compliance types ─────────────────────────────
+
+
+class TestSpecClaim:
+    def test_fields(self):
+        claim = SpecClaim(
+            section="CLI flags",
+            description="--check flag exists",
+            implemented=True,
+        )
+        assert claim.section == "CLI flags"
+        assert claim.description == "--check flag exists"
+        assert claim.implemented is True
+
+    def test_defaults(self):
+        claim = SpecClaim(section="TUI", description="Rich panels")
+        assert claim.implemented is False
+
+
+class TestClaimVerification:
+    def test_fields(self):
+        claim = SpecClaim(section="Git", description="Conventional commits")
+        verification = ClaimVerification(
+            claim=claim,
+            evidence="git log shows feat/fix prefixes",
+            passed=True,
+        )
+        assert verification.claim is claim
+        assert verification.evidence == "git log shows feat/fix prefixes"
+        assert verification.passed is True
+
+    def test_defaults(self):
+        claim = SpecClaim(section="Hooks", description="on_error fires")
+        verification = ClaimVerification(claim=claim)
+        assert verification.evidence is None
+        assert verification.passed is False
