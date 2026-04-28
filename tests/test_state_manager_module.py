@@ -45,52 +45,10 @@ def test_reexport_identity():
         )
 
 
-# ── AC3: leaf-module invariant (no evolve.agent/orchestrator/cli) ──
-
-def test_no_forbidden_top_level_imports():
-    """state_manager.py source has no from evolve.agent/orchestrator/cli top-level imports."""
-    src = Path(sm.__file__).read_text()
-    forbidden = [
-        "from evolve.agent",
-        "from evolve.orchestrator",
-        "from evolve.cli",
-    ]
-    for pat in forbidden:
-        # Check top-level only (lines starting at column 0)
-        for line in src.splitlines():
-            stripped = line.lstrip()
-            if stripped.startswith(pat) and line[0] not in (" ", "\t"):
-                raise AssertionError(
-                    f"Forbidden top-level import in state_manager.py: {line.strip()}"
-                )
-
-
-# ── AC5: layering test compatibility ───────────────────────────────
-
-def test_layering_linter_safe():
-    """state_manager.py has zero ``from evolve.*`` top-level imports that the linter would flag."""
-    import ast
-
-    src = Path(sm.__file__).read_text()
-    tree = ast.parse(src)
-    violations = []
-    for node in ast.walk(tree):
-        mod = None
-        if isinstance(node, ast.ImportFrom) and node.module:
-            mod = node.module
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.startswith("evolve."):
-                    mod = alias.name
-                    break
-        if mod and mod.startswith("evolve."):
-            # Classify: any evolve.X that is NOT domain or infrastructure is a violation
-            parts = mod.split(".")
-            if len(parts) >= 2 and parts[1] not in ("domain", "infrastructure"):
-                violations.append(f"{mod} at line {node.lineno}")
-    assert not violations, (
-        "Layering-unsafe imports in state_manager.py:\n" + "\n".join(violations)
-    )
+# ── AC3+5: DDD layering enforced by tests/test_layering.py ────────
+# The real AST-based import-graph linter (tests/test_layering.py) already
+# validates that infrastructure files import only from domain/infrastructure.
+# No shadow linter here — rely on the canonical test to avoid drift.
 
 
 # ── state_improvements re-exports still work through shim ──────────

@@ -65,7 +65,7 @@ class TestEnsureRunsLayout:
         (legacy / "improvements.md").write_text("test")
 
         mock_run = MagicMock(returncode=0)
-        with patch("evolve.state._subprocess.run", return_value=mock_run) as m:
+        with patch("evolve.infrastructure.filesystem.state_manager._subprocess.run", return_value=mock_run) as m:
             result = _ensure_runs_layout(tmp_path)
 
         assert result == tmp_path / ".evolve" / "runs"
@@ -79,7 +79,7 @@ class TestEnsureRunsLayout:
         legacy.mkdir()
         (legacy / "test.md").write_text("content")
 
-        with patch("evolve.state._subprocess.run", side_effect=subprocess.CalledProcessError(1, "git")):
+        with patch("evolve.infrastructure.filesystem.state_manager._subprocess.run", side_effect=subprocess.CalledProcessError(1, "git")):
             result = _ensure_runs_layout(tmp_path)
 
         assert result == tmp_path / ".evolve" / "runs"
