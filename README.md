@@ -10,6 +10,33 @@ Point it at any git repo with a spec file → it reads the spec (by default
 `README.md`, or any file via `--spec`), iteratively fixes bugs and implements
 improvements one at a time, and stops when the project fully matches its spec.
 
+## Methodology — AGILE, propelled by BMAD
+
+Evolve runs an **AGILE** loop end-to-end: each round is a sprint that drafts
+one user story, implements it, reviews it, and updates the backlog
+(`improvements.md`) — incremental delivery with explicit acceptance criteria,
+definition of done, and adversarial review at every step.
+
+The role separation is propelled by the **BMAD** (Breakthrough Method for
+Agile-driven Development) persona model. Each phase of a round is run by a
+distinct named persona with its own mandate, prompt, and tool surface:
+
+| Persona | Role | Phase |
+|---------|------|-------|
+| **Winston** | Architect | Drafts the technical pattern + integration points for a new US |
+| **John** | Product Manager | Validates user value, priority, and explicit non-goals |
+| **Amelia** | Developer | Implements the US — code, tests, COMMIT_MSG |
+| **Zara** | Adversarial Reviewer | Four-pass attack on the round's diff (regression, AC, SPEC, drift) |
+| **Mira** | Memory Curator | Triages `memory.md` between rounds (KEEP / ARCHIVE / DELETE) |
+| **Sid** | SPEC Archivist | Extracts stable SPEC sections to `SPEC/archive/` to keep `SPEC.md` lean |
+
+Persona separation closes the self-assessment conflict of interest: the agent
+that drafted a US is not the agent that reviews it, and the agent that
+implements it is not the one that decides whether `improvements.md` should
+mark it done. See [agents/](agents/) for each persona definition and
+[SPEC.md § "Multi-call round architecture"](SPEC.md) for the orchestration
+contract.
+
 > **Looking for internals?** This README is the user-facing guide — install,
 > quickstart, examples. The full behavioral contract (phases, gates,
 > convergence rules, every CLI flag in depth, memory discipline, retry
