@@ -7,6 +7,7 @@ Covers:
   4. Integration: round_success._handle_round_success calls the detector
 """
 
+import importlib
 import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -207,3 +208,14 @@ class TestRoundSuccessIntegration:
             assert len(layering_calls) >= 1, (
                 f"Expected LAYERING VIOLATION diagnostic, got: {save_calls}"
             )
+
+        # Restore module state: the reload() above created a new function
+        # object in evolve.round_success, breaking the re-export identity
+        # chain (orchestrator → round_lifecycle → round_success).  Reload
+        # the full chain to restore identity invariants.
+        import evolve.round_success
+        import evolve.round_lifecycle
+        import evolve.orchestrator
+        importlib.reload(evolve.round_success)
+        importlib.reload(evolve.round_lifecycle)
+        importlib.reload(evolve.orchestrator)
