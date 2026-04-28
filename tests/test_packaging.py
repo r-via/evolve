@@ -125,17 +125,22 @@ class TestBuildSystem:
         requires = data["build-system"]["requires"]
         assert any("setuptools" in r for r in requires)
 
-    def test_packages_declared(self):
-        """The evolve package must be declared; the legacy root-level
-        py-modules (loop, agent, tui, …) were removed when their shims
-        were deleted in the package-restructuring migration — they are
-        no longer expected in ``pyproject.toml``.
+    def test_packages_find_declared(self):
+        """Package discovery uses [tool.setuptools.packages.find] with
+        include = ["evolve*"] so all subpackages (tui, domain,
+        application, infrastructure, interfaces) are auto-discovered
+        by pip install.
         """
         data = _load_pyproject()
-        packages = data["tool"]["setuptools"].get("packages", [])
-        assert "evolve" in packages, "'evolve' missing from packages"
-        # py-modules key is absent (or empty) now that shims are gone;
-        # if it re-appears it should not re-add the legacy names.
+        find_cfg = data["tool"]["setuptools"]["packages"]["find"]
+        assert "include" in find_cfg, "packages.find missing 'include' key"
+        assert "evolve*" in find_cfg["include"], (
+            "packages.find.include must contain 'evolve*' to auto-discover subpackages"
+        )
+
+    def test_no_legacy_py_modules(self):
+        """py-modules key must not re-add legacy shim names."""
+        data = _load_pyproject()
         legacy = {"loop", "agent", "tui", "hooks", "costs"}
         modules = data["tool"]["setuptools"].get("py-modules", [])
         leaked = legacy & set(modules)
@@ -143,6 +148,24 @@ class TestBuildSystem:
             f"legacy root-module name(s) {leaked} resurfaced in "
             f"py-modules; the shims are gone — import from evolve.* instead"
         )
+
+    def test_subpackages_importable(self):
+        """All subpackages must be importable — verifies that
+        packages.find actually discovers them.
+        """
+        import importlib
+        subpackages = [
+            "evolve.tui",
+            "evolve.domain",
+            "evolve.domain.round",
+            "evolve.application",
+            "evolve.application.run_round",
+            "evolve.infrastructure",
+            "evolve.interfaces",
+        ]
+        for pkg in subpackages:
+            mod = importlib.import_module(pkg)
+            assert mod is not None, f"Failed to import {pkg}"
 
     def test_core_dependency(self):
         """claude-agent-sdk must be a core dependency."""

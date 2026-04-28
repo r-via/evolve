@@ -28,8 +28,8 @@ dev = ["pytest", "pytest-cov", "rich"]
 evolve = "evolve.cli:main"
 evolve-watch = "evolve.watcher:main"
 
-[tool.setuptools]
-packages = ["evolve"]
+[tool.setuptools.packages.find]
+include = ["evolve*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
