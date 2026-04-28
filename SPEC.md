@@ -1754,7 +1754,6 @@ round without justification = Zara finding.
 | 2 | Error — agent failure, missing deps, or invalid args |
 | 3 | Structural change — restart required (see § "Structural change self-detection" and § "evolve-watch auto-restart wrapper" below) |
 | 4 | Deterministic failure loop — same failure signature repeated across multiple rounds (see § "Circuit breakers") |
-| 5 | ``evolve-watch`` gave up — too many structural restarts in a short window |
 
 ```bash
 # Use in CI
