@@ -14,6 +14,31 @@ from datetime import datetime
 from pathlib import Path
 
 
+class _DefaultUI:
+    """Minimal UI fallback for infrastructure layer (no evolve.tui dep)."""
+
+    def error(self, msg: str) -> None:
+        print(msg, file=sys.stderr)
+
+    def info(self, msg: str) -> None:
+        print(msg)
+
+    def uncommitted(self) -> None:
+        print("[git] uncommitted changes detected — snapshotting")
+
+    def git_status(self, message: str, pushed: bool | None = None,
+                   error: str | None = None) -> None:
+        if pushed is None:
+            print(f"[git] nothing to commit: {message}")
+        elif pushed:
+            print(f"[git] committed + pushed: {message}")
+        else:
+            print(f"[git] committed (push failed): {message}")
+
+    def warn(self, msg: str) -> None:
+        print(f"WARNING: {msg}", file=sys.stderr)
+
+
 def _git_show_at(project_dir: Path, ref: str, rel_path: str) -> str | None:
     """Return the contents of ``rel_path`` at git ref ``ref``, or None on failure.
 
@@ -37,7 +62,7 @@ def _git_show_at(project_dir: Path, ref: str, rel_path: str) -> str | None:
     return result.stdout
 
 
-def _setup_forever_branch(project_dir: Path) -> None:
+def _setup_forever_branch(project_dir: Path, ui: object | None = None) -> None:
     """Create and switch to a dedicated branch for forever mode.
 
     Creates a branch named ``evolve/<timestamp>`` from the current HEAD
@@ -45,12 +70,13 @@ def _setup_forever_branch(project_dir: Path) -> None:
 
     Args:
         project_dir: Root directory of the project (must be a git repo).
+        ui: Optional TUI instance (defaults to ``_DefaultUI()``).
     """
-    from evolve.tui import get_tui
+    if ui is None:
+        ui = _DefaultUI()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     branch_name = f"evolve/{timestamp}"
-    ui = get_tui()
 
     result = subprocess.run(
         ["git", "checkout", "-b", branch_name],
@@ -75,11 +101,10 @@ def _ensure_git(project_dir: Path, ui: object | None = None) -> None:
 
     Args:
         project_dir: Path to the target project.
-        ui: Optional TUI instance (defaults to ``get_tui()``).
+        ui: Optional TUI instance (defaults to ``_DefaultUI()``).
     """
     if ui is None:
-        from evolve.tui import get_tui
-        ui = get_tui()
+        ui = _DefaultUI()
     result = subprocess.run(
         ["git", "rev-parse", "--git-dir"],
         cwd=project_dir, capture_output=True, text=True,
@@ -112,11 +137,10 @@ def _git_commit(project_dir: Path, message: str, ui: object | None = None) -> No
     Args:
         project_dir: Path to the target project repository.
         message: Conventional-commit message written by the agent.
-        ui: Optional TUI instance (defaults to ``get_tui()``).
+        ui: Optional TUI instance (defaults to ``_DefaultUI()``).
     """
     if ui is None:
-        from evolve.tui import get_tui
-        ui = get_tui()
+        ui = _DefaultUI()
     print(f"[probe] git: staging changes")
     subprocess.run(["git", "add", "-A"], cwd=project_dir)
     status = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=project_dir)

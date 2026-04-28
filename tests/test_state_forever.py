@@ -108,7 +108,7 @@ class TestSetupForeverBranchEdgeCases:
     def test_branch_name_uses_timestamp_format(self, tmp_path: Path):
         """Branch name follows evolve/YYYYMMDD_HHMMSS pattern."""
         self._init_git(tmp_path)
-        with patch("evolve.git.datetime") as mock_dt:
+        with patch("evolve.infrastructure.git.adapter.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = "20260325_120000"
             _setup_forever_branch(tmp_path)
 
@@ -131,7 +131,7 @@ class TestSetupForeverBranchEdgeCases:
         self._init_git(tmp_path)
         # Create branch first time
         fixed_ts = "20260101_000000"
-        with patch("evolve.git.datetime") as mock_dt:
+        with patch("evolve.infrastructure.git.adapter.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = fixed_ts
             _setup_forever_branch(tmp_path)
 
@@ -139,7 +139,7 @@ class TestSetupForeverBranchEdgeCases:
         subprocess.run(["git", "checkout", "-b", "temp"], cwd=str(tmp_path), capture_output=True)
 
         with pytest.raises(SystemExit) as exc_info:
-            with patch("evolve.git.datetime") as mock_dt2:
+            with patch("evolve.infrastructure.git.adapter.datetime") as mock_dt2:
                 mock_dt2.now.return_value.strftime.return_value = fixed_ts
                 _setup_forever_branch(tmp_path)
         assert exc_info.value.code == 2
@@ -147,13 +147,11 @@ class TestSetupForeverBranchEdgeCases:
     def test_error_message_logged_on_failure(self, tmp_path: Path):
         """Error message is emitted via ui.error on git failure."""
         import pytest
-        with patch("evolve.git.get_tui") as mock_get_tui:
-            mock_ui = MagicMock()
-            mock_get_tui.return_value = mock_ui
-            with pytest.raises(SystemExit):
-                _setup_forever_branch(tmp_path)
-            mock_ui.error.assert_called_once()
-            assert "Failed to create branch" in mock_ui.error.call_args[0][0]
+        mock_ui = MagicMock()
+        with pytest.raises(SystemExit):
+            _setup_forever_branch(tmp_path, ui=mock_ui)
+        mock_ui.error.assert_called_once()
+        assert "Failed to create branch" in mock_ui.error.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------
