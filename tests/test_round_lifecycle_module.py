@@ -94,6 +94,11 @@ def test_round_lifecycle_has_no_extra_evolve_imports() -> None:
     )
     allowed = {
         "evolve.tui",
+        # US-041: ``_handle_round_success`` re-exported from sibling
+        # leaf module ``evolve.round_success`` — no cycle (round_success
+        # has no top-level imports from agent/orchestrator/cli/round_lifecycle,
+        # locked by tests/test_round_success_module.py).
+        "evolve.round_success",
     }
     forbidden = set(top_level_evolve_imports) - allowed
     assert not forbidden, (
