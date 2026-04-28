@@ -1,14 +1,13 @@
-"""US-044: tests for the ``evolve.state_improvements`` extraction.
+"""US-044 + US-070: tests for the ``evolve.state_improvements`` extraction
+and subsequent DDD migration to ``evolve.infrastructure.filesystem.improvement_parser``.
 
-Three invariants per the US definition of done:
+Invariants:
 
-1. Every extracted symbol is importable from ``evolve.state_improvements``.
-2. The same identity (``is``) is reachable via ``evolve.state``
-   (re-export chain — preserves ``patch("evolve.state.X")`` test
-   targets and ``from evolve.state import _count_unchecked`` callers).
-3. ``evolve/state_improvements.py`` is a leaf module — no top-level
-   import from ``evolve.agent`` / ``evolve.orchestrator`` / ``evolve.cli``
-   / ``evolve.state``.
+1. Every symbol is importable from ``evolve.infrastructure.filesystem.improvement_parser``.
+2. ``is``-equality holds across the full re-export chain:
+   ``improvement_parser`` → ``state_improvements`` shim → ``state`` shim.
+3. The infrastructure module is a leaf — no ``from evolve.*`` top-level imports.
+4. The shim has no forbidden top-level imports.
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import evolve.infrastructure.filesystem.improvement_parser as parser_mod
 import evolve.state as state_mod
 import evolve.state_improvements as si_mod
 
@@ -36,33 +36,44 @@ _HOISTED_SYMBOLS = (
 
 
 @pytest.mark.parametrize("name", _HOISTED_SYMBOLS)
+def test_symbol_importable_from_infrastructure(name: str) -> None:
+    """US-070 AC 1 — every symbol importable from improvement_parser."""
+    assert hasattr(parser_mod, name), (
+        f"{name} missing from evolve.infrastructure.filesystem.improvement_parser"
+    )
+
+
+@pytest.mark.parametrize("name", _HOISTED_SYMBOLS)
 def test_symbol_importable_from_state_improvements(name: str) -> None:
-    """AC 1 — every hoisted symbol is exposed by the new leaf module."""
+    """AC 1 — every hoisted symbol is exposed by the shim module."""
     assert hasattr(si_mod, name), (
         f"{name} missing from evolve.state_improvements"
     )
 
 
 @pytest.mark.parametrize("name", _HOISTED_SYMBOLS)
+def test_is_equality_shim_to_infrastructure(name: str) -> None:
+    """US-070 AC — is-equality: state_improvements.X is improvement_parser.X."""
+    assert getattr(si_mod, name) is getattr(parser_mod, name)
+
+
+@pytest.mark.parametrize("name", _HOISTED_SYMBOLS)
 def test_state_reexports_same_object(name: str) -> None:
-    """AC 1 — re-export identity check.
-
-    ``patch("evolve.state.X")`` and direct callers via
-    ``from evolve.state import _count_unchecked`` rely on the
-    state module binding the SAME object the leaf module defines.
-    If the re-export chain breaks, this test fails first.
-    """
-    assert getattr(state_mod, name) is getattr(si_mod, name)
+    """AC — re-export identity: state.X is improvement_parser.X (full chain)."""
+    assert getattr(state_mod, name) is getattr(parser_mod, name)
 
 
-def test_state_improvements_is_leaf_module() -> None:
-    """AC 2 — leaf-module invariant.
+def test_infrastructure_leaf_module_invariant() -> None:
+    """US-070 AC 4 — improvement_parser.py has zero from evolve.* top-level imports."""
+    src = Path(parser_mod.__file__).read_text()
+    matches = re.findall(r"^from evolve\.", src, re.MULTILINE)
+    assert not matches, (
+        f"improvement_parser.py has forbidden top-level imports: {matches}"
+    )
 
-    ``evolve/state_improvements.py`` MUST NOT import from
-    ``evolve.agent``, ``evolve.orchestrator``, ``evolve.cli``, or
-    ``evolve.state`` at module top — those would create cycles
-    against this module's role as a leaf used by ``evolve.state``.
-    """
+
+def test_state_improvements_shim_no_forbidden_imports() -> None:
+    """Shim must not import from agent/orchestrator/cli/state at top level."""
     src = Path(si_mod.__file__).read_text()
     pattern = re.compile(
         r"^from evolve\.(agent|orchestrator|cli|state)( |$|\.)",
