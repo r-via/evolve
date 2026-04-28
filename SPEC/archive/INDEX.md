@@ -24,3 +24,4 @@
 | 020 | zero-progress-diagnostic-carveouts | 2026-04-28 | SPEC.md > 2000 lines (2099); stable diagnostic mechanisms (scope creep + backlog drained), fully implemented |
 | 021 | agent-self-monitoring | 2026-04-28 | SPEC.md > 2000 lines (2099); stable self-healing mechanism, fully implemented |
 | 022 | timeout-design-rationale | 2026-04-28 | SPEC.md > 2000 lines (2099); settled design rationale for 20s default + timeout behavior |
+| 023 | sdk-mock-testing-rule | 2026-04-28 | SPEC.md > 2000 lines (2020); settled testing rule — 3 approved patterns, 3 forbidden patterns, leak heuristic |
