@@ -23,16 +23,9 @@ from evolve.agent import (
 )
 from evolve.party import _forever_restart, _run_party_mode
 
-
-# ---------------------------------------------------------------------------
-# evolve.py — exits with code 2 when spec file doesn't exist
-# ---------------------------------------------------------------------------
-
 class TestSpecFileNotFound:
-    """Verify evolve.py exits code 2 when --spec points to a missing file."""
 
     def test_start_with_missing_spec_exits_2(self, tmp_path: Path):
-        """evolve start --spec NONEXISTENT.md exits with code 2."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         (project_dir / "README.md").write_text("# Hello\n")
@@ -46,7 +39,6 @@ class TestSpecFileNotFound:
         assert exc.value.code == 2
 
     def test_start_with_missing_nested_spec_exits_2(self, tmp_path: Path):
-        """evolve start --spec docs/spec.md exits with code 2 when file missing."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         (project_dir / "README.md").write_text("# Hello\n")
@@ -60,7 +52,6 @@ class TestSpecFileNotFound:
         assert exc.value.code == 2
 
     def test_start_with_existing_spec_does_not_exit_2(self, tmp_path: Path):
-        """evolve start --spec SPEC.md proceeds when the file exists."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         (project_dir / "SPEC.md").write_text("# Spec\n")
@@ -79,16 +70,9 @@ class TestSpecFileNotFound:
         assert call_kwargs[1].get("spec") == "SPEC.md" or \
             (len(call_kwargs[0]) > 0 and "SPEC.md" in str(call_kwargs))
 
-
-# ---------------------------------------------------------------------------
-# _load_project_context — reads the correct spec file
-# ---------------------------------------------------------------------------
-
 class TestLoadProjectContextSpec:
-    """Verify _load_project_context reads the spec file specified by --spec."""
 
     def test_reads_custom_spec_file(self, tmp_path: Path):
-        """With spec='SPEC.md', reads SPEC.md instead of README.md."""
         (tmp_path / "SPEC.md").write_text("# Custom Spec\nSpec content here")
         (tmp_path / "README.md").write_text("# README\nReadme content")
         (tmp_path / "runs").mkdir()
@@ -97,7 +81,6 @@ class TestLoadProjectContextSpec:
         assert ctx["readme"] == "# Custom Spec\nSpec content here"
 
     def test_reads_nested_spec_file(self, tmp_path: Path):
-        """With spec='docs/specification.md', reads from subdirectory."""
         docs = tmp_path / "docs"
         docs.mkdir()
         (docs / "specification.md").write_text("# Nested Spec\nDetails")
@@ -108,7 +91,6 @@ class TestLoadProjectContextSpec:
         assert ctx["readme"] == "# Nested Spec\nDetails"
 
     def test_missing_spec_file_returns_empty(self, tmp_path: Path):
-        """With spec='MISSING.md' that doesn't exist, readme is empty string."""
         (tmp_path / "README.md").write_text("# README\n")
         (tmp_path / "runs").mkdir()
 
@@ -116,7 +98,6 @@ class TestLoadProjectContextSpec:
         assert ctx["readme"] == ""
 
     def test_no_spec_falls_back_to_readme(self, tmp_path: Path):
-        """With spec=None, falls back to README.md."""
         (tmp_path / "README.md").write_text("# Fallback README\n")
         (tmp_path / "runs").mkdir()
 
@@ -124,7 +105,6 @@ class TestLoadProjectContextSpec:
         assert ctx["readme"] == "# Fallback README\n"
 
     def test_improvements_loaded_regardless_of_spec(self, tmp_path: Path):
-        """Improvements are loaded from runs/improvements.md regardless of spec."""
         (tmp_path / "SPEC.md").write_text("# Spec\n")
         runs = tmp_path / "runs"
         runs.mkdir()
@@ -133,16 +113,9 @@ class TestLoadProjectContextSpec:
         ctx = _load_project_context(tmp_path, spec="SPEC.md")
         assert "Add X" in ctx["improvements"]
 
-
-# ---------------------------------------------------------------------------
-# build_prompt — uses spec param
-# ---------------------------------------------------------------------------
-
 class TestBuildPromptSpec:
-    """Verify build_prompt uses the spec parameter to load the right file."""
 
     def test_build_prompt_uses_custom_spec(self, tmp_path: Path):
-        """build_prompt with spec='SPEC.md' includes SPEC.md content."""
         (tmp_path / "SPEC.md").write_text("# Custom Specification\nFeature A")
         (tmp_path / "README.md").write_text("# README\nThis is the readme")
         (tmp_path / "runs").mkdir()
@@ -152,7 +125,6 @@ class TestBuildPromptSpec:
         assert "Feature A" in prompt
 
     def test_build_validate_prompt_uses_custom_spec(self, tmp_path: Path):
-        """build_validate_prompt with spec='SPEC.md' includes SPEC.md content."""
         (tmp_path / "SPEC.md").write_text("# Spec for Validation\nClaim B")
         (tmp_path / "README.md").write_text("# README\n")
         (tmp_path / "runs").mkdir()
@@ -162,7 +134,6 @@ class TestBuildPromptSpec:
         assert "Claim B" in prompt
 
     def test_build_dry_run_prompt_uses_custom_spec(self, tmp_path: Path):
-        """build_dry_run_prompt with spec='SPEC.md' includes SPEC.md content."""
         (tmp_path / "SPEC.md").write_text("# Spec for DryRun\nGap analysis")
         (tmp_path / "README.md").write_text("# README\n")
         (tmp_path / "runs").mkdir()
@@ -171,19 +142,12 @@ class TestBuildPromptSpec:
         assert "Spec for DryRun" in prompt
         assert "Gap analysis" in prompt
 
-
-# ---------------------------------------------------------------------------
-# _forever_restart — derives correct proposal filename
-# ---------------------------------------------------------------------------
-
 class TestForeverRestartSpec:
-    """Verify _forever_restart derives proposal filename from spec."""
 
     def setup_method(self):
         self.ui = MagicMock()
 
     def test_spec_md_proposal_filename(self, tmp_path: Path):
-        """With spec='SPEC.md', proposal is SPEC_proposal.md."""
         run_dir = tmp_path / "runs" / "session1"
         run_dir.mkdir(parents=True)
         improvements = tmp_path / "runs" / "improvements.md"
@@ -201,7 +165,6 @@ class TestForeverRestartSpec:
         assert improvements.read_text() == "# Improvements\n"
 
     def test_nested_spec_proposal_filename(self, tmp_path: Path):
-        """With spec='docs/spec.md', proposal is spec_proposal.md (stem-based)."""
         run_dir = tmp_path / "runs" / "session1"
         run_dir.mkdir(parents=True)
         improvements = tmp_path / "runs" / "improvements.md"
@@ -217,7 +180,6 @@ class TestForeverRestartSpec:
         assert (docs / "spec.md").read_text() == "# Updated Spec\n"
 
     def test_no_proposal_file_warns(self, tmp_path: Path):
-        """With spec='SPEC.md' but no SPEC_proposal.md, warns and keeps current spec."""
         run_dir = tmp_path / "runs" / "session1"
         run_dir.mkdir(parents=True)
         improvements = tmp_path / "runs" / "improvements.md"
@@ -235,7 +197,6 @@ class TestForeverRestartSpec:
         assert "SPEC_proposal.md" in warn_msg
 
     def test_default_spec_uses_readme_proposal(self, tmp_path: Path):
-        """With spec=None (default), proposal is README_proposal.md."""
         run_dir = tmp_path / "runs" / "session1"
         run_dir.mkdir(parents=True)
         improvements = tmp_path / "runs" / "improvements.md"
@@ -249,7 +210,6 @@ class TestForeverRestartSpec:
         assert (tmp_path / "README.md").read_text() == "# New README\n"
 
     def test_spec_with_different_extension(self, tmp_path: Path):
-        """With spec='SPEC.rst', proposal is SPEC_proposal.rst."""
         run_dir = tmp_path / "runs" / "session1"
         run_dir.mkdir(parents=True)
         improvements = tmp_path / "runs" / "improvements.md"
@@ -262,16 +222,9 @@ class TestForeverRestartSpec:
 
         assert (tmp_path / "SPEC.rst").read_text() == "New RST spec\n"
 
-
-# ---------------------------------------------------------------------------
-# _run_party_mode — produces proposal files named after the spec
-# ---------------------------------------------------------------------------
-
 class TestRunPartyModeSpec:
-    """Verify _run_party_mode generates proposal files named after the spec."""
 
     def test_party_mode_uses_spec_for_proposal_name(self, tmp_path: Path):
-        """With spec='SPEC.md', party mode prompt references SPEC_proposal.md."""
         # Setup project with agents
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
@@ -309,7 +262,6 @@ class TestRunPartyModeSpec:
         assert "Custom Spec" in prompt
 
     def test_party_mode_default_spec_uses_readme_proposal(self, tmp_path: Path):
-        """With spec=None, party mode prompt references README_proposal.md."""
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
         (agents_dir / "architect.md").write_text("I am the architect agent.")
@@ -335,7 +287,6 @@ class TestRunPartyModeSpec:
         assert "README_proposal.md" in captured_prompts[0]
 
     def test_party_mode_checks_spec_named_proposal_file(self, tmp_path: Path):
-        """After party mode, it checks for SPEC_proposal.md existence."""
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
         (agents_dir / "architect.md").write_text("Agent persona.")
@@ -364,16 +315,9 @@ class TestRunPartyModeSpec:
         proposal_path = ui.party_results.call_args[0][0]
         assert "SPEC_proposal.md" in proposal_path
 
-
-# ---------------------------------------------------------------------------
-# _parse_round_args — --spec flag
-# ---------------------------------------------------------------------------
-
 class TestParseRoundArgsSpec:
-    """Verify _parse_round_args parses --spec correctly."""
 
     def test_spec_flag_parsed(self):
-        """_parse_round_args parses --spec SPEC.md."""
         from evolve import _parse_round_args
         with patch("sys.argv", [
             "evolve", "_round", "/tmp/proj",
@@ -384,7 +328,6 @@ class TestParseRoundArgsSpec:
             assert args.spec == "SPEC.md"
 
     def test_spec_flag_defaults_to_none(self):
-        """_parse_round_args defaults spec to None when not provided."""
         from evolve import _parse_round_args
         with patch("sys.argv", [
             "evolve", "_round", "/tmp/proj",
@@ -393,16 +336,9 @@ class TestParseRoundArgsSpec:
             args = _parse_round_args()
             assert args.spec is None
 
-
-# ---------------------------------------------------------------------------
-# _resolve_config — spec from config file and env var
-# ---------------------------------------------------------------------------
-
 class TestResolveConfigSpec:
-    """Verify _resolve_config resolves spec from config file and env var."""
 
     def test_spec_from_evolve_toml(self, tmp_path: Path):
-        """spec is loaded from evolve.toml when not set via CLI."""
         import argparse
         from evolve import _resolve_config
 
@@ -418,7 +354,6 @@ class TestResolveConfigSpec:
         assert result.spec == "SPEC.md"
 
     def test_spec_from_env_var(self, tmp_path: Path):
-        """spec is loaded from EVOLVE_SPEC env var when not set via CLI."""
         import argparse
         import os
         from evolve import _resolve_config
@@ -434,7 +369,6 @@ class TestResolveConfigSpec:
         assert result.spec == "docs/spec.md"
 
     def test_cli_spec_overrides_config(self, tmp_path: Path):
-        """CLI --spec takes precedence over evolve.toml."""
         import argparse
         from evolve import _resolve_config
 
@@ -448,15 +382,8 @@ class TestResolveConfigSpec:
             result = _resolve_config(args, tmp_path)
 
         assert result.spec == "CLI_SPEC.md"
-
-
-# ---------------------------------------------------------------------------
 # --forever mode commit message
-# ---------------------------------------------------------------------------
-
-
 class TestForeverAtomicAdoptionCommit:
-    """Verify --forever mode's commit message follows the documented template."""
 
     def _setup_project(self, tmp_path: Path):
         project_dir = tmp_path / "proj"
@@ -526,7 +453,6 @@ class TestForeverAtomicAdoptionCommit:
         assert (project_dir / "README.md").read_text() == "# Old README\n"
 
     def test_legacy_commit_message_when_spec_is_readme(self, tmp_path: Path):
-        """With no --spec (README.md IS the spec), legacy chore commit is used."""
         from evolve.orchestrator import evolve_loop
 
         project_dir = tmp_path / "proj"

@@ -1,33 +1,4 @@
-"""Round lifecycle — attempt-outcome diagnosis.
-
-Extracted from ``evolve/orchestrator.py::_run_rounds`` per US-040 to keep
-the orchestrator under the SPEC § "Hard rule: source files MUST NOT
-exceed 500 lines" cap.  Per US-041, ``_handle_round_success`` was
-further hoisted into ``evolve/round_success.py`` (re-exported below)
-so this module also stays under the cap.
-
-One helper here, one re-export:
-
-- ``_diagnose_attempt_outcome`` — encapsulates the "Diagnose subprocess
-  outcome" block (review-verdict routing + zero-progress detection
-  + diagnostic-prefix branches).  Returns a structured ``_AttemptOutcome``
-  describing what action the caller should take next.
-- ``_handle_round_success`` — re-exported from ``evolve.round_success``
-  (US-041) so existing ``patch("evolve.round_lifecycle._handle_round_success")``
-  surfaces and ``from evolve.round_lifecycle import _handle_round_success``
-  call sites continue to work via the re-export chain
-  ``evolve.orchestrator`` → ``evolve.round_lifecycle`` → ``evolve.round_success``.
-
-Heavy dependencies on orchestrator internals (``_save_subprocess_diagnostic``,
-``_failure_signature``, ``_check_review_verdict``, etc.) are lazy-imported
-via ``from evolve.orchestrator import ...`` inside the helper body to
-preserve ``patch("evolve.orchestrator.X", ...)`` test surfaces (US-036 /
-US-037 / US-038 lesson).
-
-Leaf-module invariant: zero top-level imports from
-``evolve.(agent|orchestrator|cli)`` — verified by
-``tests/test_round_lifecycle_module.py``.
-"""
+"""Round lifecycle — attempt-outcome diagnosis and round-success handling."""
 
 from __future__ import annotations
 

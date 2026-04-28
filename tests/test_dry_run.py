@@ -8,11 +8,6 @@ import pytest
 
 from evolve.agent import build_dry_run_prompt, run_dry_run_agent
 
-
-# ---------------------------------------------------------------------------
-# build_dry_run_prompt
-# ---------------------------------------------------------------------------
-
 class TestBuildDryRunPrompt:
     """Tests for agent.build_dry_run_prompt."""
 
@@ -87,22 +82,15 @@ class TestBuildDryRunPrompt:
         assert "MUST NOT modify" in prompt
 
     def test_readme_rst_fallback(self, tmp_path: Path):
-        """Picks up README.rst when README.md doesn't exist."""
         (tmp_path / "README.rst").write_text("RST content here")
         (tmp_path / "runs").mkdir()
         prompt = build_dry_run_prompt(tmp_path)
         assert "RST content here" in prompt
 
-
-# ---------------------------------------------------------------------------
-# run_dry_run_agent — retry and error handling
-# ---------------------------------------------------------------------------
-
 class TestRunDryRunAgent:
     """Tests for agent.run_dry_run_agent with mocked SDK."""
 
     def test_sdk_not_installed(self, tmp_path: Path):
-        """Graceful skip when claude-agent-sdk is missing."""
         import builtins
         real_import = builtins.__import__
 
@@ -116,7 +104,6 @@ class TestRunDryRunAgent:
             run_dry_run_agent(tmp_path)
 
     def test_benign_runtime_error_ignored(self, tmp_path: Path):
-        """Benign async teardown errors are silently ignored."""
         (tmp_path / "README.md").write_text("# P")
         rdir = tmp_path / "runs" / "session"
         rdir.mkdir(parents=True)
@@ -131,7 +118,6 @@ class TestRunDryRunAgent:
             run_dry_run_agent(tmp_path, run_dir=rdir)
 
     def test_rate_limit_retry(self, tmp_path: Path):
-        """Rate-limit errors trigger backoff retries."""
         (tmp_path / "README.md").write_text("# P")
         rdir = tmp_path / "runs" / "session"
         rdir.mkdir(parents=True)
@@ -154,7 +140,6 @@ class TestRunDryRunAgent:
             mock_sleep.assert_called_once_with(60)
 
     def test_non_retryable_error(self, tmp_path: Path):
-        """Non-retryable errors give up immediately."""
         (tmp_path / "README.md").write_text("# P")
         rdir = tmp_path / "runs" / "session"
         rdir.mkdir(parents=True)
@@ -169,7 +154,6 @@ class TestRunDryRunAgent:
             run_dry_run_agent(tmp_path, run_dir=rdir)
 
     def test_creates_run_dir(self, tmp_path: Path):
-        """run_dir is created if it doesn't exist."""
         (tmp_path / "README.md").write_text("# P")
         rdir = tmp_path / "runs" / "new_session"
 
@@ -181,16 +165,10 @@ class TestRunDryRunAgent:
             run_dry_run_agent(tmp_path, run_dir=rdir)
             assert rdir.is_dir()
 
-
-# ---------------------------------------------------------------------------
-# run_dry_run (loop.py orchestrator)
-# ---------------------------------------------------------------------------
-
 class TestRunDryRun:
     """Tests for loop.run_dry_run — the orchestrator function."""
 
     def test_creates_session_dir(self, tmp_path: Path):
-        """A timestamped session directory is created."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
@@ -204,7 +182,6 @@ class TestRunDryRun:
         assert len(sessions) >= 1
 
     def test_check_cmd_runs(self, tmp_path: Path):
-        """Check command is run and its output passed to the agent."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
@@ -226,7 +203,6 @@ class TestRunDryRun:
         assert mock_agent.call_args.kwargs.get("check_cmd") == "pytest"
 
     def test_check_timeout(self, tmp_path: Path):
-        """Check command timeout is handled gracefully."""
         import subprocess
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
@@ -238,7 +214,6 @@ class TestRunDryRun:
             run_dry_run(tmp_path, check_cmd="pytest", timeout=60)
 
     def test_auto_detect_when_no_check(self, tmp_path: Path):
-        """Auto-detects check command when none provided."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
@@ -252,7 +227,6 @@ class TestRunDryRun:
             mock_detect.assert_called_once_with(tmp_path)
 
     def test_report_file_message(self, tmp_path: Path, capsys):
-        """Warns when no dry_run_report.md is produced."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
@@ -266,7 +240,6 @@ class TestRunDryRun:
         assert "WARN" in output or "dry_run_report.md" in output
 
     def test_report_exists_message(self, tmp_path: Path, capsys):
-        """Shows report path when dry_run_report.md exists."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
@@ -292,7 +265,6 @@ class TestRunDryRun:
         # (both messages could appear in different contexts)
 
     def test_model_passed_to_agent(self, tmp_path: Path):
-        """Model parameter is passed through to the agent module."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
@@ -307,16 +279,10 @@ class TestRunDryRun:
         # Reset
         _agent_mod.MODEL = "claude-opus-4-6"
 
-
-# ---------------------------------------------------------------------------
-# _run_dry_run_claude_agent — mocked SDK
-# ---------------------------------------------------------------------------
-
 class TestRunDryRunClaudeAgent:
     """Tests for agent._run_dry_run_claude_agent with mocked SDK."""
 
     def test_logs_conversation(self, tmp_path: Path):
-        """Conversation log is written to dry_run_conversation.md."""
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
 
@@ -356,7 +322,6 @@ class TestRunDryRunClaudeAgent:
         assert "Analysis complete" in content
 
     def test_tool_use_blocks_logged(self, tmp_path: Path):
-        """Tool use blocks are logged with name and input."""
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
 
@@ -396,7 +361,6 @@ class TestRunDryRunClaudeAgent:
         assert "/tmp/foo.py" in content
 
     def test_sdk_error_logged(self, tmp_path: Path):
-        """SDK exceptions are caught and logged."""
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
 
@@ -426,7 +390,6 @@ class TestRunDryRunClaudeAgent:
         assert "SDK error" in content
 
     def test_deduplicates_text_blocks(self, tmp_path: Path):
-        """Duplicate text blocks are not logged twice."""
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
 
@@ -465,7 +428,6 @@ class TestRunDryRunClaudeAgent:
         assert content.count("Same text") == 1
 
     def test_deduplicates_tool_blocks(self, tmp_path: Path):
-        """Duplicate tool use blocks (same id) are not logged twice."""
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
 
@@ -506,7 +468,6 @@ class TestRunDryRunClaudeAgent:
         assert content.count("**Glob**") == 1
 
     def test_none_messages_skipped(self, tmp_path: Path):
-        """None messages from SDK are silently skipped."""
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
 

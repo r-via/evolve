@@ -10,11 +10,6 @@ import pytest
 
 from evolve.hooks import load_hooks, fire_hook, SUPPORTED_EVENTS, HOOK_TIMEOUT
 
-
-# ---------------------------------------------------------------------------
-# SUPPORTED_EVENTS
-# ---------------------------------------------------------------------------
-
 class TestSupportedEvents:
     def test_all_events_present(self):
         assert "on_round_start" in SUPPORTED_EVENTS
@@ -29,19 +24,9 @@ class TestSupportedEvents:
     def test_is_frozenset(self):
         assert isinstance(SUPPORTED_EVENTS, frozenset)
 
-
-# ---------------------------------------------------------------------------
-# HOOK_TIMEOUT
-# ---------------------------------------------------------------------------
-
 class TestHookTimeout:
     def test_default_timeout(self):
         assert HOOK_TIMEOUT == 30
-
-
-# ---------------------------------------------------------------------------
-# load_hooks — from evolve.toml
-# ---------------------------------------------------------------------------
 
 class TestLoadHooksEvolveToml:
     def test_loads_hooks_from_evolve_toml(self, tmp_path):
@@ -102,11 +87,6 @@ class TestLoadHooksEvolveToml:
         hooks = load_hooks(tmp_path)
         assert len(hooks) == 4
 
-
-# ---------------------------------------------------------------------------
-# load_hooks — from pyproject.toml
-# ---------------------------------------------------------------------------
-
 class TestLoadHooksPyprojectToml:
     def test_loads_from_pyproject_toml(self, tmp_path):
         toml_content = textwrap.dedent("""\
@@ -147,11 +127,6 @@ class TestLoadHooksPyprojectToml:
 
         hooks = load_hooks(tmp_path)
         assert hooks == {}
-
-
-# ---------------------------------------------------------------------------
-# load_hooks — edge cases
-# ---------------------------------------------------------------------------
 
 class TestLoadHooksEdgeCases:
     def test_no_config_files(self, tmp_path):
@@ -217,11 +192,6 @@ class TestLoadHooksEdgeCases:
         hooks = load_hooks(tmp_path)
         assert hooks.get("on_round_end") == "42"
 
-
-# ---------------------------------------------------------------------------
-# fire_hook — successful execution
-# ---------------------------------------------------------------------------
-
 class TestFireHookSuccess:
     def test_fires_configured_hook(self):
         hooks = {"on_round_end": "echo done"}
@@ -256,11 +226,6 @@ class TestFireHookSuccess:
         hooks = {"on_round_end": "echo done"}
         result = fire_hook(hooks, "on_converged")
         assert result is True  # event not configured = no-op success
-
-
-# ---------------------------------------------------------------------------
-# fire_hook — failure handling
-# ---------------------------------------------------------------------------
 
 class TestFireHookFailure:
     def test_returns_false_on_nonzero_exit(self):
@@ -331,11 +296,6 @@ class TestFireHookFailure:
                 warning_args = mock_logger.warning.call_args[0]
                 assert "(no stderr)" in str(warning_args)
 
-
-# ---------------------------------------------------------------------------
-# fire_hook — environment variable defaults
-# ---------------------------------------------------------------------------
-
 class TestFireHookEnvDefaults:
     def test_default_env_values(self):
         hooks = {"on_round_end": "echo test"}
@@ -357,11 +317,6 @@ class TestFireHookEnvDefaults:
 
         env = mock_run.call_args[1]["env"]
         assert env.get("MY_CUSTOM_VAR") == "hello"
-
-
-# ---------------------------------------------------------------------------
-# Integration: load_hooks + fire_hook
-# ---------------------------------------------------------------------------
 
 class TestHooksIntegration:
     def test_load_and_fire(self, tmp_path):
@@ -402,11 +357,6 @@ class TestHooksIntegration:
                 assert result is True
 
         assert mock_run.call_count == 4
-
-
-# ---------------------------------------------------------------------------
-# fire_hook — hook environment variable access (real subprocess)
-# ---------------------------------------------------------------------------
 
 class TestFireHookEnvVarAccess:
     """Integration tests that run real subprocesses to verify hook commands
@@ -499,11 +449,6 @@ class TestFireHookEnvVarAccess:
         )
         assert result is True
         assert out_file.read_text().strip() == "err_session:3:crash"
-
-
-# ---------------------------------------------------------------------------
-# fire_hook — extra_env parameter
-# ---------------------------------------------------------------------------
 
 class TestFireHookExtraEnv:
     """Test extra_env parameter passes additional env vars to hook."""

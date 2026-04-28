@@ -267,11 +267,11 @@ class TestResultMessageSubtype:
         sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
 
         with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
-             patch("evolve.agent._patch_sdk_parser", lambda: None):
+             patch("evolve.sdk_runner._patch_sdk_parser", lambda: None):
             from evolve.agent import run_claude_agent
 
             ui_mock = MagicMock()
-            with patch("evolve.agent.get_tui", return_value=ui_mock):
+            with patch("evolve.sdk_runner.get_tui", return_value=ui_mock):
                 subtype = asyncio.run(run_claude_agent(
                     "test prompt", tmp_path, round_num=1,
                     run_dir=tmp_path,
@@ -307,11 +307,11 @@ class TestResultMessageSubtype:
         sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
 
         with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
-             patch("evolve.agent._patch_sdk_parser", lambda: None):
+             patch("evolve.sdk_runner._patch_sdk_parser", lambda: None):
             from evolve.agent import run_claude_agent
 
             ui_mock = MagicMock()
-            with patch("evolve.agent.get_tui", return_value=ui_mock):
+            with patch("evolve.sdk_runner.get_tui", return_value=ui_mock):
                 subtype = asyncio.run(run_claude_agent(
                     "test prompt", tmp_path, round_num=1,
                     run_dir=tmp_path,
@@ -345,11 +345,11 @@ class TestResultMessageSubtype:
         sdk_mod.AssistantMessage = FakeAssistant
 
         with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
-             patch("evolve.agent._patch_sdk_parser", lambda: None):
+             patch("evolve.sdk_runner._patch_sdk_parser", lambda: None):
             from evolve.agent import run_claude_agent
 
             ui_mock = MagicMock()
-            with patch("evolve.agent.get_tui", return_value=ui_mock):
+            with patch("evolve.sdk_runner.get_tui", return_value=ui_mock):
                 subtype = asyncio.run(run_claude_agent(
                     "test prompt", tmp_path, round_num=1,
                     run_dir=tmp_path,
@@ -382,11 +382,11 @@ class TestResultMessageSubtype:
         sdk_mod.AssistantMessage = type("AssistantMessage", (), {})
 
         with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
-             patch("evolve.agent._patch_sdk_parser", lambda: None):
+             patch("evolve.sdk_runner._patch_sdk_parser", lambda: None):
             from evolve.agent import run_claude_agent
 
             ui_mock = MagicMock()
-            with patch("evolve.agent.get_tui", return_value=ui_mock):
+            with patch("evolve.sdk_runner.get_tui", return_value=ui_mock):
                 asyncio.run(run_claude_agent(
                     "test prompt", tmp_path, round_num=1,
                     run_dir=tmp_path,

@@ -15,16 +15,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Helpers — fake SDK message objects
-# ---------------------------------------------------------------------------
-
 def _ns(**kw):
     """Create a SimpleNamespace (fake SDK object) with the given attrs."""
     return types.SimpleNamespace(**kw)
-
-
 def _assistant_msg(*blocks, usage=None):
     """Build a fake AssistantMessage with content blocks and optional usage."""
     msg = _ns(content=list(blocks))
@@ -32,8 +25,6 @@ def _assistant_msg(*blocks, usage=None):
     if usage is not None:
         msg.usage = usage
     return msg
-
-
 def _result_msg(*blocks, usage=None):
     """Build a fake ResultMessage."""
     msg = _ns(content=list(blocks))
@@ -41,16 +32,10 @@ def _result_msg(*blocks, usage=None):
     if usage is not None:
         msg.usage = usage
     return msg
-
-
 def _text_block(text):
     return _ns(text=text)
-
-
 def _thinking_block(thinking):
     return _ns(thinking=thinking)
-
-
 def _tool_block(name, inp=None, block_id=None):
     b = _ns(name=name)
     if inp is not None:
@@ -58,8 +43,6 @@ def _tool_block(name, inp=None, block_id=None):
     if block_id is not None:
         b.id = block_id
     return b
-
-
 def _usage(inp=100, out=50, cache_create=10, cache_read=20):
     return _ns(
         input_tokens=inp,
@@ -67,8 +50,6 @@ def _usage(inp=100, out=50, cache_create=10, cache_read=20):
         cache_creation_input_tokens=cache_create,
         cache_read_input_tokens=cache_read,
     )
-
-
 def _install_fake_sdk():
     """Install a fake claude_agent_sdk module that exposes the needed classes."""
     fake_sdk = types.ModuleType("claude_agent_sdk")
@@ -90,12 +71,7 @@ def _install_fake_sdk():
 
     fake_sdk._internal = types.ModuleType("claude_agent_sdk._internal")
     return fake_sdk, AssistantMessage, ResultMessage
-
-
-# Create module-level fake SDK
 _FAKE_SDK, _AM, _RM = _install_fake_sdk()
-
-
 def _make_msg(cls, blocks, usage=None):
     """Create an instance of the fake AssistantMessage/ResultMessage class."""
     msg = cls.__new__(cls)
@@ -103,8 +79,6 @@ def _make_msg(cls, blocks, usage=None):
     if usage is not None:
         msg.usage = usage
     return msg
-
-
 def _async_query_from_messages(messages):
     """Return an async generator function that yields the given messages."""
     async def _query(**kwargs):
@@ -114,8 +88,6 @@ def _async_query_from_messages(messages):
     # positional and keyword styles.  The agent code does:
     #   async for message in query(prompt=..., options=...):
     return _query
-
-
 @pytest.fixture
 def fake_sdk():
     """Patch sys.modules with a fake claude_agent_sdk for the test."""
@@ -125,8 +97,6 @@ def fake_sdk():
         "claude_agent_sdk._internal": sdk._internal,
     }):
         yield sdk, AM, RM
-
-
 @pytest.fixture
 def project_dir(tmp_path):
     """Create a minimal project directory."""
@@ -136,16 +106,10 @@ def project_dir(tmp_path):
     run_dir.mkdir(parents=True)
     return tmp_path, run_dir
 
-
-# ---------------------------------------------------------------------------
-# run_claude_agent — multimodal prompt (L696)
-# ---------------------------------------------------------------------------
-
 class TestRunClaudeAgentImages:
     """Cover the images/multimodal prompt path in run_claude_agent."""
 
     def test_images_triggers_multimodal_prompt(self, fake_sdk, project_dir):
-        """When images are provided, _build_multimodal_prompt is called (L696)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -161,7 +125,7 @@ class TestRunClaudeAgentImages:
 
         sdk.query = _query
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()):
+        with patch("evolve.sdk_runner.get_tui", return_value=MagicMock()):
             from evolve.agent import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test prompt", proj, round_num=1,
@@ -171,16 +135,10 @@ class TestRunClaudeAgentImages:
         log = (run_dir / "conversation_loop_1.md").read_text()
         assert "done" in log
 
-
-# ---------------------------------------------------------------------------
-# run_claude_agent — thinking block dedup (L719)
-# ---------------------------------------------------------------------------
-
 class TestRunClaudeAgentThinking:
     """Cover thinking-block dedup in run_claude_agent (L714-721)."""
 
     def test_thinking_blocks_logged_and_deduped(self, fake_sdk, project_dir):
-        """Thinking blocks are logged; duplicates are skipped (L718-719)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -198,7 +156,7 @@ class TestRunClaudeAgentThinking:
 
         sdk.query = _query
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()):
+        with patch("evolve.sdk_runner.get_tui", return_value=MagicMock()):
             from evolve.agent import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,
@@ -209,16 +167,10 @@ class TestRunClaudeAgentThinking:
         assert log.count("deep thought") == 1
         assert log.count("new thought") == 1
 
-
-# ---------------------------------------------------------------------------
-# run_claude_agent — usage extraction (L767-770)
-# ---------------------------------------------------------------------------
-
 class TestRunClaudeAgentUsage:
     """Cover usage token extraction from SDK messages (L765-770)."""
 
     def test_usage_tokens_written_to_json(self, fake_sdk, project_dir):
-        """Usage from the last message is saved to usage_round_N.json (L767-770, 779-793)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -232,7 +184,7 @@ class TestRunClaudeAgentUsage:
 
         sdk.query = _query
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()):
+        with patch("evolve.sdk_runner.get_tui", return_value=MagicMock()):
             from evolve.agent import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,
@@ -246,16 +198,10 @@ class TestRunClaudeAgentUsage:
         assert data["cache_creation_tokens"] == 200
         assert data["cache_read_tokens"] == 800
 
-
-# ---------------------------------------------------------------------------
-# run_claude_agent — usage save exception (L792-793)
-# ---------------------------------------------------------------------------
-
 class TestRunClaudeAgentUsageSaveError:
     """Cover the usage save exception path (L792-793)."""
 
     def test_usage_save_oserror_non_fatal(self, fake_sdk, project_dir):
-        """When TokenUsage.save raises, run_claude_agent doesn't crash (L792-793)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -269,7 +215,7 @@ class TestRunClaudeAgentUsageSaveError:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.agent.get_tui", return_value=mock_tui):
+        with patch("evolve.sdk_runner.get_tui", return_value=mock_tui):
             with patch("evolve.costs.TokenUsage.save", side_effect=OSError("disk full")):
                 from evolve.agent import run_claude_agent
                 # Should not raise
@@ -280,16 +226,10 @@ class TestRunClaudeAgentUsageSaveError:
         # agent_done should still be called
         mock_tui.agent_done.assert_called_once()
 
-
-# ---------------------------------------------------------------------------
-# _run_readonly_claude_agent — empty content (L1109), non-dict tool input (L1132)
-# ---------------------------------------------------------------------------
-
 class TestReadonlyAgentEdgeCases:
     """Cover edge cases in _run_readonly_claude_agent."""
 
     def test_empty_content_skipped(self, fake_sdk, project_dir):
-        """Messages with empty content list are skipped (L1108-1109)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -321,7 +261,6 @@ class TestReadonlyAgentEdgeCases:
         assert "hello" in log
 
     def test_non_dict_tool_input(self, fake_sdk, project_dir):
-        """When tool input is not a dict, str(inp)[:100] is used (L1131-1132)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -349,16 +288,10 @@ class TestReadonlyAgentEdgeCases:
         assert "some/file/path.py" in log
         mock_tui.agent_tool.assert_called_once_with("Read", "some/file/path.py")
 
-
-# ---------------------------------------------------------------------------
-# _run_sync_readme_claude_agent (L1536-1596) + run_sync_readme_agent (L1620-1624)
-# ---------------------------------------------------------------------------
-
 class TestSyncReadmeAgent:
     """Cover _run_sync_readme_claude_agent and run_sync_readme_agent."""
 
     def test_sync_readme_agent_streams_and_logs(self, fake_sdk, project_dir):
-        """_run_sync_readme_claude_agent streams messages and writes log (L1536-1596)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -386,7 +319,6 @@ class TestSyncReadmeAgent:
         mock_tui.agent_done.assert_called_once()
 
     def test_sync_readme_agent_deduplicates_text(self, fake_sdk, project_dir):
-        """Duplicate text blocks are skipped in sync-readme agent."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -413,7 +345,6 @@ class TestSyncReadmeAgent:
         assert log.count("different text") == 1
 
     def test_sync_readme_agent_deduplicates_tools(self, fake_sdk, project_dir):
-        """Duplicate tool-use blocks (same id) are skipped."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -437,7 +368,6 @@ class TestSyncReadmeAgent:
         assert log.count("**Read**") == 1
 
     def test_sync_readme_agent_non_dict_input(self, fake_sdk, project_dir):
-        """Non-dict tool input in sync-readme agent uses str path (L1587-1588)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -458,7 +388,6 @@ class TestSyncReadmeAgent:
         assert "**/*.md" in log
 
     def test_sync_readme_agent_sdk_error_logged(self, fake_sdk, project_dir):
-        """SDK exception during streaming is caught and logged (L1591-1592)."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -478,7 +407,6 @@ class TestSyncReadmeAgent:
         assert "SDK error: SDK exploded" in log
 
     def test_run_sync_readme_agent_builds_prompt_and_retries(self, fake_sdk, project_dir):
-        """run_sync_readme_agent creates run_dir, builds prompt, calls retries (L1620-1624)."""
         sdk, AM, RM = fake_sdk
         proj, _ = project_dir
 
@@ -496,16 +424,10 @@ class TestSyncReadmeAgent:
                 call_kwargs = mock_retries.call_args
                 assert call_kwargs[1]["fail_label"] == "Sync-readme agent"
 
-
-# ---------------------------------------------------------------------------
-# run_claude_agent — full streaming with mixed message types
-# ---------------------------------------------------------------------------
-
 class TestRunClaudeAgentFullStream:
     """Integration-style test exercising the full streaming loop."""
 
     def test_mixed_messages_streamed(self, fake_sdk, project_dir):
-        """A stream with text, thinking, tools, usage, and non-AM messages."""
         sdk, AM, RM = fake_sdk
         proj, run_dir = project_dir
 
@@ -547,7 +469,7 @@ class TestRunClaudeAgentFullStream:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.agent.get_tui", return_value=mock_tui):
+        with patch("evolve.sdk_runner.get_tui", return_value=mock_tui):
             from evolve.agent import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,

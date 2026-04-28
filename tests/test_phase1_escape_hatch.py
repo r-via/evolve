@@ -1,38 +1,4 @@
-"""Tests for the Phase 1 escape hatch (SPEC.md § "Phase 1 escape hatch
-for unrelated pre-existing failures").
-
-Two production sites cooperate to implement the escape hatch:
-
-1. ``loop._save_subprocess_diagnostic`` — when the *next* attempt of a
-   round will be attempt 3 (i.e. the previous failed attempt was #2),
-   it prepends a "Phase 1 escape hatch notice" block to the
-   ``subprocess_error_round_N.txt`` diagnostic file.
-
-2. ``agent.build_prompt`` — at prompt-build time it inspects the most
-   recent ``subprocess_error_round_*.txt`` for the *current* round and
-   parses ``(attempt K)`` from the header line. The CURRENT attempt is
-   K + 1 (the previous attempt failed, so this run is the next one).
-   It then substitutes the ``{attempt_marker}`` placeholder in
-   ``prompts/system.md`` with one of three banners:
-
-       attempt 1 → "NOT permitted on the first attempt"
-       attempt 2 → "NOT permitted on attempt 2"
-       attempt 3 → "FINAL RETRY" + "NOW PERMITTED" language
-
-The bypass language itself (the four required actions, the three guard
-conditions, the documented memory.md/improvements.md/COMMIT_MSG
-formats) lives in ``prompts/system.md`` and is verified end-to-end by
-asserting against the prompt that ``build_prompt`` returns.
-
-These tests cover everything that is testable WITHOUT actually running
-the Claude SDK agent — i.e. the plumbing that makes the escape hatch
-visible to the agent and the documentation that teaches the agent the
-contract. The agent's actual decision to apply the bypass (writing
-``## Blocked Errors`` to memory.md, appending the ``Phase 1 bypass: ...``
-item to improvements.md, including the top-level COMMIT_MSG line) is
-behavior under model control — those tests assert that the prompt
-contains the exact instructions the agent must follow.
-"""
+"""Tests for the Phase 1 escape hatch — SPEC.md § "Phase 1 escape hatch"."""
 
 from __future__ import annotations
 
