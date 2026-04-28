@@ -337,6 +337,26 @@ def build_prev_crash_section(
             f"all required sections before committing.\n"
             f"```\n{prev_crash}\n```\n"
         )
+    if "TDD VIOLATION" in prev_crash:
+        return (
+            f"\n## CRITICAL — TDD violation\n"
+            f"The previous round committed production code under "
+            f"``evolve/`` without adding or modifying any test file "
+            f"under ``tests/``.  Per SPEC.md § 'TDD self-correction "
+            f"loop', every round that introduces or modifies behaviour "
+            f"MUST land at least one test in the same commit.\n\n"
+            f"**This attempt MUST:**\n\n"
+            f"1. Back out any untested production changes (or keep them "
+            f"if they are correct, but add the missing tests).\n"
+            f"2. Write the failing test FIRST for the behaviour being "
+            f"changed.\n"
+            f"3. Then write the production code that turns the test "
+            f"green.\n"
+            f"4. Commit both together.\n\n"
+            f"Pure renames / file moves with no behaviour change are "
+            f"exempt — those are structural commits.\n"
+            f"```\n{prev_crash}\n```\n"
+        )
     if "FILE TOO LARGE" in prev_crash:
         return (
             f"\n## CRITICAL — File too large\n"

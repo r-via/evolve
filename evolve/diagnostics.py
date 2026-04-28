@@ -33,6 +33,7 @@ __all__ = [
     "_generate_evolution_report",
     "_is_circuit_breaker_tripped",
     "_save_subprocess_diagnostic",
+    "_detect_tdd_violation",
     "_detect_us_format_violation",
     "MAX_IDENTICAL_FAILURES",
 ]
@@ -73,24 +74,7 @@ _FILE_TOO_LARGE_LIMIT = 500
 
 
 def _auto_detect_check(project_dir: Path) -> str | None:
-    """Auto-detect the test framework for a project.
-
-    Looks for common project files and checks whether the corresponding
-    test runner is available on PATH.  Returns the first match or None.
-
-    Detection order:
-      1. pytest      — pyproject.toml, setup.py, setup.cfg, or test_*.py files
-      2. npm test    — package.json
-      3. cargo test  — Cargo.toml
-      4. go test ./...  — go.mod
-      5. make test   — Makefile with a 'test' target
-
-    Args:
-        project_dir: Root directory of the project to inspect.
-
-    Returns:
-        A shell command string (e.g. ``"pytest"``) or None if nothing found.
-    """
+    """Auto-detect the test framework. Returns command string or None."""
     # pytest: Python project indicators
     py_markers = ["pyproject.toml", "setup.py", "setup.cfg", "tox.ini", "pytest.ini"]
     has_python = any((project_dir / m).is_file() for m in py_markers)
@@ -346,19 +330,9 @@ _US_REQUIRED_SECTIONS = ("**As**", "**Acceptance criteria", "**Definition of don
 def _detect_us_format_violation(
     improvements_path: Path, pre_round_lines: list[str]
 ) -> list[str]:
-    """Detect newly-added ``[ ]`` items lacking the US template structure.
+    """Detect newly-added ``[ ]`` items lacking US template structure.
 
-    Diffs new ``[ ]`` lines against ``pre_round_lines``, checks each
-    against the US header regex and verifies the item body contains the
-    three required section headers (``**As**``, ``**Acceptance criteria``,
-    ``**Definition of done``).
-
-    Args:
-        improvements_path: Path to ``improvements.md`` post-round.
-        pre_round_lines: Lines from ``improvements.md`` before the round.
-
-    Returns:
-        List of violation descriptions (empty = pass).
+    Returns list of violation descriptions (empty = pass).
     """
     if not improvements_path.is_file():
         return []
@@ -402,6 +376,51 @@ def _detect_us_format_violation(
                 f"{', '.join(missing)}: {header_stripped[:120]}"
             )
     return violations
+
+
+# ---------------------------------------------------------------------------
+# TDD violation detection
+# ---------------------------------------------------------------------------
+
+
+def _detect_tdd_violation(
+    project_dir: Path, run_dir: Path, round_num: int, is_structural: bool
+) -> str | None:
+    """Detect production code under ``evolve/`` without test changes.
+
+    Returns violation description or None. Structural commits exempt.
+    """
+    if is_structural:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+            cwd=str(project_dir), capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+    touched = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+    if not touched:
+        return None
+
+    prod_files = [
+        f for f in touched
+        if f.startswith("evolve/") and f.endswith(".py")
+    ]
+    test_files = [
+        f for f in touched
+        if f.startswith("tests/") and f.endswith(".py")
+    ]
+
+    if prod_files and not test_files:
+        prod_list = ", ".join(prod_files[:10])
+        return (
+            f"Production files modified without test changes: {prod_list}"
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------

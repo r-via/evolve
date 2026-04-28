@@ -69,6 +69,7 @@ def _handle_round_success(
     # Lazy-imports preserve patch surfaces.
     from evolve.orchestrator import (
         _detect_file_too_large,
+        _detect_tdd_violation,
         _enforce_convergence_backstop,
         _FILE_TOO_LARGE_LIMIT,
         _forever_restart,
@@ -177,6 +178,28 @@ def _handle_round_success(
                 f"FILE TOO LARGE: {len(_oversized)} file(s) exceed "
                 f"{_FILE_TOO_LARGE_LIMIT} lines:\n{_ftl_lines}"
             ),
+            attempt=0,
+        )
+
+    # TDD violation detection (advisory diagnostic for next round)
+    # Check if the commit message starts with STRUCTURAL: — if so, exempt
+    _commit_msg_path = run_dir / "COMMIT_MSG"
+    _is_structural = False
+    if _commit_msg_path.is_file():
+        try:
+            _cm = _commit_msg_path.read_text(errors="replace")
+            _is_structural = _cm.strip().startswith("STRUCTURAL:")
+        except OSError:
+            pass
+    _tdd_viol = _detect_tdd_violation(
+        project_dir, run_dir, round_num, _is_structural
+    )
+    if _tdd_viol:
+        _probe_warn(f"TDD VIOLATION detected: {_tdd_viol}")
+        _save_subprocess_diagnostic(
+            run_dir, round_num, ["(post-round TDD check)"],
+            f"Violation: {_tdd_viol}",
+            reason=f"TDD VIOLATION: {_tdd_viol}",
             attempt=0,
         )
 
