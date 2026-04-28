@@ -60,25 +60,22 @@ def test_agent_module_reexports_same_object(name: str) -> None:
     assert getattr(agent_mod, name) is getattr(runtime_mod, name)
 
 
-def test_agent_runtime_is_a_leaf_module() -> None:
-    """``evolve/agent_runtime.py`` has no module-top ``from evolve.X`` imports.
+def test_agent_runtime_is_a_shim() -> None:
+    """``evolve/agent_runtime.py`` is a backward-compat shim.
 
-    The leaf invariant prevents the round-6 lazy-import trap: any sibling
-    that imports a hoisted constant from ``agent_runtime`` must not pay a
-    surprise import-time dependency on ``evolve.agent`` or any other
-    ``evolve.*`` module.  Function-local imports (e.g. ``get_tui`` inside
-    ``_run_agent_with_retries``) are fine and explicitly allowed.
+    After DDD migration (US-069), agent_runtime.py re-exports from
+    ``evolve.infrastructure.claude_sdk.runtime``.  The only allowed
+    ``from evolve.*`` import is the infrastructure re-export chain.
     """
     src = (Path(__file__).resolve().parent.parent
            / "evolve" / "agent_runtime.py").read_text()
-    # Strip docstrings/comments to keep the regex simple — we only care
-    # about live import statements at column 0.  ``^from evolve\.`` is
-    # the exact pattern AC-2 enumerates.
-    matches = re.findall(r"^from evolve\.", src, flags=re.MULTILINE)
-    assert matches == [], (
-        "evolve/agent_runtime.py must not have module-top "
-        f"'from evolve.X' imports; found: {matches}"
-    )
+    # All evolve imports must point to the infrastructure package
+    matches = re.findall(r"^from evolve\.\S+", src, flags=re.MULTILINE)
+    for m in matches:
+        assert m.startswith("from evolve.infrastructure.claude_sdk"), (
+            f"agent_runtime.py should only import from "
+            f"evolve.infrastructure.claude_sdk, found: {m}"
+        )
 
 
 def test_draft_and_review_effort_remain_low() -> None:
