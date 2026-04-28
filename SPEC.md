@@ -1752,8 +1752,9 @@ round without justification = Zara finding.
 | 0 | Converged — project fully matches spec |
 | 1 | Max rounds reached or budget reached — improvements remain |
 | 2 | Error — agent failure, missing deps, or invalid args |
-| 3 | Structural change — manual restart required (see § "Structural change self-detection") |
+| 3 | Structural change — restart required (see § "Structural change self-detection" and § "evolve-watch auto-restart wrapper" below) |
 | 4 | Deterministic failure loop — same failure signature repeated across multiple rounds (see § "Circuit breakers") |
+| 5 | ``evolve-watch`` gave up — too many structural restarts in a short window |
 
 ```bash
 # Use in CI
@@ -1770,6 +1771,68 @@ if [ $EXIT_CODE -eq 0 ]; then
   # Parse evolve-output.jsonl for PR description
 fi
 ```
+
+## evolve-watch auto-restart wrapper
+
+``evolve-watch`` is a thin external supervisor that wraps
+``evolve start`` and auto-restarts on exit code 3 (structural
+change).  Without it, every ``RESTART_REQUIRED`` marker forces an
+operator to re-issue the ``evolve start`` command manually, which
+defeats long unattended runs (especially ``--forever`` sessions
+where the orchestrator may rewrite its own modules several times
+across the run).  The wrapper is shipped as a separate entry
+point so it is **out-of-process**: it survives the orchestrator
+respawn even when the structural change moves or renames the
+``evolve`` package's own files.
+
+**Usage.**  Drop-in replacement for ``evolve``:
+
+```bash
+# Forever-run with auto-restart
+evolve-watch start . --check pytest --forever
+
+# Bounded run with structural-restart tolerance
+evolve-watch start . --check pytest --rounds 100
+```
+
+Every CLI argument is forwarded to ``evolve`` unchanged on the
+first invocation.  On exit code 3 the wrapper injects ``--resume``
+(idempotently — already-present ``--resume`` is not duplicated)
+and respawns ``python -m evolve <args>``.  Any other exit code
+(0 / 1 / 2 / 4) is propagated immediately — the wrapper does not
+mask convergence, budget exhaustion, errors, or circuit-breaker
+trips.
+
+**Safety net — restart-rate cap.**  If exit code 3 fires more
+than ``MAX_RESTARTS_PER_WINDOW`` times within
+``RESTART_WINDOW_SECONDS`` (defaults: 5 / 1800s), the wrapper
+gives up with exit code 5.  This catches the failure mode where a
+round writes ``RESTART_REQUIRED`` deterministically every time
+(broken structural-detection logic, bad commit message convention,
+test that always trips the marker) — without the cap the wrapper
+would respawn forever and burn tokens.
+
+**Signal handling.**  ``SIGINT`` / ``SIGTERM`` received by the
+wrapper are forwarded to the running ``evolve`` child.  The
+wrapper waits up to 10s for the child to exit cleanly, then
+``SIGKILL``s and propagates the exit code — so ``Ctrl+C`` works
+the same whether you launched ``evolve start`` directly or via
+``evolve-watch``.
+
+**stderr-only logging.**  All wrapper messages
+(``[evolve-watch <ts>] …``) go to stderr, never stdout.  This
+keeps ``evolve``'s ``--json`` mode parseable when piped:
+
+```bash
+evolve-watch start . --check pytest --json > evolve-output.jsonl
+# stderr carries the wrapper events; stdout stays pure JSONL
+```
+
+**Implementation.**  Single self-contained module
+(``evolve/watcher.py``, ~150 lines), no dependencies beyond
+stdlib, entry point ``evolve-watch`` registered in
+``pyproject.toml``.  Installed automatically by
+``pip install -e .`` alongside the main ``evolve`` command.
 
 ---
 
