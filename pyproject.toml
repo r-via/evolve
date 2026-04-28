@@ -11,12 +11,12 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = [
     "claude-agent-sdk",
+    "rich",
+    "cairosvg",
 ]
 
 [project.optional-dependencies]
-rich = ["rich"]
-vision = ["cairosvg"]
-dev = ["rich", "pytest", "pytest-cov"]
+dev = ["pytest", "pytest-cov"]
 
 [project.scripts]
 evolve = "evolve.cli:main"

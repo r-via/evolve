@@ -51,16 +51,13 @@ Install evolve as a Python package:
 pip install .
 ```
 
-Or with the optional rich TUI:
+The Rich TUI and frame-capture (`cairosvg`) are bundled by default —
+no extras needed.
+
+For development (adds `pytest` + `pytest-cov`):
 
 ```bash
-pip install ".[rich]"
-```
-
-For development:
-
-```bash
-pip install -e ".[rich,dev]"
+pip install -e ".[dev]"
 ```
 
 After installation, the `evolve` command is available globally:
