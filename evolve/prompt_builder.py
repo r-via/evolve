@@ -311,7 +311,7 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
     # Diagnostic-section dispatch — extracted to evolve/prompt_diagnostics.py
     # (round 3 of 20260427_203955 audit fix; addresses Zara HIGH-1 review
     # finding that this file was 723 lines, > 500-line SPEC cap).
-    prev_crash_section = build_prev_crash_section(prev_crash)
+    prev_crash_section = build_prev_crash_section(prev_crash, run_dir)
 
     # Prior round audit section — moved to prompt_diagnostics.py for the
     # same audit-fix split.  Internal scan is preserved verbatim.
