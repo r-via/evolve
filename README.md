@@ -37,6 +37,34 @@ mark it done. See [agents/](agents/) for each persona definition and
 [SPEC.md § "Multi-call round architecture"](SPEC.md) for the orchestration
 contract.
 
+### Engineering practices — TDD and DDD
+
+AGILE / BMAD describe **how rounds are run**.  Two engineering practices
+describe **how the code itself is shaped** inside each round:
+
+- **TDD (Test-Driven Development).**  Every implement round (Amelia)
+  produces tests alongside the code change.  The pre-check + post-check
+  gates around every round (`pytest` by default, configurable via
+  `--check`) make a passing test suite a hard precondition for round
+  success — Phase 1 of the system prompt also forces the agent to fix
+  any failing test **before** touching the round's nominal target.
+  Coverage target: 95% across `evolve/` (see
+  [SPEC.md § "Test coverage target"](SPEC.md)).
+- **DDD (Domain-Driven Design).**  Evolve's source tree under
+  `evolve/` follows a layered architecture (`domain/`, `application/`,
+  `infrastructure/`, `interfaces/`) with bounded contexts
+  (orchestration, authoring, memory & SPEC lifecycle, cost & budget,
+  operator interface) and a ubiquitous language: every concept named
+  in `SPEC.md` (Round, US, Improvement, Convergence, Memory, Backlog,
+  Verdict, …) maps to a single named type in `evolve/domain/`.  A
+  CI-enforced import-graph linter rejects any inward-violating
+  edge — same mechanism that enforces the 500-line-per-file cap.  See
+  [SPEC.md § "Source code layout — Domain-Driven Design (DDD)"](SPEC.md)
+  for the layout, dependency rule, and migration plan.
+
+Together these four — AGILE, BMAD, TDD, DDD — give evolve its discipline:
+agile *flow*, BMAD *roles*, TDD *correctness*, DDD *structure*.
+
 > **Looking for internals?** This README is the user-facing guide — install,
 > quickstart, examples. The full behavioral contract (phases, gates,
 > convergence rules, every CLI flag in depth, memory discipline, retry

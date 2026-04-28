@@ -1789,6 +1789,92 @@ also surface a ``FILE TOO LARGE:`` header when a round leaves any
 ``evolve/*.py`` file over the cap, so the next round picks up the split
 as its target instead of piling more code on top.
 
+### Test-Driven Development (TDD)
+
+Evolve follows TDD as a normative engineering discipline.  This is
+not a recommendation — these rules are part of the spec evolve
+self-corrects against.  An implement round (Amelia) that violates
+any of them is treated as a failed round and rolled back on retry.
+
+**Tests-first per round.**  Every round that introduces or
+modifies behaviour MUST land at least one test that exercises the
+new / changed behaviour, in the same commit as the implementation.
+"Behaviour" is observable: a function output, a CLI exit code, a
+file written, a TUI line emitted, a probe message, an exception
+class.  A round whose diff touches non-test code under
+``evolve/`` but adds zero lines to ``tests/`` is rejected by the
+post-round US-format check (advisory in the current round, hard
+gate on the retry).  Pure renames / file moves with no behaviour
+change are exempt — those are structural commits (§ "Structural
+change self-detection") and ship without new tests.
+
+**Red → green → refactor.**  The implement agent's prompt
+(``prompts/system.md`` Phase 3) instructs Amelia to write the
+failing test FIRST, run the check command to confirm it fails the
+expected way, then write the production code that turns the test
+green.  Refactoring (3rd step) only touches tested code.  This
+order is observable in the conversation log: the
+``Bash`` / ``pytest`` invocation that runs RED tests SHOULD appear
+before the corresponding ``Edit`` on the production file.
+
+**Pre-check + post-check are mandatory gates.**  Every round runs
+``check_cmd`` (``pytest`` by default) before AND after the agent
+turn:
+
+- **Pre-check FAILED** routes to implement (§ "Routing invariant:
+  broken pre-check always routes to implement"), Phase 1 fixes the
+  break before any new work.  Drafting on a broken test suite is
+  forbidden.
+- **Post-check FAILED** flips the round's verdict: even if the
+  US's nominal AC's are met, the round is treated as a regression
+  and Zara's adversarial review surfaces a HIGH finding tagged
+  ``[regression-risk]``.  Auto-retry kicks in (§ "Verdict →
+  orchestrator action").
+
+**Mock the SDK, never the unit under test.**  Tests mock the
+Claude Agent SDK boundary (see § "Hard rule: tests MUST NOT call
+the real Claude SDK") because hitting it makes the suite slow,
+flaky, and money-burning.  But tests MUST NOT mock the function
+they are nominally testing — over-mocking produces tautological
+green tests that pass even when the production code is gutted.
+The rule of thumb: mock external resources (SDK, network, time,
+subprocess), exercise the real evolve function.
+
+**Coverage as a forcing function, not a target.**  The 95%
+coverage target (§ "Test coverage target" below) is a
+**ratchet**: coverage is allowed to stay at 95% indefinitely, but
+a round that drops coverage below 95% is rejected.  Lines that
+are genuinely unreachable (e.g. ``if TYPE_CHECKING:`` blocks)
+are exempted via ``[tool.coverage.report] exclude_lines`` in
+``pyproject.toml`` — adding a line to that exclude list is itself
+a tracked change that requires a justification in the commit
+message.
+
+**Test naming and arrangement.**  Tests live under ``tests/`` in
+files named ``test_<module>.py``, matching the production module
+they cover.  Within a file, tests are grouped by behaviour, named
+``test_<verb>_<expected_outcome>`` (e.g.
+``test_routing_pre_check_failed_routes_to_implement``), and
+follow the Arrange / Act / Assert structure with comments where
+the boundary isn't obvious.  Tests that need the same fixture
+share it via ``conftest.py``; one-off setups stay inline.
+
+**TDD self-correction loop.**  The orchestrator emits a
+``TDD VIOLATION:`` diagnostic when:
+
+- A round commits production code under ``evolve/`` with zero
+  ``tests/`` additions (and is not a structural commit).
+- A round drops coverage below the 95% ratchet without a
+  matching ``[tool.coverage.report] exclude_lines`` entry.
+- A round's conversation log shows ``Edit`` on production code
+  without a prior ``Bash`` / ``pytest`` call that ran the RED
+  test (the "tests-first" check, advisory: hard gate on retry).
+
+The diagnostic is fed back into the next attempt's prompt under
+the ``## CRITICAL — TDD violation`` header, which instructs the
+agent to back the violation out and redo the round with the test
+written first.
+
 ### Test coverage target
 
 The project targets **95% test coverage** minimum. Current coverage should be
