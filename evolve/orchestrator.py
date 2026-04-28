@@ -597,496 +597,40 @@ def _run_rounds(
                 )
 
                 # --- Diagnose subprocess outcome ---
-                # Signature of this attempt's failure, captured in each
-                # failure arm and fed to the circuit breaker at the end
-                # of the attempt (after the diagnostic file is saved, so
-                # exit 4 leaves behind a complete paper trail).
-                _attempt_sig: str | None = None
-                if stalled:
-                    ui.round_failed(round_num, returncode)
-                    _save_subprocess_diagnostic(
-                        run_dir, round_num, cmd, output,
-                        reason=f"stalled ({WATCHDOG_TIMEOUT}s without output, killed)",
-                        attempt=attempt,
-                    )
-                    _attempt_sig = _failure_signature("stalled", returncode, output)
-                elif returncode != 0:
-                    ui.round_failed(round_num, returncode)
-                    _save_subprocess_diagnostic(
-                        run_dir, round_num, cmd, output,
-                        reason=f"crashed (exit code {returncode})",
-                        attempt=attempt,
-                    )
-                    _attempt_sig = _failure_signature("crashed", returncode, output)
-                else:
-                    # Subprocess exited OK — check for actual progress
-                    prev_checked = checked
-                    prev_unchecked = unchecked
-                    unchecked = _count_unchecked(improvements_path)
-                    checked = _count_checked(improvements_path)
-                    ui.progress_summary(checked, unchecked)
-
-                    # --- Adversarial review verdict routing ---
-                    # SPEC § "Adversarial round review (Phase 3.6)":
-                    # The agent writes review_round_N.md during Phase 3.6.
-                    # The orchestrator reads it and routes the verdict.
-                    review_verdict, review_findings = _check_review_verdict(
-                        run_dir, round_num
-                    )
-                    if review_verdict in ("BLOCKED", "CHANGES REQUESTED"):
-                        # SPEC § "Adversarial round review (Phase 3.6)":
-                        # both verdicts auto-retry to fix HIGH + MEDIUM
-                        # findings.  The operator never arbitrates manually —
-                        # the deterministic-loop guard below caps runaway
-                        # retries.  BLOCKED differs from CHANGES REQUESTED
-                        # only in severity volume (3+ HIGH or regression-risk
-                        # tag vs 1-2 HIGH), but the auto-fix protocol is the
-                        # same: feed the findings back to the next attempt
-                        # under a REVIEW: header.
-                        if review_verdict == "BLOCKED":
-                            reason = (
-                                f"REVIEW: blocked — adversarial review found "
-                                f"3+ HIGH findings or a [regression-risk] tag. "
-                                f"Auto-fixing on next attempt.\n"
-                                f"{review_findings}"
-                            )
-                        else:
-                            reason = (
-                                f"REVIEW: changes requested — adversarial review "
-                                f"found HIGH/MEDIUM findings that must be addressed.\n"
-                                f"{review_findings}"
-                            )
-                        _save_subprocess_diagnostic(
-                            run_dir, round_num, cmd, output,
-                            reason=reason,
-                            attempt=attempt,
-                        )
-                        fire_hook(
-                            hooks, "on_error",
-                            session=session_name, round_num=round_num,
-                            status=(
-                                "review_blocked"
-                                if review_verdict == "BLOCKED"
-                                else "review_changes_requested"
-                            ),
-                        )
-                        _attempt_sig = _failure_signature(
-                            "no-progress:REVIEW", returncode, review_findings
-                        )
-                        # Fall through to retry registration — the next attempt
-                        # sees the REVIEW: prefix and addresses the findings.
-                        # Skip the normal zero-progress checks for this attempt.
-                        if _attempt_sig:
-                            _failure_signatures.append(_attempt_sig)
-                            if _is_circuit_breaker_tripped(_failure_signatures):
-                                ui.warn(
-                                    f"Deterministic failure loop detected after "
-                                    f"{MAX_IDENTICAL_FAILURES} identical review failures."
-                                )
-                                return
-                            continue  # next attempt
-
-                    # --- Read SDK subtype (authoritative termination signal) ---
-                    # SPEC § "Authoritative termination signal from the SDK":
-                    # the subtype written by _run_single_round_body is the
-                    # single source of truth for WHY the agent stopped.
-                    _subtype_path = run_dir / f"agent_subtype_round_{round_num}.txt"
-                    _agent_subtype: str | None = None
-                    if _subtype_path.is_file():
-                        _agent_subtype = _subtype_path.read_text().strip() or None
-
-                    # --- Zero-progress detection ---
-                    # 1. Check if improvements.md is byte-identical to pre-round snapshot
-                    imp_after = improvements_path.read_bytes() if improvements_path.is_file() else b""
-                    imp_unchanged = (imp_after == imp_snapshot_before)
-
-                    # 2. Check if agent committed without COMMIT_MSG (fallback commit).
-                    #
-                    # The flag fires ONLY when THIS attempt produced a new
-                    # HEAD whose message matches the fallback template.
-                    # If HEAD didn't move during the attempt (nothing to
-                    # commit because earlier attempts already did the
-                    # work), the flag stays False — a stale fallback
-                    # commit from a prior attempt is not THIS attempt's
-                    # bug.
-                    no_commit_msg = False
-                    try:
-                        head_after_res = subprocess.run(
-                            ["git", "rev-parse", "HEAD"],
-                            cwd=str(project_dir), capture_output=True,
-                            text=True, timeout=5,
-                        )
-                        head_sha_after = (
-                            head_after_res.stdout.strip()
-                            if head_after_res.returncode == 0 else ""
-                        )
-                        head_moved = (
-                            bool(head_sha_before)
-                            and bool(head_sha_after)
-                            and head_sha_before != head_sha_after
-                        )
-                        if head_moved:
-                            git_log_result = subprocess.run(
-                                ["git", "log", "-1", "--format=%s"],
-                                cwd=str(project_dir), capture_output=True, text=True, timeout=10,
-                            )
-                            if git_log_result.returncode == 0:
-                                last_commit_msg = git_log_result.stdout.strip()
-                                if last_commit_msg == f"chore(evolve): round {round_num}":
-                                    no_commit_msg = True
-                    except (subprocess.TimeoutExpired, FileNotFoundError):
-                        pass
-
-                    # 3. Memory-wipe sanity gate: detect silent wipes of
-                    #    memory.md.  A >50% shrink without an explicit
-                    #    "memory: compaction" line in the commit message
-                    #    is treated as a wipe and triggers a retry.  This
-                    #    catches agents that "compact" memory.md by
-                    #    emptying sections they couldn't read.
-                    mem_size_after = memory_path.stat().st_size if memory_path.is_file() else 0
-                    memory_wiped = False
-                    if (
-                        mem_size_before > 0
-                        and mem_size_after < mem_size_before * _MEMORY_WIPE_THRESHOLD
-                    ):
-                        commit_body = ""
-                        try:
-                            git_body_result = subprocess.run(
-                                ["git", "log", "-1", "--format=%B"],
-                                cwd=str(project_dir), capture_output=True, text=True, timeout=10,
-                            )
-                            if git_body_result.returncode == 0:
-                                commit_body = git_body_result.stdout
-                        except (subprocess.TimeoutExpired, FileNotFoundError):
-                            # Can't read commit body — treat the shrink as
-                            # a wipe to stay on the safe side.
-                            commit_body = ""
-                        if _MEMORY_COMPACTION_MARKER not in commit_body:
-                            memory_wiped = True
-
-                    # 4. Backlog discipline rule 1: detect "new [ ] item added
-                    #    while queue non-empty".  See SPEC.md § "Backlog
-                    #    discipline" rule 1.  We only check when improvements.md
-                    #    actually changed (otherwise imp_unchanged path takes
-                    #    over) and run the comparison on the snapshotted
-                    #    pre-round bytes vs the current file.
-                    backlog_violated = False
-                    backlog_new_items: list[str] = []
-                    if not imp_unchanged:
-                        try:
-                            pre_text = imp_snapshot_before.decode(
-                                "utf-8", errors="replace"
-                            )
-                            post_text = imp_after.decode(
-                                "utf-8", errors="replace"
-                            )
-                            backlog_violated, backlog_new_items = (
-                                _detect_backlog_violation(pre_text, post_text)
-                            )
-                        except Exception as e:  # pragma: no cover — defensive
-                            _probe_warn(f"backlog-violation check skipped: {e}")
-
-                    # "Scope creep" detection: rebuild + implement in one round.
-                    #
-                    # When improvements.md has new ``[ ]`` items added AND
-                    # the round's commit also touched non-improvements
-                    # files (code / tests / docs), the agent mixed two
-                    # round kinds into one — drafting and implementation.
-                    # This is the pattern the operator flagged as "evolve
-                    # enchaîne les US sans lancer de nouveau round": the
-                    # Phase 2 rebuild instruction used to say "your round
-                    # target becomes the FIRST of the newly rebuilt items"
-                    # which permitted the mix.  It's now forbidden — a
-                    # rebuild round commits only the improvements.md
-                    # change, and the next round's fresh agent picks up
-                    # the first new item.
-                    scope_creep = False
-                    scope_creep_other_files: list[str] = []
-                    if backlog_new_items:
-                        try:
-                            import subprocess as _sp
-                            diff_files = _sp.run(
-                                ["git", "diff-tree", "--no-commit-id",
-                                 "--name-only", "-r", "HEAD"],
-                                cwd=str(project_dir),
-                                capture_output=True,
-                                text=True,
-                                timeout=10,
-                            )
-                            if diff_files.returncode == 0:
-                                touched = [
-                                    ln.strip()
-                                    for ln in diff_files.stdout.splitlines()
-                                    if ln.strip()
-                                ]
-                                # Files that count as "implementation"
-                                # changes — anything not under runs/
-                                # state (improvements.md, memory.md,
-                                # conversation_loop_*.md, etc.) and not
-                                # the session's own artifacts.
-                                scope_creep_other_files = [
-                                    f for f in touched
-                                    if not (
-                                        f.endswith("/improvements.md")
-                                        or f.endswith("/memory.md")
-                                        or "runs/" in f
-                                        or ".evolve/" in f
-                                    )
-                                ]
-                                if scope_creep_other_files:
-                                    scope_creep = True
-                        except (_sp.TimeoutExpired, OSError):
-                            pass  # git unavailable → skip the check
-
-                    # Convergence rounds legitimately leave improvements.md
-                    # unchanged (all items already checked).  When the agent
-                    # wrote CONVERGED, skip the imp_unchanged signal — the
-                    # convergence-gate backstop (below) handles premature
-                    # convergence independently.
-                    converged_written = (run_dir / "CONVERGED").is_file()
-                    effective_imp_unchanged = imp_unchanged and not converged_written
-
-                    # "Backlog drained but CONVERGED skipped" case.
-                    #
-                    # When all ``[ ]`` items are checked off, the agent has
-                    # legitimately nothing to implement this round — the
-                    # correct next step is Phase 4 convergence (write
-                    # CONVERGED after verifying the README claims).  If the
-                    # agent stopped short of Phase 4 (e.g. ran out of turns
-                    # after the last check-off, or didn't confidently
-                    # decide), ``imp_unchanged=True`` and
-                    # ``no_commit_msg=True`` both fire and the zero-progress
-                    # retry kicks in — which would force the agent to "fix"
-                    # a non-bug, wasting the retry budget.
-                    #
-                    # Detect the drained-but-not-converged state and route
-                    # to a dedicated diagnostic so the retry prompt nudges
-                    # the agent straight to Phase 4 instead of treating
-                    # the round as a no-progress bug.
-                    unchecked_remaining = _count_unchecked(improvements_path)
-                    backlog_drained_no_converged = (
-                        unchecked_remaining == 0
-                        and imp_unchanged
-                        and not converged_written
-                    )
-                    # Round-level "already-done" escape hatch.  When
-                    # THIS attempt's subprocess exited cleanly and
-                    # EARLIER attempts in the same round already
-                    # landed real work (HEAD moved or imp changed
-                    # since round-start), AND this attempt itself
-                    # did NOT produce a new fallback commit AND is
-                    # NOT a zero-improvements / no-commit-msg bug,
-                    # treat the round as succeeded — the agent is
-                    # just wrapping up.  This avoids false-positive
-                    # retries where attempt 3 is idle because
-                    # attempt 2 already finished the work.
-                    try:
-                        _r_end = subprocess.run(
-                            ["git", "rev-parse", "HEAD"],
-                            cwd=str(project_dir), capture_output=True,
-                            text=True, timeout=5,
-                        )
-                        _head_after_round = (
-                            _r_end.stdout.strip()
-                            if _r_end.returncode == 0 else ""
-                        )
-                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                        _head_after_round = ""
-                    _round_head_moved = (
-                        bool(round_start_head_sha)
-                        and bool(_head_after_round)
-                        and round_start_head_sha != _head_after_round
-                    )
-                    _round_imp_changed = (imp_after != round_start_imp)
-                    # The escape hatch fires when THIS attempt did not
-                    # introduce any NEW problems — a new fallback
-                    # commit, a memory wipe, a backlog-discipline
-                    # violation.  ``imp_unchanged`` is deliberately
-                    # excluded from this "new problem" set: that's
-                    # precisely the signal this hatch is meant to
-                    # neutralise.  When an earlier attempt committed
-                    # real work, THIS attempt finding nothing to add
-                    # to improvements.md is the round wrapping up,
-                    # not a failure.
-                    _attempt_had_no_new_issues = not (
-                        no_commit_msg or memory_wiped or backlog_violated
-                    )
-                    if (_round_head_moved or _round_imp_changed) and _attempt_had_no_new_issues:
-                        made_progress = True
-                        round_succeeded = True
-                        break
-
-                    if backlog_drained_no_converged:
-                        # Override the default "no progress" framing so the
-                        # diagnostic is actionable (agent goes to Phase 4)
-                        # rather than punitive (agent must edit something).
-                        _save_subprocess_diagnostic(
-                            run_dir, round_num, cmd, output,
-                            reason=(
-                                "BACKLOG DRAINED: all [ ] items checked off, "
-                                "but agent did not write CONVERGED — the correct "
-                                "next step is Phase 4 (verify every README claim, "
-                                "then write CONVERGED), not a zero-progress retry."
-                            ),
-                            attempt=attempt,
-                        )
-                        _attempt_sig = _failure_signature(
-                            "no-progress:BACKLOG DRAINED",
-                            returncode,
-                            f"unchecked={unchecked_remaining}",
-                        )
-                        # Fall through to the retry-registration path at
-                        # the end of the attempt loop.  The retry's prompt
-                        # will surface this as "BACKLOG DRAINED" and steer
-                        # the agent toward Phase 4 on the next attempt.
-                        # No need to evaluate the other no-progress signals —
-                        # they'd all fire as tautological consequences of
-                        # an empty queue + no edits.
-                    # Any condition alone triggers zero-progress / memory-wipe / backlog retry
-                    elif scope_creep:
-                        # Rebuild + implement in one round → dedicated
-                        # diagnostic that routes the retry to split the
-                        # work.  Prefix recognised by build_prompt to
-                        # emit a tailored "CRITICAL — Scope creep"
-                        # section on the next attempt.
-                        creep_summary = ", ".join(
-                            scope_creep_other_files[:5]
-                        )
-                        reason_str = (
-                            f"Phase 2 rebuild mixed with implementation: "
-                            f"{len(backlog_new_items)} new ``[ ]`` item(s) "
-                            f"added AND non-improvements files touched "
-                            f"({creep_summary}).  Per SPEC § 'Item format' "
-                            f"and Phase 2 rule, rebuild rounds commit ONLY "
-                            f"the improvements.md change; the next round "
-                            f"picks up the first new item."
-                        )
-                        _save_subprocess_diagnostic(
-                            run_dir, round_num, cmd, output,
-                            reason=f"SCOPE CREEP: {reason_str}",
-                            attempt=attempt,
-                        )
-                        _attempt_sig = _failure_signature(
-                            "no-progress:SCOPE CREEP",
-                            returncode,
-                            f"new={len(backlog_new_items)}|other={len(scope_creep_other_files)}",
-                        )
-                    elif no_commit_msg or effective_imp_unchanged or memory_wiped or backlog_violated:
-                        no_progress_reasons: list[str] = []
-                        if no_commit_msg:
-                            no_progress_reasons.append(
-                                "no COMMIT_MSG written (fallback commit message)"
-                            )
-                        if effective_imp_unchanged:
-                            no_progress_reasons.append(
-                                "improvements.md byte-identical to pre-round state"
-                            )
-                        if memory_wiped:
-                            threshold_pct = int(_MEMORY_WIPE_THRESHOLD * 100)
-                            no_progress_reasons.append(
-                                f"memory.md shrunk by >{threshold_pct}% "
-                                f"({mem_size_before}\u2192{mem_size_after} bytes) "
-                                f"without '{_MEMORY_COMPACTION_MARKER}' in commit message"
-                            )
-                        if backlog_violated:
-                            new_summary = "; ".join(
-                                ln[:160] for ln in backlog_new_items[:3]
-                            )
-                            no_progress_reasons.append(
-                                f"backlog discipline rule 1 violated: "
-                                f"{len(backlog_new_items)} new `- [ ]` item(s) "
-                                f"added while queue non-empty "
-                                f"(new: {new_summary})"
-                            )
-                        reason_str = " AND ".join(no_progress_reasons)
-                        # Diagnostic prefix priority: memory-wipe > backlog >
-                        # subtype-based > no-progress, so agent.py's prompt
-                        # builder picks the most specific dedicated header.
-                        #
-                        # Subtype-based branching per SPEC § "Authoritative
-                        # termination signal from the SDK":
-                        # - error_max_turns → MAX_TURNS prefix (fix-only retry)
-                        # - error_during_execution → SDK ERROR prefix
-                        # - success + imp_unchanged → genuine no-work path
-                        if memory_wiped:
-                            prefix = "MEMORY WIPED"
-                        elif backlog_violated:
-                            prefix = _BACKLOG_VIOLATION_PREFIX
-                        elif _agent_subtype == "error_max_turns":
-                            prefix = "MAX_TURNS"
-                            no_progress_reasons.append(
-                                "SDK subtype=error_max_turns — agent hit turn cap "
-                                "before finishing"
-                            )
-                            reason_str = " AND ".join(no_progress_reasons)
-                        elif _agent_subtype == "error_during_execution":
-                            prefix = "SDK ERROR"
-                            no_progress_reasons.append(
-                                "SDK subtype=error_during_execution — agent "
-                                "encountered an execution error"
-                            )
-                            reason_str = " AND ".join(no_progress_reasons)
-                        else:
-                            prefix = "NO PROGRESS"
-                        _save_subprocess_diagnostic(
-                            run_dir, round_num, cmd, output,
-                            reason=f"{prefix}: {reason_str}",
-                            attempt=attempt,
-                        )
-                        _attempt_sig = _failure_signature(
-                            f"no-progress:{prefix}", returncode, reason_str
-                        )
-                    else:
-                        made_progress = (
-                            checked != prev_checked
-                            or unchecked != prev_unchecked
-                            or (convo.is_file() and convo.stat().st_size > convo_size_before)
-                        )
-                        if made_progress:
-                            round_succeeded = True
-                            break
-
-                        # Subtype-aware "silent no progress" path.
-                        # Per SPEC § "Authoritative termination signal from
-                        # the SDK": success + imp_unchanged is a genuine
-                        # "agent decided no work needed" signal (e.g.
-                        # backlog drained), NOT a turn-budget exhaustion.
-                        if _agent_subtype == "error_max_turns":
-                            _save_subprocess_diagnostic(
-                                run_dir, round_num, cmd, output,
-                                reason=(
-                                    "MAX_TURNS: agent hit turn cap without "
-                                    "making progress — target may be too "
-                                    "large, consider splitting"
-                                ),
-                                attempt=attempt,
-                            )
-                            _attempt_sig = _failure_signature(
-                                "no-progress:MAX_TURNS", returncode, output
-                            )
-                        elif _agent_subtype == "error_during_execution":
-                            _save_subprocess_diagnostic(
-                                run_dir, round_num, cmd, output,
-                                reason=(
-                                    "SDK ERROR: agent stopped with "
-                                    "error_during_execution — check SDK "
-                                    "error in output"
-                                ),
-                                attempt=attempt,
-                            )
-                            _attempt_sig = _failure_signature(
-                                "no-progress:SDK ERROR", returncode, output
-                            )
-                        else:
-                            # No progress — save diagnostic for retry
-                            _save_subprocess_diagnostic(
-                                run_dir, round_num, cmd, output,
-                                reason="no progress (agent ran but changed nothing)",
-                                attempt=attempt,
-                            )
-                            _attempt_sig = _failure_signature(
-                                "no-progress:silent", returncode, output
-                            )
+                # US-040: extracted to evolve.round_lifecycle.
+                _outcome = _diagnose_attempt_outcome(
+                    run_dir=run_dir,
+                    round_num=round_num,
+                    project_dir=project_dir,
+                    improvements_path=improvements_path,
+                    cmd=cmd,
+                    output=output,
+                    stalled=stalled,
+                    returncode=returncode,
+                    attempt=attempt,
+                    checked=checked,
+                    unchecked=unchecked,
+                    imp_snapshot_before=imp_snapshot_before,
+                    mem_size_before=mem_size_before,
+                    head_sha_before=head_sha_before,
+                    convo_size_before=convo_size_before,
+                    round_start_head_sha=round_start_head_sha,
+                    round_start_imp=round_start_imp,
+                    ui=ui,
+                    hooks=hooks,
+                    session_name=session_name,
+                    failure_signatures=_failure_signatures,
+                )
+                checked = _outcome.checked
+                unchecked = _outcome.unchecked
+                if _outcome.review_retry_circuit_tripped:
+                    return
+                if _outcome.round_succeeded:
+                    round_succeeded = True
+                    break
+                if _outcome.is_review_retry:
+                    continue
+                _attempt_sig = _outcome.attempt_sig
 
                 # Register this attempt's signature with the circuit
                 # breaker — fires sys.exit(4) when the last
@@ -1129,320 +673,34 @@ def _run_rounds(
             if not round_succeeded:
                 continue  # skip convergence check, move to next round
 
-            # Round succeeded — reset the circuit breaker so that a single
-            # recovery clears the deterministic-failure counter.
-            _failure_signatures.clear()
-
-            # Fire on_round_end hook for successful round
-            fire_hook(hooks, "on_round_end", session=session_name, round_num=round_num, status="success")
-
-            # Capture round-end frame
-            ui.capture_frame(f"round_{round_num}_end")
-
-            # Parse last check results for state.json
-            _check_passed: bool | None = None
-            _check_tests: int | None = None
-            _check_duration: float | None = None
-            check_file = run_dir / f"check_round_{round_num}.txt"
-            if check_file.is_file():
-                _ct = check_file.read_text(errors="replace")
-                _check_passed, _check_tests, _check_duration = _parse_check_output(_ct)
-
-            # Aggregate token usage across all rounds for cost tracking
-            _usage_total, _usage_cost, _usage_rounds = aggregate_usage(
-                run_dir, round_num
-            )
-            _usage_state = build_usage_state(
-                _usage_total, _usage_cost, _usage_rounds
-            )
-
-            # Update state.json after every round
-            _write_state_json(
-                run_dir=run_dir,
+            # Round succeeded — delegated to evolve.round_lifecycle
+            # (US-040).  Returns ``(new_run_dir, new_ui, new_start_round)``
+            # for the forever-restart case; ``None`` otherwise.  May
+            # ``sys.exit()`` for budget reached (1), structural change (3),
+            # or normal convergence (0).
+            _success_result = _handle_round_success(
                 project_dir=project_dir,
+                run_dir=run_dir,
+                improvements_path=improvements_path,
+                ui=ui,
+                hooks=hooks,
+                session_name=session_name,
                 round_num=round_num,
                 max_rounds=max_rounds,
-                phase="improvement",
-                status="running",
-                improvements_path=improvements_path,
-                check_passed=_check_passed,
-                check_tests=_check_tests,
-                check_duration_s=_check_duration,
                 started_at=_started_at,
-                usage=_usage_state,
+                rounds_start_time=_rounds_start_time,
+                cmd=cmd,
+                output=output,
+                attempt=attempt,
+                spec=spec,
+                capture_frames=capture_frames,
+                max_cost=max_cost,
+                forever=forever,
+                failure_signatures=_failure_signatures,
             )
-
-            # Budget enforcement — pause session if cost exceeds --max-cost
-            if max_cost is not None and _usage_cost is not None:
-                if _usage_cost >= max_cost:
-                    _probe_warn(
-                        f"budget reached: "
-                        f"{format_cost(_usage_cost)} / {format_cost(max_cost)}"
-                    )
-                    ui.budget_reached(
-                        round_num, max_cost, _usage_cost
-                    )
-                    # Update state with budget_reached status
-                    _write_state_json(
-                        run_dir=run_dir,
-                        project_dir=project_dir,
-                        round_num=round_num,
-                        max_rounds=max_rounds,
-                        phase="improvement",
-                        status="budget_reached",
-                        improvements_path=improvements_path,
-                        check_passed=_check_passed,
-                        check_tests=_check_tests,
-                        check_duration_s=_check_duration,
-                        started_at=_started_at,
-                        usage=_usage_state,
-                    )
-                    fire_hook(
-                        hooks, "on_error",
-                        session=session_name,
-                        round_num=round_num,
-                        status="budget_reached",
-                    )
-                    sys.exit(1)
-
-            # Clean up diagnostic file on success (no longer relevant)
-            error_log = run_dir / f"subprocess_error_round_{round_num}.txt"
-            if error_log.is_file():
-                error_log.unlink()
-
-            # --- FILE TOO LARGE detection (SPEC § "Hard rule: source files
-            # MUST NOT exceed 500 lines").  Advisory only — writes a
-            # diagnostic for the NEXT round so the agent auto-targets
-            # the oversized file for splitting.  Same prefix-chain
-            # pattern as BACKLOG VIOLATION / SCOPE CREEP.
-            _oversized = _detect_file_too_large(project_dir)
-            if _oversized:
-                _ftl_lines = "\n".join(
-                    f"  - {p}: {lc} lines" for p, lc in _oversized
-                )
-                _probe_warn(f"FILE TOO LARGE detected:\n{_ftl_lines}")
-                _save_subprocess_diagnostic(
-                    run_dir, round_num, ["(post-round file-size check)"],
-                    f"Oversized files:\n{_ftl_lines}",
-                    reason=(
-                        f"FILE TOO LARGE: {len(_oversized)} file(s) exceed "
-                        f"{_FILE_TOO_LARGE_LIMIT} lines:\n{_ftl_lines}"
-                    ),
-                    attempt=0,
-                )
-
-            # --- Memory curation (Mira) — SPEC § "Dedicated memory
-            # curation (Mira)".  Between rounds, after post-check,
-            # before the next round's pre-check.  Runs only when
-            # memory.md > 300 lines OR round is a multiple of 10.
-            _run_curation_pass(
-                project_dir, run_dir, round_num,
-                improvements_path, spec, ui,
-            )
-
-            # --- SPEC archival (Sid) — SPEC § "SPEC archival (Sid)".
-            # Between rounds, after post-check + memory curation,
-            # before the next round's pre-check.  Runs only when
-            # SPEC.md > 2000 lines OR round is a multiple of 20.
-            _run_spec_archival_pass(
-                project_dir, run_dir, round_num, spec, ui,
-            )
-
-            # --- Structural change detection (SPEC § "Structural change
-            # self-detection" — orchestrator-side protocol).  The agent
-            # writes RESTART_REQUIRED when it detects a structural commit.
-            # We check AFTER state.json + budget, BEFORE convergence.
-            # --forever does NOT bypass — structural changes always pause.
-            #
-            # Scope: RESTART_REQUIRED is a *self-evolution* concept — it
-            # only matters when evolve is evolving its own source tree
-            # (the running orchestrator's imports become stale on rename
-            # / __init__.py edits / entry-point moves).  When evolve is
-            # evolving a third-party project, the target's structural
-            # changes don't touch the orchestrator's module layout, so
-            # restarting the orchestrator would be theatre.  Ignore the
-            # marker in that case — the marker stays on disk as audit
-            # trail, but we do not exit.
-            restart_marker = _parse_restart_required(run_dir)
-            if restart_marker is not None and not _is_self_evolving(project_dir):
-                _probe(
-                    f"RESTART_REQUIRED marker present but project is not "
-                    f"evolve itself — ignoring (target's structural change "
-                    f"does not affect the orchestrator)"
-                )
-                restart_marker = None
-            if restart_marker is not None:
-                _probe_warn(f"RESTART_REQUIRED detected: {restart_marker.get('reason', '?')}")
-
-                # Fire on_structural_change hook with marker fields as env vars
-                structural_env = {
-                    "EVOLVE_STRUCTURAL_REASON": restart_marker.get("reason", ""),
-                    "EVOLVE_STRUCTURAL_VERIFY": restart_marker.get("verify", ""),
-                    "EVOLVE_STRUCTURAL_RESUME": restart_marker.get("resume", ""),
-                    "EVOLVE_STRUCTURAL_ROUND": restart_marker.get("round", ""),
-                    "EVOLVE_STRUCTURAL_TIMESTAMP": restart_marker.get("timestamp", ""),
-                }
-                fire_hook(
-                    hooks, "on_structural_change",
-                    session=session_name,
-                    round_num=round_num,
-                    status="structural_change",
-                    extra_env=structural_env,
-                )
-
-                # Render blocking red panel
-                ui.structural_change_required(restart_marker)
-
-                # Exit with code 3 — structural change, manual restart required
-                sys.exit(3)
-
-            # Check convergence — requires spec freshness gate
-            # (mtime(improvements.md) >= mtime(spec)) AND CONVERGED file
-            converged_path = run_dir / "CONVERGED"
-            if converged_path.is_file():
-                # Verify spec freshness gate — don't mark stale again,
-                # just check the mtime relationship
-                spec_file = spec or "README.md"
-                spec_path = project_dir / spec_file
-                if converged_path.is_file() and spec_path.is_file() and improvements_path.is_file():
-                    if spec_path.stat().st_mtime > improvements_path.stat().st_mtime:
-                        _probe("convergence rejected: spec is newer than improvements.md — removing CONVERGED marker")
-                        converged_path.unlink()
-
-                # Convergence-gate orchestrator backstop — re-verify the
-                # two documented gates (SPEC.md § "Convergence")
-                # independently of the agent's judgment.  Closes the trust
-                # gap where Phase 4 criteria are 100% agent-judged today.
-                # If either gate fails, CONVERGED is unlinked, a
-                # diagnostic is saved with a ``PREMATURE CONVERGED``
-                # prefix, and the next round picks it up via
-                # ``build_prompt`` → dedicated CRITICAL header.
-                _enforce_convergence_backstop(
-                    converged_path,
-                    improvements_path,
-                    spec_path,
-                    run_dir,
-                    round_num,
-                    cmd,
-                    output,
-                    attempt,
-                    ui,
-                )
-            if converged_path.is_file():
-                reason = converged_path.read_text().strip()
-                _probe_ok(f"CONVERGED at round {round_num}: {reason[:80]}")
-                ui.converged(round_num, reason)
-
-                # Capture convergence frame
-                ui.capture_frame("converged")
-
-                # Fire on_converged hook
-                fire_hook(hooks, "on_converged", session=session_name, round_num=round_num, status="converged")
-
-                # Update state.json to converged
-                _write_state_json(
-                    run_dir=run_dir,
-                    project_dir=project_dir,
-                    round_num=round_num,
-                    max_rounds=max_rounds,
-                    phase="convergence",
-                    status="converged",
-                    improvements_path=improvements_path,
-                    check_passed=_check_passed,
-                    check_tests=_check_tests,
-                    check_duration_s=_check_duration,
-                    started_at=_started_at,
-                    usage=_usage_state,
-                )
-
-                # Generate evolution report
-                _generate_evolution_report(project_dir, run_dir, max_rounds, round_num, converged=True, capture_frames=capture_frames)
-
-                # Display completion summary panel
-                duration_s = time.monotonic() - _rounds_start_time
-                summary_stats = _parse_report_summary(run_dir)
-                ui.completion_summary(
-                    status="CONVERGED",
-                    round_num=round_num,
-                    duration_s=duration_s,
-                    improvements=summary_stats["improvements"],
-                    bugs_fixed=summary_stats["bugs_fixed"],
-                    tests_passing=summary_stats["tests_passing"],
-                    report_path=str(run_dir / "evolution_report.md"),
-                    estimated_cost_usd=_usage_cost,
-                )
-
-                # Launch party mode — ONLY in --forever mode.
-                #
-                # Party mode's sole purpose is to draft the next
-                # spec proposal (`<spec>_proposal.md`) so the forever
-                # loop has something to converge toward in the next
-                # cycle.  Without ``--forever``, the session ends on
-                # convergence (exit 0); there is no next cycle, so
-                # running party mode would be wasted work —
-                # potentially costly work (Opus call + multi-turn
-                # brainstorming).  Convergence in non-forever mode
-                # = stop, cleanly.
-                if forever:
-                    _run_party_mode(project_dir, run_dir, ui, spec=spec)
-                else:
-                    _probe(
-                        "convergence reached — skipping party mode "
-                        "(only runs in --forever mode; without forever, "
-                        "convergence = stop)"
-                    )
-
-                if forever:
-                    # Auto-merge the spec proposal into the spec file, then
-                    # restart. README.md is never written by the evolution
-                    # loop — see SPEC.md § "README as a user-level summary".
-                    adoption_result = _forever_restart(
-                        project_dir, run_dir, improvements_path, ui, spec=spec
-                    )
-                    # Backwards-compat: historical _forever_restart returned
-                    # None; current signature returns (spec_adopted, _).
-                    if isinstance(adoption_result, tuple):
-                        spec_adopted, _ = adoption_result
-                    else:
-                        spec_adopted = False
-
-                    # Create a new session directory for the next cycle
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    run_dir = _runs_base(project_dir) / timestamp
-                    run_dir.mkdir(parents=True, exist_ok=True)
-                    # Update TUI with new run_dir for frame capture
-                    if capture_frames:
-                        ui = get_tui(run_dir=run_dir, capture_frames=capture_frames)
-                    ui.run_dir_info(str(run_dir))
-
-                    # Git commit the proposal adoption + reset. When --spec
-                    # differs from README.md and the spec proposal was
-                    # adopted, use a focused feat(spec) commit; otherwise
-                    # (no --spec flag, or nothing adopted) fall back to the
-                    # legacy chore message.
-                    spec_file_for_msg = spec or "README.md"
-                    if spec_file_for_msg != "README.md" and spec_adopted:
-                        spec_stem_msg = Path(spec_file_for_msg).stem
-                        spec_suffix_msg = Path(spec_file_for_msg).suffix or ".md"
-                        proposal_name_msg = f"{spec_stem_msg}_proposal{spec_suffix_msg}"
-                        commit_msg = (
-                            f"feat(spec): adopt {proposal_name_msg}\n"
-                            "\n"
-                            f"- {spec_file_for_msg} updated from {proposal_name_msg}\n"
-                            "- improvements.md reset"
-                        )
-                    else:
-                        commit_msg = (
-                            "chore(evolve): forever mode — adopt proposal, "
-                            "reset improvements"
-                        )
-                    _git_commit(project_dir, commit_msg, ui)
-
-                    # Restart from round 1 via the outer while loop
-                    start_round = 1
-                    break  # break out of for loop, continue while loop
-
-                sys.exit(0)
+            if _success_result is not None:
+                run_dir, ui, start_round = _success_result
+                break
         else:
             # for loop completed without break — max rounds reached
             unchecked = _count_unchecked(improvements_path)
@@ -1493,6 +751,20 @@ def _run_rounds(
 # evolve/round_runner.py.  Re-export keeps patch surfaces intact —
 # tests/test_round_runner_module.py asserts is-identity.
 from evolve.round_runner import _run_single_round_body, run_single_round  # noqa: E402
+
+# US-040: _diagnose_attempt_outcome + _handle_round_success extracted
+# to evolve/round_lifecycle.py to keep this module under the SPEC
+# § "Hard rule: source files MUST NOT exceed 500 lines" cap.  The
+# helpers lazy-import their orchestrator-resident dependencies
+# (``_save_subprocess_diagnostic`` etc.) via ``from evolve.orchestrator
+# import ...`` inside their bodies, preserving ``patch("evolve.
+# orchestrator.X")`` test surfaces.  Tests/test_round_lifecycle_module.py
+# asserts ``is``-identity for both symbols.
+from evolve.round_lifecycle import (  # noqa: E402
+    _AttemptOutcome,
+    _diagnose_attempt_outcome,
+    _handle_round_success,
+)
 
 
 # Re-exports for backward compatibility — the four one-shot orchestrator

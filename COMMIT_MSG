@@ -1,0 +1,39 @@
+STRUCTURAL: refactor(orchestrator): extract round-lifecycle helpers (US-040)
+
+Split `_run_rounds` body into two helpers in a new leaf module
+`evolve/round_lifecycle.py`:
+
+- `_diagnose_attempt_outcome(...)` — encapsulates the L599-L1089
+  attempt-diagnosis block (review-verdict routing, zero-progress
+  detection, diagnostic-prefix branches).  Returns a structured
+  `_AttemptOutcome(attempt_sig, checked, unchecked, round_succeeded,
+  is_review_retry, review_retry_circuit_tripped)` so the orchestrator
+  caller routes follow-up work without re-implementing the logic.
+- `_handle_round_success(...)` — encapsulates the L1132-L1445 post-
+  round-success block (hooks, check parsing, state.json, budget
+  enforcement, FILE TOO LARGE detection, memory curation, SPEC
+  archival, structural-change detection, convergence + party mode +
+  forever restart).  Returns `(new_run_dir, new_ui, new_start_round)`
+  for the forever-restart case, `None` otherwise; calls `sys.exit()`
+  for budget reached (1) / structural change (3) / convergence (0).
+
+Both helpers lazy-import their orchestrator-resident dependencies
+(`_save_subprocess_diagnostic`, `_failure_signature`,
+`_check_review_verdict`, etc.) via `from evolve.orchestrator import ...`
+inside their bodies — preserves `patch("evolve.orchestrator.X")`
+test surfaces (US-036/US-037/US-038 lesson) and the leaf-module
+invariant.  Re-export at orchestrator.py bottom keeps
+`evolve.orchestrator._diagnose_attempt_outcome is
+evolve.round_lifecycle._diagnose_attempt_outcome`.
+
+Mechanical impact:
+- evolve/orchestrator.py: 1514 → 786 lines (-728, exceeds ≥700 target)
+- evolve/round_lifecycle.py: NEW, 822 lines
+- tests/test_round_lifecycle_module.py: NEW, 10 tests covering
+  importability, re-export `is`-identity, leaf-module invariant,
+  ≥700-line orchestrator drop, `_AttemptOutcome` field stability
+- Full suite: 1421 passed (was 1411 + 10 new), 0 regressions
+
+STRUCTURAL: new module under `evolve/` triggers RESTART_REQUIRED
+since this is self-evolution; the running orchestrator must restart
+before it can use the new code path.
