@@ -1773,50 +1773,58 @@ fi
 
 ## evolve-watch auto-restart wrapper
 
-``evolve-watch`` is a thin external supervisor that wraps
-``evolve start`` and auto-restarts on exit code 3 (structural
-change).  Without it, every ``RESTART_REQUIRED`` marker forces an
-operator to re-issue the ``evolve start`` command manually, which
-defeats long unattended runs (especially ``--forever`` sessions
-where the orchestrator may rewrite its own modules several times
-across the run).  The wrapper is shipped as a separate entry
-point so it is **out-of-process**: it survives the orchestrator
-respawn even when the structural change moves or renames the
-``evolve`` package's own files.
+``evolve-watch`` is a relentless external supervisor that wraps
+``evolve start`` and respawns it on **every** non-zero exit until
+the project converges.  It is the canonical way to run evolve
+unattended (overnight, ``--forever`` sessions, CI nightlies):
+without it, every ``RESTART_REQUIRED`` marker (exit 3),
+``--rounds`` boundary (exit 1), transient error (exit 2), and
+circuit-breaker trip (exit 4) forces an operator to re-issue the
+command manually, which defeats long-running self-evolution.  The
+wrapper is shipped as a separate entry point so it is
+**out-of-process**: it survives the orchestrator respawn even
+when the structural change moves or renames the ``evolve``
+package's own files.
 
 **Usage.**  Drop-in replacement for ``evolve``:
 
 ```bash
-# Forever-run with auto-restart
+# Forever-run with auto-restart until convergence
 evolve-watch start . --check pytest --forever
 
-# Bounded run with structural-restart tolerance
+# Bounded-rounds run (the wrapper restarts past each round budget
+# until convergence — exit 1 is just another restart trigger)
 evolve-watch start . --check pytest --rounds 100
 ```
 
 Every CLI argument is forwarded to ``evolve`` unchanged on the
-first invocation.  On exit code 3 the wrapper injects ``--resume``
-(idempotently — already-present ``--resume`` is not duplicated)
-and respawns ``python -m evolve <args>``.  Any other exit code
-(0 / 1 / 2 / 4) is propagated immediately — the wrapper does not
-mask convergence, budget exhaustion, errors, or circuit-breaker
-trips.
+first invocation.  On every non-zero exit the wrapper injects
+``--resume`` (idempotently — already-present ``--resume`` is not
+duplicated) and respawns ``python -m evolve <args>``.
 
-**Safety net — restart-rate cap.**  If exit code 3 fires more
-than ``MAX_RESTARTS_PER_WINDOW`` times within
-``RESTART_WINDOW_SECONDS`` (defaults: 5 / 1800s), the wrapper
-gives up with exit code 5.  This catches the failure mode where a
-round writes ``RESTART_REQUIRED`` deterministically every time
-(broken structural-detection logic, bad commit message convention,
-test that always trips the marker) — without the cap the wrapper
-would respawn forever and burn tokens.
+**Stop conditions — exactly two.**  The wrapper exits in only
+these cases:
 
-**Signal handling.**  ``SIGINT`` / ``SIGTERM`` received by the
-wrapper are forwarded to the running ``evolve`` child.  The
-wrapper waits up to 10s for the child to exit cleanly, then
-``SIGKILL``s and propagates the exit code — so ``Ctrl+C`` works
-the same whether you launched ``evolve start`` directly or via
-``evolve-watch``.
+1. **Convergence (exit 0).**  ``evolve`` reports the project
+   matches the spec.  The wrapper propagates 0 and stops.
+2. **Operator signal.**  ``SIGINT`` (Ctrl+C) or ``SIGTERM``
+   received by the wrapper is forwarded to the running ``evolve``
+   child; the wrapper waits up to 10s for clean exit (then
+   ``SIGKILL``s), and propagates the child's exit code without
+   restarting.  This is how the operator interrupts an unattended
+   session.
+
+**No restart cap by design.**  Earlier versions of the wrapper
+shipped with a sliding-window cap (5 restarts per 30 minutes,
+exit 5 on cap hit).  That cap was removed because it conflicted
+with the wrapper's stated purpose: long unattended self-evolution
+runs that survive structural commits, hit ``--rounds`` budgets,
+encounter transient SDK errors, and even trip orchestrator
+circuit-breakers — *all of which* the operator wants the wrapper
+to recover from.  Deterministic-failure-loop detection is the
+orchestrator's circuit-breaker territory (§ "Circuit breakers"),
+not the wrapper's.  An operator who needs a bounded version
+simply runs plain ``evolve`` without the wrapper.
 
 **stderr-only logging.**  All wrapper messages
 (``[evolve-watch <ts>] …``) go to stderr, never stdout.  This
@@ -1828,7 +1836,7 @@ evolve-watch start . --check pytest --json > evolve-output.jsonl
 ```
 
 **Implementation.**  Single self-contained module
-(``evolve/watcher.py``, ~150 lines), no dependencies beyond
+(``evolve/watcher.py``, ~120 lines), no dependencies beyond
 stdlib, entry point ``evolve-watch`` registered in
 ``pyproject.toml``.  Installed automatically by
 ``pip install -e .`` alongside the main ``evolve`` command.
