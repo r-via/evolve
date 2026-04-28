@@ -13,8 +13,13 @@ from evolve.application.run_round import run_round
 from evolve.application.run_loop import run_loop
 from evolve.application.retry_policy import should_retry
 from evolve.application.convergence_check import check_convergence
+from evolve.application.draft_us import draft_us
+from evolve.application.review_round import review_round
+from evolve.application.analyze_and_fix import analyze_and_fix
 from evolve.domain.round import RoundKind, RoundResult
 from evolve.domain.convergence import ConvergenceGate
+from evolve.domain.improvement import USItem
+from evolve.domain.review_verdict import ReviewVerdict
 
 
 # ── Importability & stub behavior ─────────────────────────────
@@ -62,6 +67,36 @@ class TestConvergenceCheck:
             check_convergence(gates)
 
 
+# ── Authoring-context stubs (US-060) ─────────────────────────
+
+
+class TestDraftUs:
+    def test_importable(self):
+        assert callable(draft_us)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="draft_us stub"):
+            draft_us()
+
+
+class TestReviewRound:
+    def test_importable(self):
+        assert callable(review_round)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="review_round stub"):
+            review_round(round_num=1)
+
+
+class TestAnalyzeAndFix:
+    def test_importable(self):
+        assert callable(analyze_and_fix)
+
+    def test_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="analyze_and_fix stub"):
+            analyze_and_fix(round_num=1)
+
+
 # ── DDD dependency rule: application imports only from domain ──
 
 
@@ -102,6 +137,9 @@ class TestApplicationPurity:
             "run_loop.py",
             "retry_policy.py",
             "convergence_check.py",
+            "draft_us.py",
+            "review_round.py",
+            "analyze_and_fix.py",
         }
         actual = {f.name for f in self.APP_DIR.glob("*.py")}
         assert expected.issubset(actual), (
