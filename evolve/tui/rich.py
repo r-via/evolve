@@ -350,6 +350,16 @@ class RichTUI:
         self.console.print()
         self.console.print(panel)
 
+    def agent_warn(self, message: str) -> None:
+        """Display a yellow warning panel for SDK termination signals."""
+        from rich.panel import Panel
+        self.console.print(Panel(
+            f"[bold yellow]{message}[/bold yellow]",
+            border_style="yellow",
+            title="[yellow]Agent Warning[/yellow]",
+            width=min(self.console.width, 60),
+        ))
+
     def subprocess_output(self, line: str) -> None:
         """Forward a line of subprocess stdout through the Rich console.
 

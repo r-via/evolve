@@ -165,6 +165,9 @@ class JsonTUI:
                     round=marker.get("round", ""),
                     timestamp=marker.get("timestamp", ""))
 
+    def agent_warn(self, message: str) -> None:
+        self._emit("agent_warn", message=message)
+
     def subprocess_output(self, line: str) -> None:
         """Emit a structured JSON event per subprocess output line. The event
         ``type`` is ``subprocess_output`` with the raw line as ``line``

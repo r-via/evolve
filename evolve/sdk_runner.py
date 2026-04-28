@@ -272,7 +272,7 @@ async def run_claude_agent(
             _warn_msg = f"Agent stopped: {final_subtype}"
             if final_num_turns is not None:
                 _warn_msg += f" after {final_num_turns} turns"
-            ui.warn(f"⚠ {_warn_msg}")
+            ui.agent_warn(_warn_msg)
 
     # Write usage_round_N.json — always, even if counts are zero (the
     # aggregate_usage scanner expects the file to exist for tracked rounds).

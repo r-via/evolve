@@ -206,6 +206,10 @@ class PlainTUI:
         print(f"    $ git reset --hard HEAD~1")
         print(f"{'─' * 56}")
 
+    def agent_warn(self, message: str) -> None:
+        """Print a warning to stderr for SDK termination signals."""
+        print(f"⚠ {message}", file=sys.stderr)
+
     def subprocess_output(self, line: str) -> None:
         """Forward raw subprocess stdout. PlainTUI has no record buffer, so
         this is a direct ``sys.stdout`` write with an explicit flush to
