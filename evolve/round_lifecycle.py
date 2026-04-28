@@ -280,6 +280,22 @@ def _diagnose_attempt_outcome(
         and not converged_written
     )
 
+    # Convergence-already-detected carve-out.  A draft round invoked
+    # on a drained backlog with the CONVERGED marker already present
+    # is the correct terminal state: the agent observed convergence,
+    # decided there is nothing to draft, and returned without edits.
+    # Without this carve-out the round falls through to the silent
+    # "agent ran but changed nothing" no-progress catchall and the
+    # parent loop's convergence check (which would normally read
+    # CONVERGED and exit cleanly) is never reached because the round
+    # is marked as failed.  Treating this as a successful round lets
+    # the parent loop see CONVERGED and stop the session.
+    if converged_written and unchecked_remaining == 0 and imp_unchanged:
+        return _AttemptOutcome(
+            attempt_sig=None, checked=checked, unchecked=unchecked,
+            round_succeeded=True,
+        )
+
     # Round-level "already-done" escape hatch
     try:
         _r_end = subprocess.run(
