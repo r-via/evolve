@@ -64,6 +64,11 @@ from evolve.infrastructure.claude_sdk.draft_review import (
     run_review_agent,
 )
 
+from evolve.infrastructure.claude_sdk.party import (
+    _run_party_mode,
+    _forever_restart,
+)
+
 __all__ = [  # noqa: E501
     "CURATION_LINE_THRESHOLD",
     "CURATION_ROUND_INTERVAL",
@@ -108,4 +113,6 @@ __all__ = [  # noqa: E501
     "_build_review_prompt",
     "_run_review_claude_agent",
     "run_review_agent",
+    "_run_party_mode",
+    "_forever_restart",
 ]

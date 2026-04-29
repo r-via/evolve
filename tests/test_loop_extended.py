@@ -139,7 +139,7 @@ class TestRunPartyMode:
         """
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
-        with patch("evolve.party.Path") as mock_path:
+        with patch("evolve.infrastructure.claude_sdk.party.Path") as mock_path:
             # Any Path(...) returns an object whose is_dir() is False, and
             # whose ``.parent.parent / "agents"`` sub-path is likewise
             # absent — covers both the project-local and the

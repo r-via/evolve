@@ -379,7 +379,7 @@ class TestPartyModeEndToEnd:
 
         mock_ui = MagicMock()
 
-        with patch("evolve.party.get_tui", return_value=mock_ui), \
+        with patch("evolve.infrastructure.claude_sdk.party.get_tui", return_value=mock_ui), \
              patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
              patch.object(_asyncio, 'run', side_effect=lambda c: c.close()):
             _run_party_mode(tmp_path, run_dir, ui=None)
