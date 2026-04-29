@@ -25,6 +25,16 @@ from evolve.infrastructure.claude_sdk.prompt_builder import (
     build_prompt,
 )
 
+from evolve.infrastructure.claude_sdk.memory_curation import (
+    CURATION_LINE_THRESHOLD,
+    CURATION_ROUND_INTERVAL,
+    _CURATION_MAX_SHRINK,
+    _should_run_curation,
+    build_memory_curation_prompt,
+    _run_memory_curation_claude_agent,
+    run_memory_curation,
+)
+
 from evolve.infrastructure.claude_sdk.prompt_diagnostics import (
     _PREV_ATTEMPT_LOG_FMT,
     _MEMORY_WIPED_HEADER_FMT,
@@ -35,7 +45,14 @@ from evolve.infrastructure.claude_sdk.prompt_diagnostics import (
     build_prev_attempt_section,
 )
 
-__all__ = [
+__all__ = [  # noqa: E501
+    "CURATION_LINE_THRESHOLD",
+    "CURATION_ROUND_INTERVAL",
+    "_CURATION_MAX_SHRINK",
+    "_should_run_curation",
+    "build_memory_curation_prompt",
+    "_run_memory_curation_claude_agent",
+    "run_memory_curation",
     "MODEL",
     "MAX_TURNS",
     "DRAFT_EFFORT",
