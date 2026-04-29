@@ -307,7 +307,7 @@ class TestSyncReadmeAgent:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.agent.get_tui", return_value=mock_tui):
+        with patch("evolve.tui.get_tui", return_value=mock_tui):
             from evolve.agent import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test prompt", proj, run_dir))
 
@@ -336,7 +336,7 @@ class TestSyncReadmeAgent:
 
         sdk.query = _query
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()):
+        with patch("evolve.tui.get_tui", return_value=MagicMock()):
             from evolve.agent import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test", proj, run_dir))
 
@@ -360,7 +360,7 @@ class TestSyncReadmeAgent:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.agent.get_tui", return_value=mock_tui):
+        with patch("evolve.tui.get_tui", return_value=mock_tui):
             from evolve.agent import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test", proj, run_dir))
 
@@ -380,7 +380,7 @@ class TestSyncReadmeAgent:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.agent.get_tui", return_value=mock_tui):
+        with patch("evolve.tui.get_tui", return_value=mock_tui):
             from evolve.agent import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test", proj, run_dir))
 
@@ -399,7 +399,7 @@ class TestSyncReadmeAgent:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.agent.get_tui", return_value=mock_tui):
+        with patch("evolve.tui.get_tui", return_value=mock_tui):
             from evolve.agent import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test", proj, run_dir))
 
