@@ -69,6 +69,24 @@ from evolve.infrastructure.claude_sdk.party import (
     _forever_restart,
 )
 
+from evolve.infrastructure.claude_sdk.oneshot_agents import (
+    _build_check_section,
+    build_validate_prompt,
+    build_dry_run_prompt,
+    _run_readonly_claude_agent,
+    _run_dry_run_claude_agent,
+    run_dry_run_agent,
+    _run_validate_claude_agent,
+    run_validate_agent,
+    build_diff_prompt,
+    _run_diff_claude_agent,
+    run_diff_agent,
+    SYNC_README_NO_CHANGES_SENTINEL,
+    build_sync_readme_prompt,
+    _run_sync_readme_claude_agent,
+    run_sync_readme_agent,
+)
+
 __all__ = [  # noqa: E501
     "CURATION_LINE_THRESHOLD",
     "CURATION_ROUND_INTERVAL",
@@ -115,4 +133,19 @@ __all__ = [  # noqa: E501
     "run_review_agent",
     "_run_party_mode",
     "_forever_restart",
+    "_build_check_section",
+    "build_validate_prompt",
+    "build_dry_run_prompt",
+    "_run_readonly_claude_agent",
+    "_run_dry_run_claude_agent",
+    "run_dry_run_agent",
+    "_run_validate_claude_agent",
+    "run_validate_agent",
+    "build_diff_prompt",
+    "_run_diff_claude_agent",
+    "run_diff_agent",
+    "SYNC_README_NO_CHANGES_SENTINEL",
+    "build_sync_readme_prompt",
+    "_run_sync_readme_claude_agent",
+    "run_sync_readme_agent",
 ]
