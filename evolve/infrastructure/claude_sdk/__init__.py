@@ -18,6 +18,13 @@ from evolve.infrastructure.claude_sdk.runner import (
     run_claude_agent,
 )
 
+from evolve.infrastructure.claude_sdk.prompt_builder import (
+    PromptBlocks,
+    _load_project_context,
+    build_prompt_blocks,
+    build_prompt,
+)
+
 __all__ = [
     "MODEL",
     "MAX_TURNS",
@@ -31,4 +38,8 @@ __all__ = [
     "_run_agent_with_retries",
     "_build_multimodal_prompt",
     "run_claude_agent",
+    "PromptBlocks",
+    "_load_project_context",
+    "build_prompt_blocks",
+    "build_prompt",
 ]
