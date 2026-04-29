@@ -33,3 +33,7 @@
 | 029 | dotevolve-directory-rationale | 2026-04-28 | Every 20 rounds (round 20); design rationale for `.evolve/` dotfile convention, decision locked |
 | 030 | legacy-flat-module-layout | 2026-04-29 | Every 20 rounds (round 20); flat module table + package tree superseded by DDD layered architecture, modules actively migrating |
 | 031 | us-persona-pipeline-protocol | 2026-04-29 | Every 20 rounds (round 20); settled three-persona pipeline (Winston/John/Amelia) + orchestrator US-format enforcement, encoded in prompt files |
+| 032 | forever-flag-behavior | 2026-04-29 | Every 20 rounds (round 40); stable --forever branch model + cycle diagram + operator options, fully implemented, untouched in 30+ commits |
+| 033 | json-output-schema | 2026-04-29 | Every 20 rounds (round 40); stable JSON event schema + examples + JsonTUI protocol note, fully implemented |
+| 034 | max-cost-mechanism | 2026-04-29 | Every 20 rounds (round 40); stable budget mechanism + config + TUI message, fully implemented |
+| 035 | tui-features | 2026-04-29 | Every 20 rounds (round 40); stable TUI feature enumeration + completion summary, code is self-documenting |

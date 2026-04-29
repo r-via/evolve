@@ -673,81 +673,23 @@ evolve start ~/projects/my-tool --check "pytest" --resume
 If no previous session exists, `--resume` starts a fresh session (same as
 without the flag).
 
-### The --forever flag
+### The --forever flag (archived)
 
 Autonomous evolution mode. Runs indefinitely on a **separate git branch**
-until the operator stops it (Ctrl+C or kill).
+(`evolve/<timestamp>`) until the operator stops it (Ctrl+C or kill). Cycles
+through convergence → party mode → spec adoption → new evolution loop.
+Combines well with `--allow-installs` for fully autonomous evolution.
 
-```bash
-evolve start ~/projects/my-tool --check "pytest" --forever
-```
+→ Full behavior + branch diagram + operator options: [`SPEC/archive/032-forever-flag-behavior.md`]
 
-**How it works:**
+### The --json flag (archived)
 
-1. Creates a new branch `evolve/<timestamp>` from the current branch
-2. Runs the normal evolution loop (Phase 1-4) until convergence
-3. After convergence, launches party mode — agents brainstorm the next cycle
-4. **Instead of waiting for operator approval**, automatically merges the
-   `<spec>_proposal.md` into the spec file
-5. Resets `improvements.md` and starts a new evolution loop against the
-   updated spec
-6. Repeats until stopped by the operator
+Switches output to structured JSON events on stdout (one JSON object per
+line). Designed for CI/CD pipelines, monitoring dashboards, and programmatic
+consumption. `JsonTUI` implements `TUIProtocol` alongside `RichTUI` and
+`PlainTUI`.
 
-```
-main ──────────────────────────────────────────────────
-       \
-        evolve/20260324_220000 ─── round 1 ─── round 2 ─── CONVERGED
-                                                                │
-                                                          party mode
-                                                                │
-                                                     SPEC_proposal → SPEC.md
-                                                                │
-                                                          round 1 ─── round 2 ─── CONVERGED
-                                                                                       │
-                                                                                 party mode
-                                                                                       │
-                                                                                     ...
-```
-
-All work happens on the `evolve/*` branch — `main` is never touched. The
-operator can:
-- Watch progress in real-time via the TUI
-- Review the branch at any time (`git log evolve/<timestamp>`)
-- Merge when satisfied (`git merge evolve/<timestamp>`)
-- Or discard the branch entirely (`git branch -D evolve/<timestamp>`)
-
-Combines well with `--allow-installs` for fully autonomous evolution:
-
-```bash
-evolve start ~/projects/my-tool --check "pytest" --forever --allow-installs
-```
-
-### The --json flag
-
-Switches output from the interactive TUI to structured JSON events on stdout.
-Each line is a valid JSON object. Designed for CI/CD pipelines, monitoring
-dashboards, and programmatic consumption.
-
-```bash
-evolve start ~/projects/my-tool --check "pytest" --json
-```
-
-Each line is a JSON object with a `type`, `timestamp`, and event-specific fields:
-
-```json
-{"type": "round_start", "timestamp": "2026-03-24T16:00:00Z", "round": 1, "max_rounds": 10}
-{"type": "check_result", "timestamp": "2026-03-24T16:00:05Z", "label": "check", "cmd": "pytest", "passed": true}
-{"type": "agent_tool", "timestamp": "2026-03-24T16:01:00Z", "tool": "Edit", "input": "src/parser.py"}
-{"type": "improvement_completed", "timestamp": "2026-03-24T16:02:00Z", "description": "Add input validation"}
-{"type": "converged", "timestamp": "2026-03-24T16:05:00Z", "round": 3, "reason": "All spec claims verified"}
-{"type": "hook_fired", "timestamp": "2026-03-24T16:05:01Z", "event": "on_converged", "success": true}
-{"type": "usage", "timestamp": "2026-03-24T16:02:01Z", "round": 1, "input_tokens": 45230, "output_tokens": 12400, "estimated_cost_usd": 1.24}
-{"type": "budget_reached", "timestamp": "2026-03-24T16:10:00Z", "budget_usd": 10.0, "spent_usd": 10.24}
-```
-
-The `JsonTUI` class implements the same `TUIProtocol` as `RichTUI` and
-`PlainTUI`, ensuring all output methods are available in JSON mode with zero
-changes to business logic.
+→ Full event schema + examples: [`SPEC/archive/033-json-output-schema.md`]
 
 ### --allow-installs mode
 
@@ -767,55 +709,14 @@ deprecated aliases for one release cycle. They behave identically to
 `--allow-installs` but emit a `DeprecationWarning` to stderr pointing at the
 new name. They will be removed in a future version.
 
-### The --max-cost flag
+### The --max-cost flag (archived)
 
-Budget cap for a session's estimated API cost. When the cumulative estimated
-cost exceeds the budget, the session pauses gracefully after the current
-round completes (the in-progress round is never interrupted mid-work).
+Budget cap for estimated API cost per session. Pauses gracefully after the
+current round when cumulative cost exceeds the cap. Configurable via CLI
+(`--max-cost 10.00`), `evolve.toml` (`max_cost_usd`), or `EVOLVE_MAX_COST`.
+Default: no cap. Resume with `--resume` and a higher cap.
 
-```bash
---max-cost 10.00    # Pause after ~$10.00 estimated spend
---max-cost 50       # Pause after ~$50.00
-```
-
-Also configurable via `evolve.toml`:
-
-```toml
-[tool.evolve]
-max_cost_usd = 10.0
-```
-
-And `EVOLVE_MAX_COST` environment variable. Resolution order is standard:
-CLI → env → `evolve.toml` → `pyproject.toml` → default.
-
-**Default: no budget cap** (unset). When unset, the session runs until
-convergence or `max_rounds`, whichever comes first. Setting a budget does
-not change any other behavior — rounds, convergence gates, and retries all
-work identically.
-
-**How it works:**
-
-1. After each round, the orchestrator reads `usage_round_N.json` and
-   accumulates the session's token counts
-2. The cost estimation function converts tokens to estimated USD using the
-   model's rate (see § "Cost estimation")
-3. If cumulative estimated cost exceeds `--max-cost`, the session pauses:
-   - Writes `state.json` with `status: "budget_reached"`
-   - Fires `on_error` hook with `EVOLVE_STATUS=budget_reached`
-   - Prints a clear TUI panel explaining the budget was reached
-   - Exits with code 1 (same as max rounds — work remains)
-4. The operator can resume with `--resume` and a higher `--max-cost`
-
-**Budget-reached TUI message:**
-
-```
-╭──────────── Budget Reached ─────────────╮
-│ ⚠️  Session paused at round 5           │
-│ Budget: $10.00 / Used: $10.24            │
-│ Use --resume with a higher --max-cost    │
-│ to continue                              │
-╰──────────────────────────────────────────╯
-```
+→ Full mechanism + config + TUI message: [`SPEC/archive/034-max-cost-mechanism.md`]
 
 ### `evolve sync-readme` (archived)
 
@@ -1324,34 +1225,14 @@ commits, check results, and usage files.
 
 ---
 
-## TUI
+## TUI (archived)
 
-Evolve features a modern terminal UI powered by `rich` (optional — falls back
-to plain text when `rich` is not installed).
+Evolve features a terminal UI powered by `rich` (optional fallback to plain
+text). Three implementations (`RichTUI`, `PlainTUI`, `JsonTUI`) all satisfy
+`TUIProtocol`. Features include round panels, activity feed, cost display,
+budget-reached panel, and completion summary.
 
-### TUI features
-
-- Colored panels for round headers with progress bars
-- Real-time agent activity feed (tools used, files edited)
-- Check command results with pass/fail indicators
-- Git commit + push status
-- Per-round estimated cost display in round headers
-- Completion summary panel on exit (including total cost)
-- Budget-reached panel when `--max-cost` is exceeded
-- Graceful fallback to plain text when `rich` is not installed
-- TUI interface enforced via Protocol — `RichTUI`, `PlainTUI`, and `JsonTUI`
-  all implement the same `TUIProtocol`, guaranteeing method parity at
-  type-check time
-- Optional frame capture: snapshot the rendered TUI as PNG at round end /
-  convergence / errors, so party-mode agents can reason visually — see
-  "Frame capture" below
-
-### Completion summary
-
-When evolution finishes (converged or max rounds), evolve prints a summary
-panel to the terminal. The summary is generated from the session's
-`evolution_report.md` and displayed through the TUI (Rich panel, plain text,
-or JSON event depending on output mode).
+→ Full feature list + completion summary: [`SPEC/archive/035-tui-features.md`]
 
 ### Frame capture (archived)
 
