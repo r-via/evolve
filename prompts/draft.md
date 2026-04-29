@@ -34,55 +34,133 @@ with a one-line justification per gate (spec freshness +
 backlog drained).  The orchestrator reads the file you wrote;
 it never creates one itself.
 
-## Step 0 — Verify the claim is genuinely missing (MANDATORY)
+## Step 0 — Spec audit + claim verification (MANDATORY)
 
-**Before** Winston's architectural pass, you MUST prove that the
-claim you intend to draft is NOT already implemented in the
-current codebase.  Drafting an already-implemented claim is the
-single most common failure mode of this agent — it produces a US
-whose acceptance criteria the next implement round either
-rediscovers as already done (wasting a full round confirming
-"nothing to do") or worse, refactors working code to match an
-imagined future shape.
+You have **two opposite failure modes** to avoid, and the second
+is more dangerous:
 
-**The verification protocol** — your conversation log MUST
-contain a "Step 0" block BEFORE the Winston block, showing
-EVERY proposed US claim explicitly checked against current
-state:
+- **False positive (drafting an already-done claim)** — wastes one
+  implement round.  Recoverable.
+- **False negative (declaring CONVERGED when claims are still
+  missing)** — closes the run on a lie.  Real bugs ship.  This
+  is what happens when the agent reads a section heading like
+  "Synthesize" and concludes "we have ``templates.ts`` so it's
+  done" — without checking that the **body** of the section now
+  describes Playwright + vision + render-diff loop, none of which
+  exist in ``templates.ts``.
 
-1. **Identify candidate claims.**  Read ``SPEC.md`` (and any
-   ``--spec`` target) and list 3–5 candidate non-implemented
-   claims you might draft.
-2. **Grep / Glob for each candidate's evidence.**  For every
-   candidate, run at least one of:
-   - ``Grep`` for the function names, file names, constants, or
-     CLI flags the claim mentions.
-   - ``Glob`` for the file paths the claim says should exist.
-   - ``Read`` of the relevant module to confirm the symbol is
-     absent / different from what the claim describes.
+The protocol below is structured so the false-negative path is
+hard to reach.  Step 0a (spec audit, mandatory before anything
+else) walks every section of the spec keyword-by-keyword.  Step
+0b only confirms the candidate you propose to draft.  CONVERGED
+is allowed **only after Step 0a passes for every section**.
+
+### Step 0a — Spec audit (MANDATORY, run before candidate selection)
+
+Walk the spec section by section.  For each section / sub-section
+heading, produce a four-column row in your conversation log:
+
+| Section heading | Distinctive keywords | Grep result | Status |
+| --- | --- | --- | --- |
+
+Rules for each column:
+
+1. **Section heading.**  Use the exact heading text from the
+   spec.  Cover every ``##`` and ``###`` heading reachable from
+   the spec root.  Sub-sections that document concrete behaviour
+   (not just narrative) MUST be listed individually — never roll
+   them up into the parent.
+2. **Distinctive keywords.**  Extract the 2–5 most spec-specific
+   nouns / function names / file paths / CLI flags / library
+   names / numeric thresholds appearing **in the body** of the
+   section.  "Distinctive" means: words that would only appear
+   in code that implements this exact claim, not generic
+   vocabulary the section title would suggest by itself.
+   Examples: "Playwright", "MCP", "screenshot", "render-diff",
+   "SSIM 0.95", "pixelmatch", "vision-capable", ``--limit``,
+   ``CRAWL_RESPECT_ROBOTS``, ``synthesizeTemplates``.  The
+   heading "Synthesize" is **not** distinctive on its own — the
+   keywords inside it are.
+3. **Grep result.**  Run ``Grep`` against the codebase for each
+   keyword (or a regex covering several).  Record the hit
+   count and, when present, the top file path(s).  Zero hits
+   means the keyword is genuinely absent from code.
+4. **Status.**
+   - **COVERED** — every distinctive keyword has at least one
+     non-test code hit and the symbol's shape matches the
+     section's description.
+   - **PARTIAL** — some keywords hit, others don't.  Treat as
+     missing for convergence purposes; spawn a US.
+   - **MISSING** — most or all distinctive keywords have zero
+     hits.  Spawn a US.
+
+If ANY row is PARTIAL or MISSING, you are NOT converged.  Pick
+the highest-priority missing claim and proceed to Step 0b.
+
+**Anti-pattern (causes false convergence)** — concluding that a
+section is COVERED because a *file with a related name* exists
+(``templates.ts`` for the "Synthesize" section) without checking
+that the file's content actually contains the distinctive
+keywords from the section body.  A section that has been
+**rewritten** since the matching code was last touched is almost
+always MISSING or PARTIAL, regardless of what file names exist.
+
+**Spec-rewrite detector.**  Before declaring any row COVERED,
+check whether the section was edited more recently than its
+likely implementation file (``stat -c %Y SPEC.md`` and the file
+the row points to).  When the spec is newer, the row defaults
+to PARTIAL until you have grep evidence for the **new**
+keywords specifically — not just the keywords the old version
+of the section used.
+
+### Step 0b — Verify the candidate is genuinely missing
+
+Once Step 0a has identified at least one PARTIAL/MISSING row,
+verify the candidate you intend to draft a US for:
+
+1. **Identify candidate claims.**  Pick the highest-priority
+   PARTIAL/MISSING row.  If multiple are tied, prefer claims
+   whose absence blocks the build (the pipeline crashes) over
+   claims that are merely cosmetic.
+2. **Re-grep for the candidate's distinctive keywords** to
+   confirm absence.  Repeat the Step 0a check at deeper detail
+   if needed (``Read`` the relevant module to confirm the
+   symbol is genuinely missing or has a different shape).
 3. **Reject candidates whose evidence shows them implemented.**
-   If ``Grep`` finds the function, if ``Glob`` finds the file
-   path, if ``Read`` shows the symbol with the spec'd shape —
-   the claim is **already done**.  Strike it from the candidate
-   list and move on.  Do NOT rationalize a draft on top of
-   working code by claiming "but it could be cleaner / more
-   tested / more documented".  That is scope-creep dressed as
-   spec compliance.
-4. **Pick the first surviving candidate.**  The first candidate
-   whose evidence shows it genuinely absent is the one Winston
-   takes forward.  If ALL candidates are implemented, write
-   nothing to ``improvements.md``, explain in your final text
-   message that every checked claim was already implemented (cite
-   the evidence — file paths, line numbers, function names), and
-   then **use the Write tool to create ``{run_dir}/CONVERGED``**
-   with a one-line justification.  Do not return without writing
-   it — that triggers the zero-progress retry loop.
+   If the deeper check reveals the keywords were just in a
+   different file than expected, mark the row COVERED in
+   Step 0a and try the next PARTIAL/MISSING row.  Do NOT
+   rationalize a draft on top of working code by claiming
+   "but it could be cleaner / more tested / more documented".
+4. **Pick the first surviving candidate.**  That is the one
+   Winston takes forward.
 
-Any draft committed without a visible Step 0 block — or whose
-Step 0 block does not include concrete grep / glob / read
-evidence for the surviving candidate — is treated as a failed
-draft round (scope-creep diagnostic) and the round is rolled
-back on the next attempt.
+### Convergence (CONVERGED file)
+
+Allowed **only** when:
+
+- Step 0a produced a complete table with every row marked
+  COVERED.
+- Every ``[x]`` claim in ``improvements.md`` matches at least
+  one COVERED row in the table (if a backlog item describes
+  something the spec no longer mentions, log it but do not
+  block — the spec is canonical).
+- ``mtime(improvements.md) >= mtime(SPEC.md)`` (the spec
+  freshness gate).
+
+When all three pass, write nothing to ``improvements.md`` and
+**use the Write tool to create ``{run_dir}/CONVERGED``** with a
+one-line justification per gate plus the COVERED-row count.
+Without that file the run never ends.
+
+If Step 0a flagged any PARTIAL/MISSING row, you MUST draft a
+US (do not write CONVERGED).  Drafting and writing CONVERGED
+in the same round are mutually exclusive outcomes.
+
+Any draft committed without a visible Step 0a table + Step 0b
+block — or whose entries lack concrete grep / glob / read
+evidence — is treated as a failed draft round (scope-creep
+diagnostic) and rolled back on the next attempt.
 
 ## Three-persona pipeline
 

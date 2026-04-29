@@ -1,5 +1,12 @@
 """evolve.infrastructure.filesystem — run-dir, state.json, conversation logs."""
 
+from evolve.infrastructure.filesystem.orchestrator_constants import (
+    MAX_DEBUG_RETRIES,
+    _BACKLOG_VIOLATION_HEADER,
+    _BACKLOG_VIOLATION_PREFIX,
+    _MEMORY_COMPACTION_MARKER,
+    _MEMORY_WIPE_THRESHOLD,
+)
 from evolve.infrastructure.filesystem.improvement_parser import (
     _count_blocked,
     _count_checked,
@@ -23,6 +30,11 @@ from evolve.infrastructure.filesystem.state_manager import (
 )
 
 __all__ = [
+    "MAX_DEBUG_RETRIES",
+    "_BACKLOG_VIOLATION_HEADER",
+    "_BACKLOG_VIOLATION_PREFIX",
+    "_MEMORY_COMPACTION_MARKER",
+    "_MEMORY_WIPE_THRESHOLD",
     "_RunsLayoutError",
     "_check_spec_freshness",
     "_compute_backlog_stats",
