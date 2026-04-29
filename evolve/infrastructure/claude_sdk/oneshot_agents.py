@@ -398,15 +398,17 @@ _LAZY_REEXPORTS = {
     "_run_diff_claude_agent": ("evolve.diff_agent", "_run_diff_claude_agent"),
     "run_diff_agent": ("evolve.diff_agent", "run_diff_agent"),
     "SYNC_README_NO_CHANGES_SENTINEL": (
-        "evolve.sync_readme", "SYNC_README_NO_CHANGES_SENTINEL",
+        "evolve.infrastructure.claude_sdk.sync_readme", "SYNC_README_NO_CHANGES_SENTINEL",
     ),
     "build_sync_readme_prompt": (
-        "evolve.sync_readme", "build_sync_readme_prompt",
+        "evolve.infrastructure.claude_sdk.sync_readme", "build_sync_readme_prompt",
     ),
     "_run_sync_readme_claude_agent": (
-        "evolve.sync_readme", "_run_sync_readme_claude_agent",
+        "evolve.infrastructure.claude_sdk.sync_readme", "_run_sync_readme_claude_agent",
     ),
-    "run_sync_readme_agent": ("evolve.sync_readme", "run_sync_readme_agent"),
+    "run_sync_readme_agent": (
+        "evolve.infrastructure.claude_sdk.sync_readme", "run_sync_readme_agent",
+    ),
 }
 
 
