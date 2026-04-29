@@ -255,9 +255,3 @@ def _forever_restart(
     improvements_path.write_text("# Improvements\n")
 
     return spec_adopted, False
-
-    # Remove the CONVERGED marker so the next cycle starts fresh
-    converged_path = run_dir / "CONVERGED"
-    if converged_path.is_file():
-        # Keep it in the old run dir — it's already been processed
-        pass
