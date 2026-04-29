@@ -28,6 +28,9 @@ import evolve.memory_curation as memory_curation_mod
 import evolve.oneshot_agents as oneshot_agents_mod
 import evolve.sdk_runner as sdk_runner_mod
 import evolve.infrastructure.claude_sdk.runner as infra_runner_mod
+import evolve.infrastructure.claude_sdk.oneshot_agents as infra_oneshot_agents_mod
+import evolve.infrastructure.claude_sdk.memory_curation as infra_memory_curation_mod
+import evolve.infrastructure.claude_sdk.spec_archival as infra_spec_archival_mod
 import evolve.spec_archival as spec_archival_mod
 import evolve.sync_readme as sync_readme_mod
 from evolve.agent import DRAFT_EFFORT, REVIEW_EFFORT
@@ -60,6 +63,9 @@ SDK_RUNNER_SRC = (Path(sdk_runner_mod.__file__)).read_text()
 # lives in ``evolve/infrastructure/claude_sdk/runner.py``.  Include both
 # so the source-grep finds the kwarg regardless of migration state.
 INFRA_RUNNER_SRC = (Path(infra_runner_mod.__file__)).read_text()
+INFRA_ONESHOT_AGENTS_SRC = (Path(infra_oneshot_agents_mod.__file__)).read_text()
+INFRA_MEMORY_CURATION_SRC = (Path(infra_memory_curation_mod.__file__)).read_text()
+INFRA_SPEC_ARCHIVAL_SRC = (Path(infra_spec_archival_mod.__file__)).read_text()
 SPEC_ARCHIVAL_SRC = (Path(spec_archival_mod.__file__)).read_text()
 SYNC_README_SRC = (Path(sync_readme_mod.__file__)).read_text()
 COMBINED_SRC = (
@@ -67,10 +73,13 @@ COMBINED_SRC = (
     + DRAFT_REVIEW_SRC + "\n"
     + INFRA_DRAFT_REVIEW_SRC + "\n"
     + ONESHOT_AGENTS_SRC + "\n"
+    + INFRA_ONESHOT_AGENTS_SRC + "\n"
     + MEMORY_CURATION_SRC + "\n"
+    + INFRA_MEMORY_CURATION_SRC + "\n"
     + SDK_RUNNER_SRC + "\n"
     + INFRA_RUNNER_SRC + "\n"
     + SPEC_ARCHIVAL_SRC + "\n"
+    + INFRA_SPEC_ARCHIVAL_SRC + "\n"
     + SYNC_README_SRC
 )
 

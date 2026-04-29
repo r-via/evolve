@@ -78,14 +78,37 @@ from evolve.infrastructure.claude_sdk.oneshot_agents import (
     run_dry_run_agent,
     _run_validate_claude_agent,
     run_validate_agent,
-    build_diff_prompt,
-    _run_diff_claude_agent,
-    run_diff_agent,
-    SYNC_README_NO_CHANGES_SENTINEL,
-    build_sync_readme_prompt,
-    _run_sync_readme_claude_agent,
-    run_sync_readme_agent,
 )
+
+# Diff-agent and sync-readme re-exports are LAZY to break the circular
+# import: agent_runtime → __init__ → oneshot_agents → sync_readme →
+# agent_runtime.  They are resolved on first attribute access below.
+_LAZY_REEXPORTS = {
+    "build_diff_prompt": ("evolve.diff_agent", "build_diff_prompt"),
+    "_run_diff_claude_agent": ("evolve.diff_agent", "_run_diff_claude_agent"),
+    "run_diff_agent": ("evolve.diff_agent", "run_diff_agent"),
+    "SYNC_README_NO_CHANGES_SENTINEL": (
+        "evolve.sync_readme", "SYNC_README_NO_CHANGES_SENTINEL",
+    ),
+    "build_sync_readme_prompt": (
+        "evolve.sync_readme", "build_sync_readme_prompt",
+    ),
+    "_run_sync_readme_claude_agent": (
+        "evolve.sync_readme", "_run_sync_readme_claude_agent",
+    ),
+    "run_sync_readme_agent": ("evolve.sync_readme", "run_sync_readme_agent"),
+}
+
+
+def __getattr__(name: str):  # noqa: N807 — module-level __getattr__
+    if name in _LAZY_REEXPORTS:
+        mod_path, attr = _LAZY_REEXPORTS[name]
+        import importlib
+        mod = importlib.import_module(mod_path)
+        value = getattr(mod, attr)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [  # noqa: E501
     "CURATION_LINE_THRESHOLD",

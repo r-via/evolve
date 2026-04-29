@@ -249,7 +249,7 @@ class TestReadonlyAgentEdgeCases:
 
         sdk.query = _query
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()):
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.get_tui", return_value=MagicMock()):
             from evolve.agent import _run_readonly_claude_agent
             asyncio.run(_run_readonly_claude_agent(
                 "test", proj, run_dir,
@@ -276,7 +276,7 @@ class TestReadonlyAgentEdgeCases:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.agent.get_tui", return_value=mock_tui):
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.get_tui", return_value=mock_tui):
             from evolve.agent import _run_readonly_claude_agent
             asyncio.run(_run_readonly_claude_agent(
                 "test", proj, run_dir,
