@@ -193,28 +193,42 @@ class TestPartyModeRetryPaths:
         ui.party_results.assert_not_called()
 
     def test_import_error_skips_party_mode(self, tmp_path: Path):
-        """ImportError from missing claude-agent-sdk should warn and return."""
+        """ImportError from missing claude-agent-sdk should warn and return.
+
+        ``_run_party_mode`` does ``from evolve import agent as _agent_mod``.
+        Python treats ``sys.modules["evolve.agent"] = None`` as a sentinel
+        meaning "this module is known to not exist", so ``from evolve import
+        agent`` raises ``ImportError`` immediately without touching disk.
+        We also delete the ``agent`` attribute from the ``evolve`` package
+        so ``getattr`` can't short-circuit the import.
+        """
+        import sys
+        import evolve as _evolve_pkg
+
         run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
 
-        with patch("builtins.__import__", side_effect=_make_import_error_for_agent):
+        saved_mod = sys.modules.get("evolve.agent")
+        had_attr = hasattr(_evolve_pkg, "agent")
+        saved_attr = getattr(_evolve_pkg, "agent", None)
+
+        try:
+            # Setting to None in sys.modules makes Python raise ImportError
+            sys.modules["evolve.agent"] = None  # type: ignore[assignment]
+            if had_attr:
+                delattr(_evolve_pkg, "agent")
+
             _run_party_mode(tmp_path, run_dir, ui)
+        finally:
+            if saved_mod is not None:
+                sys.modules["evolve.agent"] = saved_mod
+            else:
+                sys.modules.pop("evolve.agent", None)
+            if had_attr:
+                _evolve_pkg.agent = saved_attr
 
         ui.warn.assert_called_once_with("claude-agent-sdk not installed — skipping party mode")
         ui.party_results.assert_not_called()
-
-
-def _make_import_error_for_agent(name, *args, **kwargs):
-    """Simulate ImportError only for the agent module import inside _run_party_mode.
-    After the package restructuring the import is ``from evolve.agent import …``,
-    so the blocker targets ``evolve.agent`` instead of the legacy ``agent`` shim.
-    """
-    if name in ("agent", "evolve.agent"):
-        raise ImportError(f"No module named '{name}'")
-    return original_import(name, *args, **kwargs)
-
-
-original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
 
 
 # ---------------------------------------------------------------------------
