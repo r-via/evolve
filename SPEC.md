@@ -146,9 +146,9 @@ its target.
 one bounded context per round, with the legacy flat layout
 (``evolve/agent.py``, ``evolve/orchestrator.py``,
 ``evolve/round_lifecycle.py``, …) and the DDD layout coexisting
-during migration.  Shims at the legacy paths re-export the new
-locations for backward compatibility — same playbook as the
-legacy ``loop.py`` → ``evolve/`` package migration archived
+**during migration only**.  Shims at the legacy paths re-export
+the new locations for backward compatibility — same playbook as
+the legacy ``loop.py`` → ``evolve/`` package migration archived
 above.  Shims are deleted once the migration of a context is
 complete; until then they are explicitly whitelisted in the
 import-graph linter.  The migration is **not** a single mega-PR:
@@ -156,12 +156,69 @@ each round picks ONE module from the flat layout, identifies
 its layer + context, splits accordingly, updates imports,
 delivers passing tests, then hands off to the next round.
 
+**Migration-completion gate (HARD).**  The migration is
+**not** complete until every ``*.py`` file directly under
+``evolve/`` (excluding sub-package directories) is one of:
+
+1. ``evolve/__init__.py`` — package marker.
+2. ``evolve/__main__.py`` — entry-point dispatcher.
+3. A **pure shim** — module body contains ONLY ``from
+   evolve.<layer>.<module> import …`` re-export statements
+   (plus optional ``import warnings`` block emitting a
+   ``DeprecationWarning``, ``__all__`` declaration, and a
+   one-line module docstring tagging the file as a shim).
+   No function definitions.  No class definitions.  No logic.
+   No constants beyond ``__all__``.
+
+A file like ``evolve/orchestrator.py`` containing 488 lines of
+production code with function and class definitions is **not**
+a shim — it is unmigrated legacy code, even when
+sibling modules in ``evolve/application/`` and
+``evolve/infrastructure/`` exist.  The presence of populated
+DDD sub-packages does NOT discharge the migration claim;
+emptiness of the flat layout does.
+
+**Enforcement of the completion gate.**  A dedicated test
+``tests/test_legacy_flat_layout_empty.py`` MUST exist.  It walks
+``evolve/*.py`` (top level only), classifies each file, and
+fails the build on any file that is not in the whitelist above.
+The classifier rule for "pure shim":
+
+- Parse the module with ``ast.parse``.
+- Allowed top-level node kinds: ``ast.Import``,
+  ``ast.ImportFrom``, ``ast.Expr`` (only if its value is a
+  string constant — module docstring), ``ast.Assign`` (only
+  for ``__all__`` or ``warnings.warn`` calls), ``ast.If``
+  (only for ``if __name__ == "__main__":`` blocks that
+  delegate to the new location's ``main()``).
+- Any ``ast.FunctionDef``, ``ast.AsyncFunctionDef``,
+  ``ast.ClassDef``, ``ast.AnnAssign`` with a non-trivial value,
+  or ``ast.Assign`` to anything other than ``__all__`` →
+  **fail** with the offending node's line number and node kind.
+
+The diagnostic emitted on failure: ``LEGACY LAYOUT NOT EMPTY:
+N file(s) at evolve/ top level still contain production code:
+<list>``.  The orchestrator's debug-retry surfaces this as a
+``## CRITICAL — DDD migration not complete`` header in the
+next attempt's prompt, instructing the agent to migrate ONE
+of the offending files (smallest first to bound risk) into
+its DDD layer + create the corresponding pure shim.
+
+Until ``tests/test_legacy_flat_layout_empty.py`` passes, the
+project does NOT satisfy the DDD claim and cannot converge —
+even if every other gate is green.  Phase 4 (convergence)
+treats this test alongside the import-graph linter as a
+pre-CONVERGED gate.
+
 **Self-correction loop.**  When the orchestrator detects a
-layering violation (import-graph test fails), it emits a
-``LAYERING VIOLATION:`` diagnostic with the offending
-edge(s).  ``build_prompt`` recognises the prefix and surfaces a
-``## CRITICAL — DDD layering violation`` section in the next
-attempt's prompt.  Combined with the TDD self-correction loop
+layering violation (import-graph test fails) or a
+migration-completion violation (legacy-empty test fails), it
+emits a ``LAYERING VIOLATION:`` or ``LEGACY LAYOUT NOT EMPTY:``
+diagnostic with the offending edge(s) / file(s).
+``build_prompt`` recognises the prefix and surfaces a
+``## CRITICAL — DDD layering violation`` (or ``…migration not
+complete``) section in the next attempt's prompt.  Combined
+with the TDD self-correction loop
 (§ "Test-Driven Development (TDD)" — ``TDD VIOLATION:``
 diagnostic), evolve has two normative engineering disciplines
 it can verify and roll back against round-by-round.

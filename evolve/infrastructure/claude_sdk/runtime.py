@@ -150,7 +150,7 @@ def _patch_sdk_parser() -> None:
                 if isinstance(data, dict) and data.get("type") == "rate_limit_event":
                     return None
                 raise
-        patched._patched = True
+        patched._patched = True  # type: ignore[attr-defined]
         message_parser.parse_message = patched
     except Exception:
         pass
