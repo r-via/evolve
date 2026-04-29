@@ -31,3 +31,5 @@
 | 027 | sdk-termination-signal | 2026-04-28 | Every 20 rounds (round 20); settled ResultMessage inspection contract, fully implemented |
 | 028 | multi-call-implementation-wiring | 2026-04-28 | Every 20 rounds (round 20); stable prompt-file scopes, orchestrator contract, retry semantics — unchanged since three-call split |
 | 029 | dotevolve-directory-rationale | 2026-04-28 | Every 20 rounds (round 20); design rationale for `.evolve/` dotfile convention, decision locked |
+| 030 | legacy-flat-module-layout | 2026-04-29 | Every 20 rounds (round 20); flat module table + package tree superseded by DDD layered architecture, modules actively migrating |
+| 031 | us-persona-pipeline-protocol | 2026-04-29 | Every 20 rounds (round 20); settled three-persona pipeline (Winston/John/Amelia) + orchestrator US-format enforcement, encoded in prompt files |
