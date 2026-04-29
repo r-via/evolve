@@ -72,29 +72,32 @@ class TestPrevAttemptLogFmt:
         """The constant's owning + consuming modules must use it — not re-inline
         ``## Previous attempt log``.
 
-        Post US-035 the constant lived in ``evolve/prompt_builder.py``
-        re-exported from ``evolve/agent.py``.  Round 3 of session
-        20260427_203955 (Zara HIGH-1 audit fix) split the diagnostic
-        helpers further into ``evolve/prompt_diagnostics.py`` because
-        ``prompt_builder.py`` had grown to 723 lines (1.45× the SPEC §
-        "Hard rule" 500-line cap).  The 3-link re-export chain
-        (``agent`` → ``prompt_builder`` → ``prompt_diagnostics``) means
-        all THREE files are scanned: each may carry at most one
-        occurrence of the literal header (the constant body, post-
-        extraction in prompt_diagnostics.py; zero in the others).  The
-        ``.format(`` invocation must appear in at least one of the
-        three source files.
+        Post DDD migration (US-074) the constant body lives in
+        ``evolve/infrastructure/claude_sdk/prompt_diagnostics.py``.
+        The 4-link re-export chain (``agent`` → ``prompt_builder`` →
+        ``prompt_diagnostics`` shim → ``infrastructure/claude_sdk/
+        prompt_diagnostics``) means all FOUR files are scanned: the
+        infrastructure file carries the constant body (1 occurrence);
+        the others carry zero.  The ``.format(`` invocation must
+        appear in at least one of the four source files.
         """
         agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
         pd_src = (REPO_ROOT / "evolve" / "prompt_diagnostics.py").read_text()
+        infra_pd_src = (
+            REPO_ROOT / "evolve" / "infrastructure" / "claude_sdk" / "prompt_diagnostics.py"
+        ).read_text()
         # Each owning file may legitimately carry at most one copy of the
         # header (the constant body itself).  Re-inlining a second copy
         # at the call site is the drift this test exists to catch.
+        # Post DDD migration (US-074) the constant body lives in
+        # infrastructure/claude_sdk/prompt_diagnostics.py; the flat
+        # prompt_diagnostics.py is a backward-compat shim.
         for fname, src in (
             ("agent.py", agent_src),
             ("prompt_builder.py", pb_src),
             ("prompt_diagnostics.py", pd_src),
+            ("infrastructure/claude_sdk/prompt_diagnostics.py", infra_pd_src),
         ):
             count = src.count("## Previous attempt log")
             assert count <= 1, (
@@ -102,12 +105,14 @@ class TestPrevAttemptLogFmt:
                 "strings — expected at most 1 (the constant body). "
                 "Use _PREV_ATTEMPT_LOG_FMT.format(...) at the call site."
             )
-        # The .format() call must be present in at least one of the three
-        # files (post-audit-fix it lives in prompt_diagnostics.py).
+        # The .format() call must be present in at least one of the owning
+        # files (post-DDD-migration it lives in
+        # infrastructure/claude_sdk/prompt_diagnostics.py).
         assert (
             "_PREV_ATTEMPT_LOG_FMT.format(" in agent_src
             or "_PREV_ATTEMPT_LOG_FMT.format(" in pb_src
             or "_PREV_ATTEMPT_LOG_FMT.format(" in pd_src
+            or "_PREV_ATTEMPT_LOG_FMT.format(" in infra_pd_src
         )
 
 
@@ -181,23 +186,25 @@ class TestMemoryWipedHeaderFmt:
     def test_call_site_no_longer_holds_duplicate_literal(self):
         """The owning + consuming modules must branch via the constant.
 
-        Post US-035 the constant lived in ``evolve/prompt_builder.py``
-        re-exported from ``evolve/agent.py``.  Round 3 audit fix split
-        the diagnostic helpers further into
-        ``evolve/prompt_diagnostics.py``; all THREE files are scanned
-        (3-link chain ``agent`` → ``prompt_builder`` →
-        ``prompt_diagnostics``).  Each may carry at most one literal
-        occurrence (the constant body, post-extraction in
-        prompt_diagnostics.py; zero in the others since the branch
-        site also moved).
+        Post DDD migration (US-074) the constant body lives in
+        ``evolve/infrastructure/claude_sdk/prompt_diagnostics.py``.
+        All FOUR files in the re-export chain are scanned; only the
+        infrastructure file carries the constant body (1 occurrence).
         """
         agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
         pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
         pd_src = (REPO_ROOT / "evolve" / "prompt_diagnostics.py").read_text()
+        infra_pd_src = (
+            REPO_ROOT / "evolve" / "infrastructure" / "claude_sdk" / "prompt_diagnostics.py"
+        ).read_text()
+        # Post DDD migration (US-074) the constant body lives in
+        # infrastructure/claude_sdk/prompt_diagnostics.py; the flat
+        # prompt_diagnostics.py is a backward-compat shim.
         for fname, src in (
             ("agent.py", agent_src),
             ("prompt_builder.py", pb_src),
             ("prompt_diagnostics.py", pd_src),
+            ("infrastructure/claude_sdk/prompt_diagnostics.py", infra_pd_src),
         ):
             count = src.count("silently wiped memory.md")
             assert count <= 1, (
@@ -205,12 +212,14 @@ class TestMemoryWipedHeaderFmt:
                 "strings — expected at most 1 (the constant body). "
                 "Use _MEMORY_WIPED_HEADER_FMT.format(...) at the branch site."
             )
-        # The .format() call must be present in at least one of the three
-        # files (post-audit-fix it lives in prompt_diagnostics.py).
+        # The .format() call must be present in at least one of the owning
+        # files (post-DDD-migration it lives in
+        # infrastructure/claude_sdk/prompt_diagnostics.py).
         assert (
             "_MEMORY_WIPED_HEADER_FMT.format(" in agent_src
             or "_MEMORY_WIPED_HEADER_FMT.format(" in pb_src
             or "_MEMORY_WIPED_HEADER_FMT.format(" in pd_src
+            or "_MEMORY_WIPED_HEADER_FMT.format(" in infra_pd_src
         )
 
 
