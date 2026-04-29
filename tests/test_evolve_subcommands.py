@@ -329,17 +329,21 @@ class TestEffortFlag:
         # applies to every subsequent extraction; count kwarg sites
         # across the sibling set).
         evolve_dir = Path(__file__).parent.parent / "evolve"
+        # After DDD migrations (US-071 through US-076), the actual
+        # ``effort=EFFORT`` call sites live in infrastructure/claude_sdk/
+        # while the flat modules are backward-compat shims.  Scan both
+        # flat shims AND infrastructure modules to count real kwarg sites.
         sibling_files = (
             "agent.py",
             "oneshot_agents.py",
             "sync_readme.py",
             "memory_curation.py",
             "spec_archival.py",
-            # Round-7 sdk_runner extraction moved run_claude_agent (with
-            # its ``effort=EFFORT`` kwarg) out of agent.py — include it in
-            # the union scan so the operator-tunable ``--effort`` plumbing
-            # contract survives the split.
             "sdk_runner.py",
+            # Infrastructure modules where code now lives after DDD migration
+            "infrastructure/claude_sdk/runner.py",
+            "infrastructure/claude_sdk/memory_curation.py",
+            "infrastructure/claude_sdk/spec_archival.py",
         )
         total = sum(
             (evolve_dir / fname).read_text().count("effort=EFFORT")
