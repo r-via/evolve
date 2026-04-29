@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from evolve.application.run_round import run_round
-from evolve.application.run_loop import run_loop
+from evolve.application.run_round import run_single_round as run_round
+from evolve.application.run_loop import _run_rounds as run_loop
 from evolve.application.retry_policy import should_retry
 from evolve.application.convergence_check import check_convergence
 from evolve.application.draft_us import draft_us
@@ -19,11 +19,11 @@ from evolve.application.analyze_and_fix import analyze_and_fix
 from evolve.application.curate_memory import curate_memory
 from evolve.application.archive_spec import archive_spec
 from evolve.application.party_session import run_party_session
-from evolve.application.dry_run import dry_run
-from evolve.application.validate import validate
-from evolve.application.sync_readme import sync_readme
-from evolve.application.diff import diff
-from evolve.application.update import update
+from evolve.application.dry_run import dry_run as run_dry_run
+from evolve.application.validate import validate as run_validate
+from evolve.application.sync_readme import sync_readme as run_sync_readme
+from evolve.application.diff import diff as run_diff
+from evolve.application.update import run_update as update
 from evolve.domain.round import RoundKind, RoundResult
 from evolve.domain.convergence import ConvergenceGate
 from evolve.domain.improvement import USItem
@@ -37,75 +37,35 @@ class TestRunRound:
     def test_importable(self):
         assert callable(run_round)
 
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="run_round stub"):
-            run_round(round_num=1, kind=RoundKind.IMPLEMENT)
-
 
 class TestRunLoop:
     def test_importable(self):
         assert callable(run_loop)
-
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="run_loop stub"):
-            run_loop()
 
 
 class TestRetryPolicy:
     def test_importable(self):
         assert callable(should_retry)
 
-    def test_raises_not_implemented(self):
-        result = RoundResult(
-            round_num=1, kind=RoundKind.IMPLEMENT, succeeded=False
-        )
-        with pytest.raises(NotImplementedError, match="should_retry stub"):
-            should_retry(result, attempt=1)
-
 
 class TestConvergenceCheck:
     def test_importable(self):
         assert callable(check_convergence)
-
-    def test_raises_not_implemented(self):
-        gates = [ConvergenceGate(name="spec_freshness", passed=True)]
-        with pytest.raises(
-            NotImplementedError, match="check_convergence stub"
-        ):
-            check_convergence(gates)
-
-
-# ── Authoring-context stubs (US-060) ─────────────────────────
 
 
 class TestDraftUs:
     def test_importable(self):
         assert callable(draft_us)
 
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="draft_us stub"):
-            draft_us()
-
 
 class TestReviewRound:
     def test_importable(self):
         assert callable(review_round)
 
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="review_round stub"):
-            review_round(round_num=1)
-
 
 class TestAnalyzeAndFix:
     def test_importable(self):
         assert callable(analyze_and_fix)
-
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="analyze_and_fix stub"):
-            analyze_and_fix(round_num=1)
-
-
-# ── DDD dependency rule: application imports only from domain ──
 
 
 class TestApplicationPurity:
@@ -170,77 +130,34 @@ class TestCurateMemory:
     def test_importable(self):
         assert callable(curate_memory)
 
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="curate_memory stub"):
-            curate_memory()
-
 
 class TestArchiveSpec:
     def test_importable(self):
         assert callable(archive_spec)
-
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="archive_spec stub"):
-            archive_spec()
-
-
-# ── Party session stub (US-061) ─────────────────────────────
 
 
 class TestPartySession:
     def test_importable(self):
         assert callable(run_party_session)
 
-    def test_raises_not_implemented(self):
-        with pytest.raises(
-            NotImplementedError, match="run_party_session stub"
-        ):
-            run_party_session()
-
-
-# ── One-shot use-case stubs (US-061) ────────────────────────
-
 
 class TestDryRun:
     def test_importable(self):
-        assert callable(dry_run)
-
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="dry_run stub"):
-            dry_run()
-
+        assert callable(run_dry_run)
 
 class TestValidate:
     def test_importable(self):
-        assert callable(validate)
-
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="validate stub"):
-            validate()
-
+        assert callable(run_validate)
 
 class TestSyncReadme:
     def test_importable(self):
-        assert callable(sync_readme)
-
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="sync_readme stub"):
-            sync_readme()
-
+        assert callable(run_sync_readme)
 
 class TestDiff:
     def test_importable(self):
-        assert callable(diff)
-
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="diff stub"):
-            diff()
-
+        assert callable(run_diff)
 
 class TestUpdate:
     def test_importable(self):
         assert callable(update)
 
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="update stub"):
-            update()

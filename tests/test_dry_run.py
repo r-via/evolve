@@ -1,3 +1,4 @@
+import evolve.infrastructure.claude_sdk.runtime as _rt_mod
 """Tests for --dry-run functionality across agent.py and loop.py."""
 
 import asyncio
@@ -274,10 +275,10 @@ class TestRunDryRun:
              patch("evolve.agent.run_dry_run_agent"):
             from evolve.orchestrator import run_dry_run
             run_dry_run(tmp_path, model="claude-sonnet-4-20250514")
-            assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
+            assert __rt_mod.MODEL == "claude-sonnet-4-20250514"
 
         # Reset
-        _agent_mod.MODEL = "claude-opus-4-6"
+        __rt_mod.MODEL = "claude-opus-4-6"
 
 class TestRunDryRunClaudeAgent:
     """Tests for agent._run_dry_run_claude_agent with mocked SDK."""

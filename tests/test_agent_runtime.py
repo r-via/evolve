@@ -5,7 +5,7 @@ These tests lock in:
 
 1. The hoisted symbols are importable from ``evolve.agent_runtime``.
 2. ``evolve.agent`` re-exports the same object identity (``is``-equal),
-   so existing patch targets like ``patch("evolve.agent.MODEL")`` and
+   so existing patch targets like ``patch("evolve.infrastructure.claude_sdk.runtime.MODEL")`` and
    ``monkeypatch.setattr(agent_mod, "_patch_sdk_parser", ...)`` keep
    working.
 3. The leaf invariant: ``evolve/agent_runtime.py`` source has zero

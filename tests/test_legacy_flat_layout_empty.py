@@ -127,10 +127,6 @@ def _classify_file(path: Path) -> list[str]:
     return violations
 
 
-@pytest.mark.xfail(
-    reason="DDD migration incomplete — unmigrated flat modules remain",
-    strict=False,
-)
 def test_legacy_flat_layout_empty() -> None:
     """All ``evolve/*.py`` (top-level only) must be whitelisted or pure shims.
 

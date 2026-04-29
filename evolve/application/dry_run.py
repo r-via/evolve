@@ -1,31 +1,104 @@
 """Use case: read-only dry-run analysis.
 
-One-shot use case — depends only on evolve.domain.
+One-shot use case — orchestration bounded context.
 """
 
 from __future__ import annotations
 
+import subprocess
+from datetime import datetime
+from pathlib import Path
+
 
 def dry_run(
-    project_dir: str | None = None,
-    spec_path: str | None = None,
-) -> int:
-    """Run read-only analysis and produce a dry_run_report.md.
+    project_dir: Path,
+    check_cmd: str | None = None,
+    timeout: int = 20,
+    model: str = "claude-opus-4-6",
+    spec: str | None = None,
+    effort: str | None = "medium",
+) -> None:
+    """Run a read-only analysis of the project without modifying files.
 
-    Parameters
-    ----------
-    project_dir:
-        Path to the project being analyzed.
-    spec_path:
-        Path to the spec file.
+    Runs the check command (if provided) to see the current state, then
+    launches the agent with write-related tools disabled (Edit, Write, Bash
+    are disallowed).  The agent analyzes the project using only Read, Grep,
+    and Glob, and produces a ``dry_run_report.md`` in the session directory.
 
-    Returns
-    -------
-    Exit code (0 = success, 2 = error).
-
-    Raises
-    ------
-    NotImplementedError
-        Stub — wiring to infrastructure pending.
+    No files in the project are modified and no git commits are created.
     """
-    raise NotImplementedError("dry_run stub — DDD migration in progress")
+    # Lazy imports — preserve ``patch("evolve.orchestrator.X")`` surfaces.
+    __mod = __import__("evolve.orchestrator", fromlist=["_auto_detect_check", "_emit_stale_readme_advisory", "_probe", "_runs_base", "get_tui"])
+    _auto_detect_check = __mod._auto_detect_check
+    _emit_stale_readme_advisory = __mod._emit_stale_readme_advisory
+    _probe = __mod._probe
+    _runs_base = __mod._runs_base
+    get_tui = __mod.get_tui
+
+    ui = get_tui()
+
+    _probe(f"dry-run starting — project={project_dir.name}")
+
+    # Startup-time stale-README advisory
+    _emit_stale_readme_advisory(project_dir, spec, ui)
+
+    # Auto-detect check command if not provided
+    if check_cmd is None:
+        detected = _auto_detect_check(project_dir)
+        if detected:
+            ui.info(f"  Auto-detected check command: {detected}")
+            check_cmd = detected
+
+    # Create timestamped run directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = _runs_base(project_dir) / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ui.run_dir_info(str(run_dir))
+    ui.info("  Mode: DRY RUN (read-only analysis, no file changes)")
+    _probe(f"dry-run session: {run_dir}")
+
+    # 1. Run check command if provided
+    check_output = ""
+    if check_cmd:
+        ui.check_result("check", check_cmd, passed=None)
+        try:
+            result = subprocess.run(
+                check_cmd, shell=True, cwd=str(project_dir),
+                capture_output=True, text=True, timeout=timeout,
+            )
+            check_output = f"Exit code: {result.returncode}\n"
+            if result.stdout:
+                check_output += f"stdout:\n{result.stdout[-2000:]}\n"
+            if result.stderr:
+                check_output += f"stderr:\n{result.stderr[-2000:]}\n"
+            ok = result.returncode == 0
+            ui.check_result("check", check_cmd, passed=ok)
+        except subprocess.TimeoutExpired:
+            check_output = f"TIMEOUT after {timeout}s"
+            ui.check_result("check", check_cmd, timeout=True)
+    else:
+        ui.no_check()
+
+    # 2. Launch agent in dry-run mode (restricted tools)
+    __mod = __import__("evolve.agent", fromlist=["run_dry_run_agent"])
+    run_dry_run_agent = __mod.run_dry_run_agent
+    __mod = __import__("evolve.infrastructure.claude_sdk", fromlist=["runtime"])
+    _runtime = __mod.runtime
+    _runtime.MODEL = model
+    _runtime.EFFORT = effort
+
+    ui.agent_working()
+    run_dry_run_agent(
+        project_dir=project_dir,
+        check_output=check_output,
+        check_cmd=check_cmd,
+        run_dir=run_dir,
+        spec=spec,
+    )
+
+    # 3. Report location
+    report_path = run_dir / "dry_run_report.md"
+    if report_path.is_file():
+        ui.info(f"  Dry-run report: {report_path}")
+    else:
+        ui.warn("No dry_run_report.md produced by the agent")

@@ -1,3 +1,4 @@
+import evolve.infrastructure.claude_sdk.runtime as _rt_mod
 """Coverage tests for loop.py — run_single_round, evolve_loop, _run_rounds."""
 
 import subprocess
@@ -170,7 +171,7 @@ class TestRunSingleRound:
         (tmp_path / "README.md").write_text("# Test")
 
         import evolve.agent as agent_mod
-        original_model = agent_mod.MODEL
+        original_model = _rt_mod.MODEL
 
         with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
              patch("evolve.agent.asyncio.run", side_effect=_close_coro), \
@@ -179,9 +180,9 @@ class TestRunSingleRound:
                 tmp_path, round_num=1,
                 run_dir=run_dir, model="claude-sonnet-4-20250514",
             )
-            assert agent_mod.MODEL == "claude-sonnet-4-20250514"
+            assert _rt_mod.MODEL == "claude-sonnet-4-20250514"
 
-        agent_mod.MODEL = original_model
+        _rt_mod.MODEL = original_model
 
     def test_round_check_with_stderr(self, tmp_path: Path):
         """Check command stderr is captured."""

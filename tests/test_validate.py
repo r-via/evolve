@@ -1,3 +1,4 @@
+import evolve.infrastructure.claude_sdk.runtime as _rt_mod
 """Tests for --validate functionality across agent.py and loop.py."""
 
 import asyncio
@@ -270,10 +271,10 @@ class TestRunValidate:
              patch("evolve.agent.run_validate_agent"):
             from evolve.orchestrator import run_validate
             run_validate(tmp_path, model="claude-sonnet-4-20250514")
-            assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
+            assert __rt_mod.MODEL == "claude-sonnet-4-20250514"
 
         # Reset
-        _agent_mod.MODEL = "claude-opus-4-6"
+        __rt_mod.MODEL = "claude-opus-4-6"
 class TestRunValidateClaudeAgent:
     def test_logs_conversation(self, tmp_path: Path):
         run_dir = tmp_path / "runs" / "session"

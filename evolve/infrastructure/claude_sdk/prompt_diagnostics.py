@@ -354,6 +354,16 @@ def build_prev_crash_section(
             f"correct layer or use function-local lazy imports.\n"
             f"```\n{prev_crash}\n```\n"
         )
+    if "LEGACY LAYOUT NOT EMPTY" in prev_crash:
+        return (
+            f"\n## CRITICAL — DDD migration not complete\n"
+            f"The previous round left unmigrated production code at the "
+            f"``evolve/`` top level (SPEC.md § 'Migration-completion gate "
+            f"(HARD)').  Your **primary task this round** is to migrate "
+            f"ONE of the offending files (smallest first to bound risk) "
+            f"into its DDD layer + create the corresponding pure shim.\n"
+            f"```\n{prev_crash}\n```\n"
+        )
     return f"\n## CRITICAL — Previous round CRASHED (fix this first!)\n```\n{prev_crash}\n```\n"
 
 

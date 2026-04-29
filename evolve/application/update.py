@@ -1,31 +1,217 @@
-"""Use case: pull latest evolve version from upstream.
+"""Use case: update evolve from upstream.
 
-One-shot use case — depends only on evolve.domain.
+One-shot use case — orchestration bounded context.
 """
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+from pathlib import Path
 
-def update(
-    dry_run: bool = False,
-    ref: str | None = None,
+# Status values that indicate an evolve session is still in flight.
+_ACTIVE_STATUSES = {"running", "in_progress", "paused", "started"}
+
+
+def _run(
+    cmd: list[str],
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess:
+    """Wrap ``subprocess.run`` with ``capture_output=True`` + ``text=True``."""
+    return subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _detect_install_location() -> tuple[Path | None, bool]:
+    """Return ``(install_dir, is_editable)`` parsed from ``pip show evolve``."""
+    out = _run([sys.executable, "-m", "pip", "show", "evolve"])
+    if out.returncode != 0:
+        return None, False
+    editable_loc: str | None = None
+    install_loc: str | None = None
+    for line in out.stdout.splitlines():
+        if line.startswith("Editable project location:"):
+            editable_loc = line.split(":", 1)[1].strip()
+        elif line.startswith("Location:"):
+            install_loc = line.split(":", 1)[1].strip()
+    if editable_loc:
+        return Path(editable_loc), True
+    if install_loc:
+        return Path(install_loc), False
+    return None, False
+
+
+def _detect_active_session(install_dir: Path) -> Path | None:
+    """Return path to an active session's ``state.json``, or ``None``."""
+    runs = install_dir / ".evolve" / "runs"
+    if not runs.is_dir():
+        return None
+    for state_path in sorted(runs.glob("*/state.json")):
+        try:
+            data = json.loads(state_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        status = str(data.get("status", "")).lower()
+        if status in _ACTIVE_STATUSES:
+            return state_path
+    return None
+
+
+def _git_dirty(repo_dir: Path) -> bool:
+    """True iff ``git status --porcelain`` reports any non-``.evolve/`` path."""
+    out = _run(["git", "status", "--porcelain"], cwd=repo_dir)
+    if out.returncode != 0:
+        return False
+    for line in out.stdout.splitlines():
+        path = line[3:].strip() if len(line) > 3 else ""
+        if not path:
+            continue
+        if path.startswith(".evolve/") or path == ".evolve":
+            continue
+        return True
+    return False
+
+
+def _default_ref(repo_dir: Path) -> str:
+    """Resolve ``origin/HEAD`` symbolic ref, falling back to ``main``."""
+    out = _run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        cwd=repo_dir,
+    )
+    if out.returncode == 0 and out.stdout.strip():
+        return out.stdout.strip().rsplit("/", 1)[-1]
+    return "main"
+
+
+def _git_can_fast_forward(
+    repo_dir: Path,
+    ref: str,
+) -> tuple[bool, str]:
+    """Fetch ``origin/<ref>`` and report whether HEAD can fast-forward."""
+    fetch = _run(["git", "fetch", "origin", ref], cwd=repo_dir)
+    if fetch.returncode != 0:
+        msg = (fetch.stderr or fetch.stdout).strip()
+        return False, f"fetch failed: {msg or 'unknown error'}"
+    target = f"origin/{ref}"
+    head_sha = _run(["git", "rev-parse", "HEAD"], cwd=repo_dir).stdout.strip()
+    tgt_sha = _run(["git", "rev-parse", target], cwd=repo_dir).stdout.strip()
+    if not tgt_sha:
+        return False, f"unknown ref: {target}"
+    if head_sha and head_sha == tgt_sha:
+        return True, "already up-to-date"
+    anc = _run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", target],
+        cwd=repo_dir,
+    )
+    if anc.returncode != 0:
+        return False, (
+            f"non-fast-forward — local commits diverge from {target}; "
+            "rebase or reset manually before re-running `evolve update`"
+        )
+    return True, tgt_sha
+
+
+def _update_editable(
+    repo_dir: Path,
+    ref: str | None,
+    dry_run: bool,
 ) -> int:
-    """Pull the latest evolve commit from upstream.
+    """Pull-and-fast-forward an editable install located at *repo_dir*."""
+    if _git_dirty(repo_dir):
+        print(
+            f"BLOCKED: git working tree at {repo_dir} is dirty.\n"
+            "Stash, commit, or discard your changes before running "
+            "`evolve update` (paths under .evolve/ are ignored).",
+            file=sys.stderr,
+        )
+        return 1
+    target_ref = ref or _default_ref(repo_dir)
 
-    Parameters
-    ----------
-    dry_run:
-        If True, show what would change without applying.
-    ref:
-        Git ref or version to update to.
+    if dry_run:
+        print(f"[dry-run] would: git -C {repo_dir} fetch origin {target_ref}")
+        print(
+            f"[dry-run] would: git -C {repo_dir} merge --ff-only "
+            f"origin/{target_ref}"
+        )
+        return 0
 
-    Returns
-    -------
-    Exit code (0 = updated, 1 = blocked, 2 = error).
+    can_ff, info = _git_can_fast_forward(repo_dir, target_ref)
+    if not can_ff:
+        print(f"BLOCKED: {info}", file=sys.stderr)
+        return 1
+    if info == "already up-to-date":
+        print(f"already up-to-date with origin/{target_ref}")
+        return 0
 
-    Raises
-    ------
-    NotImplementedError
-        Stub — wiring to infrastructure pending.
-    """
-    raise NotImplementedError("update stub — DDD migration in progress")
+    merge = _run(
+        ["git", "merge", "--ff-only", f"origin/{target_ref}"],
+        cwd=repo_dir,
+    )
+    if merge.returncode != 0:
+        print(
+            f"ERROR: git merge --ff-only failed: "
+            f"{(merge.stderr or merge.stdout).strip()}",
+            file=sys.stderr,
+        )
+        return 2
+    new_sha = _run(
+        ["git", "rev-parse", "HEAD"], cwd=repo_dir
+    ).stdout.strip()
+    print(f"updated to {new_sha[:12]} on origin/{target_ref}")
+    return 0
+
+
+def _update_non_editable(ref: str | None, dry_run: bool) -> int:
+    """Refresh a non-editable install via ``pip install --upgrade evolve``."""
+    if ref is not None:
+        print(
+            "NOTE: --ref is honored only for editable installs; "
+            "ignoring for pip upgrade of the published package.",
+            file=sys.stderr,
+        )
+    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "evolve"]
+    if dry_run:
+        print(f"[dry-run] would: {' '.join(cmd)}")
+        return 0
+    pip = _run(cmd)
+    if pip.returncode != 0:
+        print("ERROR: pip upgrade failed:", file=sys.stderr)
+        print((pip.stderr or pip.stdout).rstrip(), file=sys.stderr)
+        return 2
+    print("pip upgrade complete")
+    return 0
+
+
+def run_update(dry_run: bool = False, ref: str | None = None) -> int:
+    """Entry point for the update use case."""
+    install_dir, editable = _detect_install_location()
+    if install_dir is None:
+        print(
+            "ERROR: could not detect evolve install location via "
+            "`pip show evolve`.  Is evolve installed?",
+            file=sys.stderr,
+        )
+        return 2
+
+    mode = "editable" if editable else "non-editable"
+    print(f"evolve install: {install_dir} ({mode})")
+
+    active = _detect_active_session(install_dir)
+    if active is not None:
+        print(
+            f"BLOCKED: active evolve session detected at {active}.\n"
+            "Wait for the session to converge or abort it before "
+            "running `evolve update`.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if editable:
+        return _update_editable(install_dir, ref, dry_run)
+    return _update_non_editable(ref, dry_run)

@@ -16,7 +16,7 @@ This file:
     surfaced via ``evolve.agent``,
 (c) re-asserts the leaf-module invariant (no top-level
     ``from evolve.{agent,orchestrator,cli}`` imports), and
-(d) proves runtime mutation of ``evolve.agent.EFFORT`` propagates into
+(d) proves runtime mutation of ``evolve.infrastructure.claude_sdk.runtime.EFFORT`` propagates into
     the next ``_run_memory_curation_claude_agent`` call's
     ``ClaudeAgentOptions(effort=...)`` kwarg — same pattern as
     ``tests/test_per_call_effort.py``'s
@@ -113,7 +113,7 @@ def test_memory_curation_module_is_a_leaf():
 
 
 def test_runtime_EFFORT_mutation_propagates_into_curation_options(monkeypatch):
-    """Setting ``evolve.agent.EFFORT = "max"`` at runtime (the loop
+    """Setting ``evolve.infrastructure.claude_sdk.runtime.EFFORT = "max"`` at runtime (the loop
     entry points overwrite ``EFFORT`` at session start) MUST propagate
     into the next ``_run_memory_curation_claude_agent`` call's
     ``ClaudeAgentOptions(effort=...)`` kwarg.
@@ -162,6 +162,6 @@ def test_runtime_EFFORT_mutation_propagates_into_curation_options(monkeypatch):
 
     assert captured.get("effort") == "max", (
         "memory curation must pick up runtime mutation of "
-        "evolve.agent.EFFORT — lazy import inside "
+        "evolve.infrastructure.claude_sdk.runtime.EFFORT — lazy import inside "
         "_run_memory_curation_claude_agent is what guarantees this."
     )

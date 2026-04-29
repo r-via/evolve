@@ -1,3 +1,4 @@
+import evolve.infrastructure.claude_sdk.runtime as _rt_mod
 """Tests for `evolve diff` subcommand across agent.py and loop.py."""
 
 import asyncio
@@ -290,10 +291,10 @@ class TestRunDiff:
         with patch("evolve.agent.run_diff_agent"):
             from evolve.orchestrator import run_diff
             run_diff(tmp_path, model="claude-sonnet-4-20250514")
-            assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
+            assert __rt_mod.MODEL == "claude-sonnet-4-20250514"
 
         # Reset
-        _agent_mod.MODEL = "claude-opus-4-6"
+        __rt_mod.MODEL = "claude-opus-4-6"
 
     def test_effort_default_low(self, tmp_path: Path):
         """Default effort for diff is 'low'."""
@@ -305,10 +306,10 @@ class TestRunDiff:
         with patch("evolve.agent.run_diff_agent"):
             from evolve.orchestrator import run_diff
             run_diff(tmp_path)
-            assert _agent_mod.EFFORT == "low"
+            assert __rt_mod.EFFORT == "low"
 
         # Reset
-        _agent_mod.EFFORT = "max"
+        __rt_mod.EFFORT = "max"
 
     def test_effort_override(self, tmp_path: Path):
         """Explicit effort parameter overrides the default."""
@@ -320,10 +321,10 @@ class TestRunDiff:
         with patch("evolve.agent.run_diff_agent"):
             from evolve.orchestrator import run_diff
             run_diff(tmp_path, effort="high")
-            assert _agent_mod.EFFORT == "high"
+            assert __rt_mod.EFFORT == "high"
 
         # Reset
-        _agent_mod.EFFORT = "max"
+        __rt_mod.EFFORT = "max"
 
     def test_does_not_run_check_cmd(self, tmp_path: Path):
         """Diff does NOT run any check command (SPEC says so)."""

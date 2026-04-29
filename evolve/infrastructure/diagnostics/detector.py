@@ -352,6 +352,91 @@ def _detect_us_format_violation(
 
 
 # ---------------------------------------------------------------------------
+# Legacy flat-layout violation detection (DDD migration-completion gate)
+# ---------------------------------------------------------------------------
+
+# Files exempt from the shim check (package markers / entry-point dispatcher).
+_LEGACY_WHITELIST = {"__init__.py", "__main__.py"}
+
+
+def _detect_legacy_layout_violation(
+    project_dir: Path,
+) -> list[tuple[str, str, int]]:
+    """Detect unmigrated production code at ``evolve/*.py`` (top level only).
+
+    Uses the same AST classifier as ``tests/test_legacy_flat_layout_empty.py``
+    (SPEC § "Migration-completion gate (HARD)").
+
+    Returns list of ``(filename, offending_node_kind, line_number)`` tuples.
+    Empty list = all files are whitelisted or pure shims.
+    """
+    import ast as _ast
+
+    evolve_dir = project_dir / "evolve"
+    if not evolve_dir.is_dir():
+        return []
+
+    violations: list[tuple[str, str, int]] = []
+    for py_file in sorted(evolve_dir.glob("*.py")):
+        if py_file.name in _LEGACY_WHITELIST:
+            continue
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = _ast.parse(source, filename=str(py_file))
+        except (OSError, SyntaxError):
+            continue
+
+        for node in tree.body:
+            if isinstance(node, (_ast.Import, _ast.ImportFrom)):
+                continue
+            # Module docstring (string constant expression)
+            if isinstance(node, _ast.Expr) and isinstance(
+                getattr(node, "value", None), _ast.Constant
+            ) and isinstance(node.value.value, str):
+                continue
+            # warnings.warn(...) as bare expression
+            if isinstance(node, _ast.Expr) and isinstance(
+                getattr(node, "value", None), _ast.Call
+            ):
+                func = node.value.func
+                if isinstance(func, _ast.Attribute) and func.attr == "warn":
+                    continue
+            # __all__ assignment
+            if isinstance(node, _ast.Assign):
+                is_all = any(
+                    isinstance(t, _ast.Name) and t.id == "__all__"
+                    for t in node.targets
+                )
+                if is_all:
+                    continue
+                # warnings.warn() as RHS of assignment
+                if isinstance(node.value, _ast.Call):
+                    func = node.value.func
+                    if isinstance(func, _ast.Attribute) and func.attr == "warn":
+                        continue
+            # if __name__ == "__main__": block
+            if isinstance(node, _ast.If):
+                test = node.test
+                if (
+                    isinstance(test, _ast.Compare)
+                    and len(test.ops) == 1
+                    and isinstance(test.ops[0], _ast.Eq)
+                    and isinstance(test.left, _ast.Name)
+                    and test.left.id == "__name__"
+                    and len(test.comparators) == 1
+                    and isinstance(test.comparators[0], _ast.Constant)
+                    and test.comparators[0].value == "__main__"
+                ):
+                    continue
+
+            # Everything else is a violation
+            kind = type(node).__name__
+            line = getattr(node, "lineno", 0)
+            violations.append((py_file.name, kind, line))
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # TDD violation detection
 # ---------------------------------------------------------------------------
 

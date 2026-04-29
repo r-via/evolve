@@ -29,12 +29,10 @@ Symbols:
 - ``_should_retry_rate_limit`` — rate-limit backoff calculator.
 - ``_run_agent_with_retries`` — shared async-agent retry loop.
 
-``EFFORT`` is intentionally NOT moved — it is mutated at runtime by
-``_resolve_config`` in the orchestrator startup path, and the
-runtime-mutation is observable via ``evolve.agent.EFFORT``.  Hoisting
-it would reintroduce the round-6 trap pattern (constant resolved
-lazily across modules → stale reads).  See SPEC.md § "The --effort flag"
-and ``memory.md`` "--effort plumbing: 3-attempt pattern".
+``EFFORT`` and ``MODEL`` are the sources of truth for the reasoning effort
+and Claude model respectively. They are mutated at runtime by
+``_resolve_config`` in the orchestrator startup path (observed via
+the ``evolve.agent`` shim).
 """
 
 from __future__ import annotations
@@ -44,7 +42,12 @@ import time
 
 
 #: Default Claude model used by the agent for code analysis and fixes.
+#: Mutated at runtime by ``_resolve_config``.
 MODEL = "claude-opus-4-6"
+
+#: Reasoning effort level passed to ``ClaudeAgentOptions(effort=...)``.
+#: Mutated at runtime by ``_resolve_config``.
+EFFORT: str | None = "medium"
 
 #: Single, centralized turn budget passed to every ``claude_agent_sdk.query``
 #: callsite via ``ClaudeAgentOptions(max_turns=...)``.  Per SPEC.md §

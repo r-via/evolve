@@ -1,3 +1,4 @@
+import evolve.infrastructure.claude_sdk.runtime as _rt_mod
 """Coverage tests for _run_rounds — miscellaneous orchestration cases.
 
 Extracted from test_loop_coverage.py to keep modules under the 500-line cap.
@@ -345,7 +346,7 @@ class TestRunRoundsMisc:
         assert args.effort == "medium"
 
         # Step 3: verify run_single_round would set agent.EFFORT
-        original = _agent_mod.EFFORT
+        original = __rt_mod.EFFORT
         try:
             with patch("evolve.agent.analyze_and_fix", return_value=None), \
                  patch("evolve.agent.run_review_agent"):
@@ -359,9 +360,9 @@ class TestRunRoundsMisc:
                     model="claude-opus-4-6",
                     effort=args.effort,
                 )
-            assert _agent_mod.EFFORT == "medium"
+            assert __rt_mod.EFFORT == "medium"
         finally:
-            _agent_mod.EFFORT = original
+            __rt_mod.EFFORT = original
 
     def test_no_current_improvement_initial_analysis(self, tmp_path: Path):
         """When no improvements exist yet, shows 'initial analysis'."""

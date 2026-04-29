@@ -1,3 +1,4 @@
+import evolve.infrastructure.claude_sdk.runtime as _rt_mod
 """Tests for evolve CLI subcommands and the --effort flag.
 
 Split out from test_evolve.py per SPEC § "Hard rule: source files MUST NOT
@@ -369,9 +370,9 @@ class TestEffortFlag:
         if isinstance(_sdk, MagicMock):
             pytest.skip("conftest installed a claude_agent_sdk stub — real SDK not available")
         import evolve.agent as _agent_mod
-        original = _agent_mod.EFFORT
+        original = __rt_mod.EFFORT
         try:
-            _agent_mod.EFFORT = "low"
+            __rt_mod.EFFORT = "low"
             # ClaudeAgentOptions receives agent.EFFORT — confirm via direct construction.
             from claude_agent_sdk import ClaudeAgentOptions
             opts = ClaudeAgentOptions(
@@ -379,16 +380,16 @@ class TestEffortFlag:
                 cwd="/tmp",
                 disallowed_tools=[],
                 include_partial_messages=True,
-                effort=_agent_mod.EFFORT,
+                effort=__rt_mod.EFFORT,
             )
             assert opts.effort == "low"
         finally:
-            _agent_mod.EFFORT = original
+            __rt_mod.EFFORT = original
 
     def test_run_single_round_sets_agent_effort(self, tmp_path: Path):
         """loop.run_single_round writes args.effort to agent.EFFORT."""
         import evolve.agent as _agent_mod
-        original = _agent_mod.EFFORT
+        original = __rt_mod.EFFORT
         runs_dir = tmp_path / "runs"
         runs_dir.mkdir()
         (runs_dir / "improvements.md").write_text("- [ ] [functional] placeholder\n")
@@ -409,9 +410,9 @@ class TestEffortFlag:
                     spec=None,
                     effort="high",
                 )
-            assert _agent_mod.EFFORT == "high"
+            assert __rt_mod.EFFORT == "high"
         finally:
-            _agent_mod.EFFORT = original
+            __rt_mod.EFFORT = original
 
     def test_cli_parser_accepts_all_four_levels(self):
         """Parser accepts each documented level without raising SystemExit."""
