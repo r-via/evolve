@@ -31,13 +31,13 @@ def test_tui_sub_package_importable():
     assert mod is not None
 
 
-def test_watcher_importable_and_raises():
-    """evolve.interfaces.watcher is importable and run_watcher raises
-    NotImplementedError (stub)."""
-    from evolve.interfaces.watcher import run_watcher
+def test_watcher_importable_and_has_main():
+    """evolve.interfaces.watcher is importable and exposes main()."""
+    from evolve.interfaces.watcher import main, CONVERGED_EXIT, _add_resume
 
-    with pytest.raises(NotImplementedError):
-        run_watcher()
+    assert callable(main)
+    assert CONVERGED_EXIT == 0
+    assert _add_resume(["start", "."]) == ["start", "--resume", "."]
 
 
 def test_init_files_exist():
