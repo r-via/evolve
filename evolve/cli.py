@@ -14,11 +14,13 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 
-# Re-export CLI utility subcommands extracted into evolve/cli_utils.py per
-# SPEC.md § "Hard rule: source files MUST NOT exceed 500 lines" (US-039).
+# Re-export CLI utility subcommands from evolve/interfaces/cli/utils.py
+# (US-083 DDD migration; previously in evolve/cli_utils.py per US-039).
 # Existing test imports `from evolve.cli import _clean_sessions` (and
-# `from evolve import _clean_sessions` via the package shim) keep working.
-from evolve.cli_utils import (  # noqa: F401 — re-exported for back-compat
+# `from evolve import _clean_sessions` via the package shim) plus
+# `patch("evolve.cli._clean_sessions", ...)` test surfaces keep working
+# unchanged via the re-export identity (same proven pattern as US-082).
+from evolve.interfaces.cli.utils import (  # noqa: F401 — re-exported
     _clean_sessions,
     _show_history,
     _show_status,
