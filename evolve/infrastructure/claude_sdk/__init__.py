@@ -55,6 +55,15 @@ from evolve.infrastructure.claude_sdk.spec_archival import (
     run_spec_archival,
 )
 
+from evolve.infrastructure.claude_sdk.draft_review import (
+    _build_draft_prompt,
+    _run_draft_claude_agent,
+    run_draft_agent,
+    _build_review_prompt,
+    _run_review_claude_agent,
+    run_review_agent,
+)
+
 __all__ = [  # noqa: E501
     "CURATION_LINE_THRESHOLD",
     "CURATION_ROUND_INTERVAL",
@@ -93,4 +102,10 @@ __all__ = [  # noqa: E501
     "build_spec_archival_prompt",
     "_run_spec_archival_claude_agent",
     "run_spec_archival",
+    "_build_draft_prompt",
+    "_run_draft_claude_agent",
+    "run_draft_agent",
+    "_build_review_prompt",
+    "_run_review_claude_agent",
+    "run_review_agent",
 ]

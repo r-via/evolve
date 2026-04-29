@@ -23,6 +23,7 @@ import pytest
 
 import evolve.agent as agent_mod
 import evolve.draft_review as draft_review_mod
+import evolve.infrastructure.claude_sdk.draft_review as infra_draft_review_mod
 import evolve.memory_curation as memory_curation_mod
 import evolve.oneshot_agents as oneshot_agents_mod
 import evolve.sdk_runner as sdk_runner_mod
@@ -48,6 +49,10 @@ AGENT_SRC = (Path(agent_mod.__file__)).read_text()
 # session-wide ``effort=EFFORT`` kwargs are still locked even though
 # they live in sibling modules.
 DRAFT_REVIEW_SRC = (Path(draft_review_mod.__file__)).read_text()
+# US-077: draft_review.py is now a shim; the real ``effort=DRAFT_EFFORT``
+# kwarg lives in ``evolve/infrastructure/claude_sdk/draft_review.py``.
+# Include both so the source-grep finds the kwarg regardless of state.
+INFRA_DRAFT_REVIEW_SRC = (Path(infra_draft_review_mod.__file__)).read_text()
 ONESHOT_AGENTS_SRC = (Path(oneshot_agents_mod.__file__)).read_text()
 MEMORY_CURATION_SRC = (Path(memory_curation_mod.__file__)).read_text()
 SDK_RUNNER_SRC = (Path(sdk_runner_mod.__file__)).read_text()
@@ -60,6 +65,7 @@ SYNC_README_SRC = (Path(sync_readme_mod.__file__)).read_text()
 COMBINED_SRC = (
     AGENT_SRC + "\n"
     + DRAFT_REVIEW_SRC + "\n"
+    + INFRA_DRAFT_REVIEW_SRC + "\n"
     + ONESHOT_AGENTS_SRC + "\n"
     + MEMORY_CURATION_SRC + "\n"
     + SDK_RUNNER_SRC + "\n"
