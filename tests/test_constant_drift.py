@@ -255,18 +255,21 @@ class TestMemorySectionRuntimeHeader:
     """
 
     def test_agent_source_no_longer_quotes_old_header(self):
-        # Post US-035 the runtime memory section header lives in
-        # ``evolve/prompt_builder.py``.  Round 3 audit fix added a
-        # third file (``prompt_diagnostics.py``) to the chain — scan
-        # all three to catch any legacy quotation in any location.
-        agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
-        pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
-        pd_src = (REPO_ROOT / "evolve" / "prompt_diagnostics.py").read_text()
-        for fname, src in (
-            ("agent.py", agent_src),
-            ("prompt_builder.py", pb_src),
-            ("prompt_diagnostics.py", pd_src),
-        ):
+        # Post US-073 the runtime memory section header lives in
+        # ``evolve/infrastructure/claude_sdk/prompt_builder.py``.
+        # Scan all four owning files to catch any legacy quotation.
+        files_to_scan = {
+            "agent.py": REPO_ROOT / "evolve" / "agent.py",
+            "prompt_builder.py": REPO_ROOT / "evolve" / "prompt_builder.py",
+            "prompt_diagnostics.py": REPO_ROOT / "evolve" / "prompt_diagnostics.py",
+            "infrastructure/claude_sdk/prompt_builder.py": (
+                REPO_ROOT / "evolve" / "infrastructure" / "claude_sdk" / "prompt_builder.py"
+            ),
+        }
+        for fname, fpath in files_to_scan.items():
+            if not fpath.exists():
+                continue
+            src = fpath.read_text()
             assert "errors from previous rounds" not in src, (
                 f"{fname} still carries the pre-broadening memory section "
                 "header — update to 'cumulative learning log — read, then "
@@ -274,17 +277,21 @@ class TestMemorySectionRuntimeHeader:
             )
 
     def test_agent_source_carries_broadened_header(self):
-        # Post US-035 the runtime memory section header lives in
-        # ``evolve/prompt_builder.py``.  At least one of the three owning
-        # files (agent / prompt_builder / prompt_diagnostics) must carry
-        # the broadened wording.
-        agent_src = (REPO_ROOT / "evolve" / "agent.py").read_text()
-        pb_src = (REPO_ROOT / "evolve" / "prompt_builder.py").read_text()
-        pd_src = (REPO_ROOT / "evolve" / "prompt_diagnostics.py").read_text()
-        assert (
-            "cumulative learning log" in agent_src
-            or "cumulative learning log" in pb_src
-            or "cumulative learning log" in pd_src
+        # Post US-073 the runtime memory section header lives in
+        # ``evolve/infrastructure/claude_sdk/prompt_builder.py``.
+        # Scan all four owning files (agent / prompt_builder shim /
+        # prompt_diagnostics / infrastructure prompt_builder) to catch
+        # post-DDD-migration drift.
+        files_to_scan = [
+            REPO_ROOT / "evolve" / "agent.py",
+            REPO_ROOT / "evolve" / "prompt_builder.py",
+            REPO_ROOT / "evolve" / "prompt_diagnostics.py",
+            REPO_ROOT / "evolve" / "infrastructure" / "claude_sdk" / "prompt_builder.py",
+        ]
+        assert any(
+            "cumulative learning log" in f.read_text()
+            for f in files_to_scan
+            if f.exists()
         )
 
 
