@@ -394,9 +394,9 @@ def run_validate_agent(
 # ---------------------------------------------------------------------------
 
 _LAZY_REEXPORTS = {
-    "build_diff_prompt": ("evolve.diff_agent", "build_diff_prompt"),
-    "_run_diff_claude_agent": ("evolve.diff_agent", "_run_diff_claude_agent"),
-    "run_diff_agent": ("evolve.diff_agent", "run_diff_agent"),
+    "build_diff_prompt": ("evolve.infrastructure.claude_sdk.diff_agent", "build_diff_prompt"),
+    "_run_diff_claude_agent": ("evolve.infrastructure.claude_sdk.diff_agent", "_run_diff_claude_agent"),
+    "run_diff_agent": ("evolve.infrastructure.claude_sdk.diff_agent", "run_diff_agent"),
     "SYNC_README_NO_CHANGES_SENTINEL": (
         "evolve.infrastructure.claude_sdk.sync_readme", "SYNC_README_NO_CHANGES_SENTINEL",
     ),
