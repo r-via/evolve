@@ -69,8 +69,10 @@ class TestSDKRunnerAgentWarnWiring:
         # Verify the source code calls ui.agent_warn (not ui.warn) for
         # error subtypes
         from pathlib import Path
+        # Real code lives in infrastructure/claude_sdk/runner.py after
+        # DDD migration (US-071); sdk_runner.py is a backward-compat shim.
         src = (Path(__file__).resolve().parent.parent
-               / "evolve" / "sdk_runner.py").read_text()
+               / "evolve" / "infrastructure" / "claude_sdk" / "runner.py").read_text()
         assert "ui.agent_warn(" in src, (
             "sdk_runner.py must call ui.agent_warn() for error subtypes"
         )
