@@ -412,14 +412,16 @@ class TestPartyModeFrameAttachment:
 
         mock_run_agent.side_effect = capture_agent_call
 
-        # Patch at module level for the dynamic import inside _run_party_mode
-        import types
-        fake_agent = types.ModuleType("agent")
-        fake_agent.run_claude_agent = mock_run_agent
-        fake_agent._is_benign_runtime_error = mock_is_benign
-        fake_agent._should_retry_rate_limit = mock_should_retry
-
-        monkeypatch.setitem(__import__("sys").modules, "evolve.agent", fake_agent)
+        # Patch agent module attributes directly so that the function-local
+        # ``from evolve import agent as _agent_mod`` picks up the mocks
+        # regardless of import order in the full test suite.  Patching only
+        # sys.modules["evolve.agent"] is insufficient because Python resolves
+        # ``from evolve import agent`` via getattr(sys.modules["evolve"], "agent")
+        # when the parent package is already imported.
+        import evolve.agent as _real_agent
+        monkeypatch.setattr(_real_agent, "run_claude_agent", mock_run_agent)
+        monkeypatch.setattr(_real_agent, "_is_benign_runtime_error", mock_is_benign)
+        monkeypatch.setattr(_real_agent, "_should_retry_rate_limit", mock_should_retry)
 
         from evolve.tui import PlainTUI
         ui = PlainTUI()
@@ -471,13 +473,10 @@ class TestPartyModeFrameAttachment:
         mock_is_benign = MagicMock(return_value=False)
         mock_should_retry = MagicMock(return_value=None)
 
-        import types
-        fake_agent = types.ModuleType("agent")
-        fake_agent.run_claude_agent = mock_run_agent
-        fake_agent._is_benign_runtime_error = mock_is_benign
-        fake_agent._should_retry_rate_limit = mock_should_retry
-
-        monkeypatch.setitem(__import__("sys").modules, "evolve.agent", fake_agent)
+        import evolve.agent as _real_agent
+        monkeypatch.setattr(_real_agent, "run_claude_agent", mock_run_agent)
+        monkeypatch.setattr(_real_agent, "_is_benign_runtime_error", mock_is_benign)
+        monkeypatch.setattr(_real_agent, "_should_retry_rate_limit", mock_should_retry)
 
         from evolve.tui import PlainTUI
         ui = PlainTUI()
