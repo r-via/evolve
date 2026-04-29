@@ -25,6 +25,16 @@ from evolve.infrastructure.claude_sdk.prompt_builder import (
     build_prompt,
 )
 
+from evolve.infrastructure.claude_sdk.prompt_diagnostics import (
+    _PREV_ATTEMPT_LOG_FMT,
+    _MEMORY_WIPED_HEADER_FMT,
+    _PRIOR_ROUND_ANOMALY_PATTERNS,
+    _detect_prior_round_anomalies,
+    build_prev_crash_section,
+    build_prior_round_audit_section,
+    build_prev_attempt_section,
+)
+
 __all__ = [
     "MODEL",
     "MAX_TURNS",
@@ -42,4 +52,11 @@ __all__ = [
     "_load_project_context",
     "build_prompt_blocks",
     "build_prompt",
+    "_PREV_ATTEMPT_LOG_FMT",
+    "_MEMORY_WIPED_HEADER_FMT",
+    "_PRIOR_ROUND_ANOMALY_PATTERNS",
+    "_detect_prior_round_anomalies",
+    "build_prev_crash_section",
+    "build_prior_round_audit_section",
+    "build_prev_attempt_section",
 ]
