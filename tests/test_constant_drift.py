@@ -132,25 +132,26 @@ class TestCairosvgMissingWarn:
         assert "no-op" in warn
 
     def test_call_sites_no_longer_duplicate_the_literal(self):
-        """evolve/tui/ must reference the constant at both warning call sites.
+        """interfaces/tui/ must reference the constant at both warning call sites.
 
         Previously the same wording lived inlined at RichTUI.__init__ and
         RichTUI.capture_frame.  Extracting to _CAIROSVG_MISSING_WARN means
         the body ``capture_frames is enabled but cairosvg`` should appear
         exactly once in the tui package — inside the constant assignment
-        in ``evolve/tui/__init__.py``.
+        in ``evolve/interfaces/tui/__init__.py``.
         """
-        # The constant definition lives in evolve/tui/__init__.py
-        init_src = (REPO_ROOT / "evolve" / "tui" / "__init__.py").read_text()
+        # The constant definition lives in evolve/interfaces/tui/__init__.py
+        # (canonical location after DDD migration US-084; evolve/tui/ is a shim)
+        init_src = (REPO_ROOT / "evolve" / "interfaces" / "tui" / "__init__.py").read_text()
         count = init_src.count("capture_frames is enabled but cairosvg")
         assert count <= 1, (
-            f"evolve/tui/__init__.py contains {count} copies of the cairosvg-missing "
-            "wording — expected 1 (constant body).  Both call sites must "
-            "log _CAIROSVG_MISSING_WARN rather than re-inlining the text."
+            f"evolve/interfaces/tui/__init__.py contains {count} copies of the "
+            "cairosvg-missing wording — expected 1 (constant body).  Both call "
+            "sites must log _CAIROSVG_MISSING_WARN rather than re-inlining the text."
         )
         assert "_CAIROSVG_MISSING_WARN" in init_src
         # The call-site usage in rich.py must go through _log.warning(<constant>).
-        rich_src = (REPO_ROOT / "evolve" / "tui" / "rich.py").read_text()
+        rich_src = (REPO_ROOT / "evolve" / "interfaces" / "tui" / "rich.py").read_text()
         assert "_log.warning(_CAIROSVG_MISSING_WARN)" in rich_src
 
 

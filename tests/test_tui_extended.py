@@ -324,7 +324,7 @@ class TestHasRichImportError:
         old_json = _tui_mod._use_json
         try:
             _tui_mod._use_json = False
-            with patch("evolve.tui._has_rich", return_value=False):
+            with patch("evolve.interfaces.tui._has_rich", return_value=False):
                 ui = get_tui()
                 assert isinstance(ui, PlainTUI)
         finally:
