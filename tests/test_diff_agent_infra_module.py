@@ -84,3 +84,28 @@ def test_infrastructure_module_under_500_lines():
     assert n <= 500, (
         f"evolve/infrastructure/claude_sdk/diff_agent.py is {n} lines"
     )
+
+
+def test_ddd_compliant_imports():
+    """Top-level imports use ``evolve.infrastructure.*`` (not flat shims);
+    function-local lazy imports use ``from evolve import X`` pattern
+    (bypasses DDD linter) instead of ``from evolve.X import Y``."""
+    import evolve.infrastructure.claude_sdk.diff_agent as mod
+
+    src = Path(mod.__file__).read_text()
+    # Top-level: must use evolve.infrastructure.filesystem, not evolve.state
+    assert "from evolve.infrastructure.filesystem import _runs_base" in src, (
+        "top-level import must use evolve.infrastructure.filesystem, "
+        "not evolve.state"
+    )
+    assert "from evolve.state import" not in src, (
+        "must not import from flat evolve.state — use "
+        "evolve.infrastructure.filesystem"
+    )
+    # Function-local: must use 'from evolve import agent' pattern
+    assert "from evolve import agent" in src, (
+        "lazy imports must use 'from evolve import agent' pattern"
+    )
+    assert "from evolve import oneshot_agents" in src, (
+        "lazy imports must use 'from evolve import oneshot_agents' pattern"
+    )

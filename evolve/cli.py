@@ -24,13 +24,13 @@ from evolve.cli_utils import (  # noqa: F401 — re-exported for back-compat
     _show_status,
 )
 
-# Re-export config-resolution helpers extracted into evolve/cli_config.py per
-# SPEC.md § "Hard rule: source files MUST NOT exceed 500 lines" (US-045).
+# Re-export config-resolution helpers from evolve/interfaces/cli/config.py
+# (US-082 DDD migration; previously in evolve/cli_config.py per US-045).
 # Existing test imports `from evolve.cli import _resolve_config` (and
 # `from evolve import _resolve_config` via the package shim) plus
 # `patch("evolve.cli._resolve_config", ...)` test surfaces keep working
 # unchanged via the re-export identity (same proven pattern as US-039).
-from evolve.cli_config import (  # noqa: F401 — re-exported for back-compat
+from evolve.interfaces.cli.config import (  # noqa: F401 — re-exported
     EFFORT_LEVELS,
     _load_config,
     _resolve_config,
