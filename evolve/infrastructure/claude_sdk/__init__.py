@@ -45,6 +45,16 @@ from evolve.infrastructure.claude_sdk.prompt_diagnostics import (
     build_prev_attempt_section,
 )
 
+from evolve.infrastructure.claude_sdk.spec_archival import (
+    ARCHIVAL_LINE_THRESHOLD,
+    ARCHIVAL_ROUND_INTERVAL,
+    _ARCHIVAL_MAX_SHRINK,
+    _should_run_spec_archival,
+    build_spec_archival_prompt,
+    _run_spec_archival_claude_agent,
+    run_spec_archival,
+)
+
 __all__ = [  # noqa: E501
     "CURATION_LINE_THRESHOLD",
     "CURATION_ROUND_INTERVAL",
@@ -76,4 +86,11 @@ __all__ = [  # noqa: E501
     "build_prev_crash_section",
     "build_prior_round_audit_section",
     "build_prev_attempt_section",
+    "ARCHIVAL_LINE_THRESHOLD",
+    "ARCHIVAL_ROUND_INTERVAL",
+    "_ARCHIVAL_MAX_SHRINK",
+    "_should_run_spec_archival",
+    "build_spec_archival_prompt",
+    "_run_spec_archival_claude_agent",
+    "run_spec_archival",
 ]
