@@ -141,7 +141,7 @@ def _run_single_round_body(
         _probe(f"invoking implement agent — target: {current}")
         ui.agent_working()
         from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
-        agent_subtype = _analyze_and_fix(
+        agent_subtype = analyze_and_fix(
             project_dir=project_dir,
             check_output=check_output,
             check_cmd=check_cmd,
@@ -160,7 +160,7 @@ def _run_single_round_body(
         _probe("backlog drained — invoking draft agent (Winston + John, Opus low)")
         ui.agent_working()
         from evolve.infrastructure.claude_sdk.draft_review import run_draft_agent
-        _run_draft_agent(
+        run_draft_agent(
             project_dir=project_dir,
             run_dir=rdir,
             spec=spec,
@@ -212,7 +212,7 @@ def _run_single_round_body(
         try:
             from evolve.infrastructure.claude_sdk.draft_review import run_review_agent
             _probe("invoking review agent (Zara, Opus low)")
-            _run_review_agent(
+            run_review_agent(
                 project_dir=project_dir,
                 run_dir=rdir,
                 round_num=round_num,
