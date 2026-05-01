@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from evolve.infrastructure.claude_sdk.runner import run_claude_agent
-from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
 from evolve.infrastructure.claude_sdk.runtime import _should_retry_rate_limit
 from evolve.infrastructure.claude_sdk.runtime import (
     _patch_sdk_parser,

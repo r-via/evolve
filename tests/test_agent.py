@@ -11,7 +11,7 @@ from evolve.infrastructure.claude_sdk.prompt_builder import (
 )
 from evolve.infrastructure.claude_sdk.oneshot_agents import _build_check_section
 from evolve.infrastructure.claude_sdk.runner import _build_multimodal_prompt
-from evolve.infrastructure.claude_sdk.runtime import _detect_current_attempt
+from evolve.infrastructure.claude_sdk.agent import _detect_current_attempt
 from evolve.infrastructure.claude_sdk.runtime import _summarise_tool_input
 from evolve.infrastructure.claude_sdk.runtime import _should_retry_rate_limit
 from evolve.infrastructure.claude_sdk.prompt_diagnostics import _detect_prior_round_anomalies

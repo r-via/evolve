@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
 from evolve.infrastructure.claude_sdk.runtime import _patch_sdk_parser
 from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 

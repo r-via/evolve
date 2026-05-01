@@ -10,7 +10,7 @@ from evolve.infrastructure.claude_sdk.runtime import (
     _patch_sdk_parser,
 )
 from evolve.infrastructure.claude_sdk.runtime import _should_retry_rate_limit
-from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
 
 
 # ---------------------------------------------------------------------------

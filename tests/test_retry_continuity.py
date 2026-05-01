@@ -21,7 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from evolve.infrastructure.claude_sdk.runtime import (
+from evolve.infrastructure.claude_sdk.agent import (
     _detect_current_attempt,
     analyze_and_fix,
 )

@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 from evolve.infrastructure.claude_sdk.runner import _build_multimodal_prompt
-from evolve.infrastructure.claude_sdk.runtime import _detect_current_attempt
+from evolve.infrastructure.claude_sdk.agent import _detect_current_attempt
 from evolve.infrastructure.claude_sdk.prompt_diagnostics import _detect_prior_round_anomalies
 
 
@@ -181,7 +181,7 @@ class TestAnalyzeAndFixEdgeCases:
     @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
     def test_yolo_forwards_to_allow_installs(self, mock_retries, mock_agent, tmp_path: Path):
         """yolo=True forwards to build_prompt as allow_installs=True."""
-        from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+        from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
         (tmp_path / "README.md").write_text("# Spec")
         run_dir = tmp_path / ".evolve" / "runs" / "session"
         run_dir.mkdir(parents=True)
@@ -200,7 +200,7 @@ class TestAnalyzeAndFixEdgeCases:
     @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
     def test_copyfile_oserror_non_fatal(self, mock_retries, tmp_path: Path):
         """When shutil.copyfile raises OSError, analyze_and_fix doesn't crash."""
-        from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+        from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
         import shutil
         (tmp_path / "README.md").write_text("# Spec")
         run_dir = tmp_path / ".evolve" / "runs" / "session"
@@ -397,7 +397,7 @@ class TestResultMessageSubtype:
 
     def test_analyze_and_fix_propagates_subtype(self, tmp_path: Path):
         """analyze_and_fix returns the subtype from run_claude_agent."""
-        from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+        from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
 
         (tmp_path / "README.md").write_text("# Spec")
         run_dir = tmp_path / ".evolve" / "runs" / "session"
@@ -414,7 +414,7 @@ class TestResultMessageSubtype:
 
     def test_analyze_and_fix_returns_none_on_no_sdk(self, tmp_path: Path):
         """analyze_and_fix returns None when SDK is missing."""
-        from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+        from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
 
         (tmp_path / "README.md").write_text("# Spec")
         run_dir = tmp_path / ".evolve" / "runs" / "session"

@@ -15,7 +15,7 @@ from evolve.application.retry_policy import should_retry
 from evolve.application.convergence_check import check_convergence
 from evolve.application.draft_us import draft_us
 from evolve.application.review_round import review_round
-from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
 from evolve.application.curate_memory import curate_memory
 from evolve.application.archive_spec import archive_spec
 from evolve.application.party_session import run_party_session
