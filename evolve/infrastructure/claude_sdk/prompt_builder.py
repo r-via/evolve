@@ -113,11 +113,9 @@ def build_prompt_blocks(
     if yolo is not None:
         allow_installs = yolo
 
-    # Function-local imports for legacy modules — ``from evolve import X``
-    # bypasses the DDD linter (``_classify_module("evolve")`` returns None).
+    # Function-local imports for sibling infrastructure modules.
     import evolve.infrastructure.claude_sdk.prompt_diagnostics as _pd
     import evolve.infrastructure.claude_sdk.agent as _agent_mod
-    import evolve.application.run_loop as _orch_mod
 
     # Load system prompt — prompts/ lives at project root (two levels up
     # from evolve/infrastructure/claude_sdk/prompt_builder.py).

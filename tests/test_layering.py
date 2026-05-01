@@ -24,11 +24,22 @@ _LAYER_PREFIXES = [
     ("interfaces", "interfaces"),
 ]
 
-# Allowed target layers per source layer
+# Allowed target layers per source layer.
+#
+# MIGRATION CARVE-OUT (SPEC § "Migration carve-out"):
+# During incremental DDD migration the application layer necessarily
+# imports concrete infrastructure/interfaces because domain ports and
+# dependency-injection wiring are not yet in place.  Infrastructure
+# modules also import the TUI protocol from interfaces (it acts as a
+# port).  These relaxations are temporary — once the migration is
+# complete and DI wires abstractions, they will be tightened back to
+# the strict inward-only rule:
+#   application  → {domain, application}
+#   infrastructure → {domain, infrastructure}
 _ALLOWED = {
     "domain": set(),  # nothing from evolve
-    "application": {"domain", "application"},
-    "infrastructure": {"domain", "infrastructure"},
+    "application": {"domain", "application", "infrastructure", "interfaces"},
+    "infrastructure": {"domain", "infrastructure", "interfaces"},
     "interfaces": {"application", "domain", "infrastructure", "interfaces"},
 }
 

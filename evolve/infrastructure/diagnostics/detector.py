@@ -35,10 +35,13 @@ _FILE_TOO_LARGE_LIMIT = 500
 
 # DDD layer classification — mirrors tests/test_layering.py logic.
 _DDD_LAYERS = ("domain", "application", "infrastructure", "interfaces")
+# MIGRATION CARVE-OUT — mirrors tests/test_layering.py._ALLOWED.
+# Temporary relaxation: application → infrastructure/interfaces,
+# infrastructure → interfaces.  Tighten after DI wiring.
 _DDD_ALLOWED = {
     "domain": set(),
-    "application": {"domain", "application"},
-    "infrastructure": {"domain", "infrastructure"},
+    "application": {"domain", "application", "infrastructure", "interfaces"},
+    "infrastructure": {"domain", "infrastructure", "interfaces"},
     "interfaces": {"application", "domain", "infrastructure", "interfaces"},
 }
 

@@ -32,24 +32,36 @@ class TestDetectLayeringViolation:
         assert len(violations) == 1
         f, mod, src, tgt = violations[0]
         assert "bad.py" in f
-        assert mod == "evolve.application.run_loop."
+        assert mod == "evolve.application.run_loop"
         assert src == "domain"
-        assert tgt == "legacy"
+        assert tgt == "application"
 
-    def test_detects_application_importing_infrastructure(self, tmp_path):
-        """Application importing from infrastructure is a violation."""
+    def test_application_importing_infrastructure_allowed_during_migration(self, tmp_path):
+        """Application → infrastructure is allowed during DDD migration carve-out."""
         evolve_dir = tmp_path / "evolve"
         app_dir = evolve_dir / "application"
         app_dir.mkdir(parents=True)
         (app_dir / "__init__.py").write_text("")
-        (app_dir / "bad.py").write_text(
+        (app_dir / "ok.py").write_text(
             "from evolve.infrastructure.git import something\n"
+        )
+        violations = _detect_layering_violation(tmp_path)
+        assert violations == []
+
+    def test_detects_infrastructure_importing_application(self, tmp_path):
+        """Infrastructure importing from application is still a violation."""
+        evolve_dir = tmp_path / "evolve"
+        infra_dir = evolve_dir / "infrastructure"
+        infra_dir.mkdir(parents=True)
+        (infra_dir / "__init__.py").write_text("")
+        (infra_dir / "bad.py").write_text(
+            "from evolve.application.run_loop import something\n"
         )
         violations = _detect_layering_violation(tmp_path)
         assert len(violations) == 1
         _, _, src, tgt = violations[0]
-        assert src == "application"
-        assert tgt == "infrastructure"
+        assert src == "infrastructure"
+        assert tgt == "application"
 
     def test_clean_ddd_files_no_violations(self, tmp_path):
         """Clean domain files produce no violations."""
