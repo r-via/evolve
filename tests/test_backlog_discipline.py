@@ -15,9 +15,16 @@ from pathlib import Path
 
 import pytest
 
-from evolve.agent import _build_draft_prompt, build_prompt
-from evolve.orchestrator import _BACKLOG_VIOLATION_HEADER, _BACKLOG_VIOLATION_PREFIX
-from evolve.state import _detect_backlog_violation, _extract_unchecked_lines
+from evolve.infrastructure.claude_sdk.draft_review import _build_draft_prompt
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
+from evolve.application.run_loop import (
+    _BACKLOG_VIOLATION_HEADER,
+    _BACKLOG_VIOLATION_PREFIX,
+)
+from evolve.infrastructure.filesystem.improvement_parser import (
+    _detect_backlog_violation,
+    _extract_unchecked_lines,
+)
 
 
 def _make_project(tmp_path: Path, prev_crash: str | None = None,

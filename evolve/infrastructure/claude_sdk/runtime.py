@@ -220,7 +220,7 @@ def _run_agent_with_retries(
     import sys
     _agent_mod = sys.modules.get("evolve.agent")
     if _agent_mod is not None:
-        get_tui = _agent_mod.get_tui
+        get_tui = __import__("evolve.interfaces.tui", fromlist=["get_tui"]).get_tui
     else:
         # evolve.agent not yet loaded — import tui directly as fallback.
         # This path only fires in isolated unit tests that don't import

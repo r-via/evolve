@@ -6,11 +6,9 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.agent import (
-    analyze_and_fix,
-    _patch_sdk_parser,
-    build_prompt,
-)
+from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+from evolve.infrastructure.claude_sdk.runtime import _patch_sdk_parser
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -40,9 +38,9 @@ class TestAnalyzeAndFixRetry:
             coro.close()  # prevent "coroutine was never awaited" warning
             raise RuntimeError("cancel scope blah")
 
-        with patch("evolve.agent.get_tui", return_value=self.mock_ui), \
+        with patch("evolve.interfaces.tui.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
-             patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run):
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run):
             analyze_and_fix(tmp_path)
 
         self.mock_ui.warn.assert_not_called()
@@ -60,10 +58,10 @@ class TestAnalyzeAndFixRetry:
             if call_count < 3:
                 raise Exception("rate_limit_exceeded")
 
-        with patch("evolve.agent.get_tui", return_value=self.mock_ui), \
+        with patch("evolve.interfaces.tui.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
-             patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
-             patch("evolve.agent.time.sleep"):
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
+             patch("evolve.infrastructure.claude_sdk.runtime.time.sleep"):
             analyze_and_fix(tmp_path, max_retries=5)
 
         assert call_count == 3
@@ -77,9 +75,9 @@ class TestAnalyzeAndFixRetry:
             coro.close()  # prevent "coroutine was never awaited" warning
             raise Exception("some random error")
 
-        with patch("evolve.agent.get_tui", return_value=self.mock_ui), \
+        with patch("evolve.interfaces.tui.get_tui", return_value=self.mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": self._mock_sdk}), \
-             patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run):
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run):
             analyze_and_fix(tmp_path, max_retries=3)
 
         self.mock_ui.warn.assert_called_once()
@@ -313,9 +311,9 @@ class TestAnalyzeAndFixRunInner:
 
         mock_sdk = MagicMock()
 
-        with patch("evolve.agent.get_tui", return_value=mock_ui), \
+        with patch("evolve.interfaces.tui.get_tui", return_value=mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
+             patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", side_effect=mock_run_agent):
             analyze_and_fix(tmp_path, round_num=3, run_dir=run_dir)
 
         assert len(captured_calls) == 1
@@ -353,10 +351,10 @@ class TestAnalyzeAndFixRunInner:
 
         mock_sdk = MagicMock()
 
-        with patch("evolve.agent.get_tui", return_value=mock_ui), \
+        with patch("evolve.interfaces.tui.get_tui", return_value=mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent), \
-             patch("evolve.agent.time.sleep"):
+             patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", side_effect=mock_run_agent), \
+             patch("evolve.infrastructure.claude_sdk.runtime.time.sleep"):
             analyze_and_fix(tmp_path, round_num=5, run_dir=run_dir, max_retries=5)
 
         assert len(captured_calls) == 3
@@ -387,9 +385,9 @@ class TestAnalyzeAndFixRunInner:
 
         mock_sdk = MagicMock()
 
-        with patch("evolve.agent.get_tui", return_value=mock_ui), \
+        with patch("evolve.interfaces.tui.get_tui", return_value=mock_ui), \
              patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
+             patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", side_effect=mock_run_agent):
             analyze_and_fix(tmp_path, round_num=7, run_dir=run_dir)
 
         assert captured_calls[0]["log_filename"] == "conversation_loop_7_attempt_2.md"

@@ -18,8 +18,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.agent import build_prompt
-from evolve.orchestrator import _run_rounds
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
+from evolve.application.run_loop import _run_rounds
 
 
 def _setup_project_with_all_checked(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -59,9 +59,9 @@ class TestBacklogDrainedDiagnostic:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,

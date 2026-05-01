@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def validate(
+def run_validate(
     project_dir: Path,
     check_cmd: str | None = None,
     timeout: int = 20,
@@ -29,12 +29,13 @@ def validate(
         Exit code: 0 if all claims pass, 1 if any fail, 2 on error.
     """
     # Lazy imports — preserve ``patch("evolve.orchestrator.X")`` surfaces.
-    __mod = __import__("evolve.orchestrator", fromlist=["_auto_detect_check", "_emit_stale_readme_advisory", "_probe", "_runs_base", "get_tui"])
-    _auto_detect_check = __mod._auto_detect_check
-    _emit_stale_readme_advisory = __mod._emit_stale_readme_advisory
-    _probe = __mod._probe
-    _runs_base = __mod._runs_base
-    get_tui = __mod.get_tui
+    from evolve.application.run_loop import (
+        _auto_detect_check,
+        _emit_stale_readme_advisory,
+        _probe,
+        _runs_base,
+        get_tui,
+    )
 
     ui = get_tui()
 
@@ -81,10 +82,8 @@ def validate(
         ui.no_check()
 
     # 2. Launch agent in validate mode (restricted tools)
-    __mod = __import__("evolve.agent", fromlist=["run_validate_agent"])
-    run_validate_agent = __mod.run_validate_agent
-    __mod = __import__("evolve.infrastructure.claude_sdk", fromlist=["runtime"])
-    _runtime = __mod.runtime
+    from evolve.infrastructure.claude_sdk.oneshot_agents import run_validate_agent
+    from evolve.infrastructure.claude_sdk import runtime as _runtime
     _runtime.MODEL = model
     _runtime.EFFORT = effort
 

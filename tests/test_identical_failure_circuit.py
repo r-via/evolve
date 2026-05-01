@@ -17,12 +17,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.diagnostics import (
+from evolve.infrastructure.diagnostics.detector import (
     MAX_IDENTICAL_FAILURES,
     _failure_signature,
     _is_circuit_breaker_tripped,
 )
-from evolve.orchestrator import _run_rounds
+from evolve.application.run_loop import _run_rounds
 
 
 class TestFailureSignature:
@@ -117,11 +117,11 @@ class TestCircuitBreakerIntegration:
         def always_stall(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             return 0, "deterministic pytest hang\npytest collecting...", True
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=always_stall), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._forever_restart"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=always_stall), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._forever_restart"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -153,9 +153,9 @@ class TestCircuitBreakerIntegration:
                 return 1, "crash attempt 2", False
             return 2, "crash attempt 3 different exit code", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=heterogeneous), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=heterogeneous), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -176,9 +176,9 @@ class TestCircuitBreakerIntegration:
         def always_stall(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             return 0, "identical stall output", True
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=always_stall), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=always_stall), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,

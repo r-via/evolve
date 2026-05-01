@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from evolve.orchestrator import _is_self_evolving
+from evolve.application.run_loop import _is_self_evolving
 
 
 class TestIsSelfEvolving:
@@ -21,9 +21,9 @@ class TestIsSelfEvolving:
 
     def test_evolve_own_repo_is_self_evolving(self):
         """Path that contains the running ``evolve/`` package → self."""
-        # The evolve package dir is this test's ``evolve.orchestrator``
+        # The evolve package dir is this test's ``evolve.application.run_loop``
         # module parent; the project root is its grandparent.
-        import evolve.orchestrator as orch
+        import evolve.application.run_loop as orch
         evolve_pkg = Path(orch.__file__).resolve().parent
         evolve_root = evolve_pkg.parent
         assert _is_self_evolving(evolve_root) is True
@@ -56,7 +56,7 @@ class TestIsSelfEvolving:
         (resolved-path comparison).  Defensive check: path.resolve()
         should normalise both sides before equality.
         """
-        import evolve.orchestrator as orch
+        import evolve.application.run_loop as orch
         evolve_root = Path(orch.__file__).resolve().parent.parent
 
         link = tmp_path / "evolve_link"

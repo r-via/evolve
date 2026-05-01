@@ -15,12 +15,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.agent import (
-    _build_draft_prompt,
-    _build_review_prompt,
-    run_draft_agent,
-    run_review_agent,
-)
+from evolve.infrastructure.claude_sdk.draft_review import _build_draft_prompt
+from evolve.infrastructure.claude_sdk.draft_review import _build_review_prompt
+from evolve.infrastructure.claude_sdk.draft_review import run_draft_agent
+from evolve.infrastructure.claude_sdk.draft_review import run_review_agent
 
 
 class TestDraftPromptBuilder:
@@ -112,8 +110,8 @@ class TestOrchestratorRouting:
         run_dir = runs_base / "session"
         run_dir.mkdir()
 
-        import evolve.orchestrator as orch
-        import evolve.agent as agent_mod
+        import evolve.application.run_loop as orch
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         # Mock the agent functions so we can see which was invoked.
         called = {"implement": 0, "draft": 0, "review": 0}
@@ -164,8 +162,8 @@ class TestOrchestratorRouting:
         run_dir = runs_base / "session"
         run_dir.mkdir()
 
-        import evolve.orchestrator as orch
-        import evolve.agent as agent_mod
+        import evolve.application.run_loop as orch
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         called = {"implement": 0, "draft": 0, "review": 0}
         monkeypatch.setattr(agent_mod, "analyze_and_fix",
@@ -212,8 +210,8 @@ class TestReviewAgentErrorIsolation:
         run_dir = runs_base / "session"
         run_dir.mkdir()
 
-        import evolve.orchestrator as orch
-        import evolve.agent as agent_mod
+        import evolve.application.run_loop as orch
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         def boom(**kwargs):
             raise RuntimeError("review boom")

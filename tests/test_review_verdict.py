@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from evolve.diagnostics import _check_review_verdict
-from evolve.agent import build_prompt
+from evolve.infrastructure.diagnostics.detector import _check_review_verdict
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
 
 # ---------------------------------------------------------------------------

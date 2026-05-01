@@ -7,7 +7,10 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.agent import build_dry_run_prompt, run_dry_run_agent
+from evolve.infrastructure.claude_sdk.oneshot_agents import (
+    build_dry_run_prompt,
+    run_dry_run_agent,
+)
 
 class TestBuildDryRunPrompt:
     """Tests for agent.build_dry_run_prompt."""
@@ -113,7 +116,7 @@ class TestRunDryRunAgent:
             coro.close()
             raise RuntimeError("cancel scope")
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             # Should return without error
             run_dry_run_agent(tmp_path, run_dir=rdir)
@@ -133,8 +136,8 @@ class TestRunDryRunAgent:
                 raise Exception("rate_limit exceeded")
             # Second call succeeds
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
-             patch("evolve.agent.time.sleep") as mock_sleep, \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
+             patch("evolve.infrastructure.claude_sdk.runtime.time.sleep") as mock_sleep, \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_dry_run_agent(tmp_path, run_dir=rdir, max_retries=3)
             assert call_count == 2
@@ -149,7 +152,7 @@ class TestRunDryRunAgent:
             coro.close()
             raise ValueError("unexpected SDK error")
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             # Should not raise — logs warning and returns
             run_dry_run_agent(tmp_path, run_dir=rdir)
@@ -161,7 +164,7 @@ class TestRunDryRunAgent:
         def mock_asyncio_run(coro):
             coro.close()
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_dry_run_agent(tmp_path, run_dir=rdir)
             assert rdir.is_dir()
@@ -173,9 +176,9 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_dry_run_agent") as mock_agent:
-            from evolve.orchestrator import run_dry_run
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_dry_run_agent") as mock_agent:
+            from evolve.application.dry_run import run_dry_run
             run_dry_run(tmp_path)
 
         # Should have created a timestamped dir under runs/
@@ -191,9 +194,9 @@ class TestRunDryRun:
         mock_result.stdout = "5 passed"
         mock_result.stderr = ""
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result) as mock_sub, \
-             patch("evolve.agent.run_dry_run_agent") as mock_agent:
-            from evolve.orchestrator import run_dry_run
+        with patch("evolve.application.run_loop.subprocess.run", return_value=mock_result) as mock_sub, \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_dry_run_agent") as mock_agent:
+            from evolve.application.dry_run import run_dry_run
             run_dry_run(tmp_path, check_cmd="pytest", timeout=60)
 
         # subprocess.run should have been called with the check command
@@ -208,9 +211,9 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 60)), \
-             patch("evolve.agent.run_dry_run_agent"):
-            from evolve.orchestrator import run_dry_run
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 60)), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_dry_run_agent"):
+            from evolve.application.dry_run import run_dry_run
             # Should not raise
             run_dry_run(tmp_path, check_cmd="pytest", timeout=60)
 
@@ -220,10 +223,10 @@ class TestRunDryRun:
 
         mock_result = MagicMock(returncode=0, stdout="ok", stderr="")
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value="pytest") as mock_detect, \
-             patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
-             patch("evolve.agent.run_dry_run_agent"):
-            from evolve.orchestrator import run_dry_run
+        with patch("evolve.application.run_loop._auto_detect_check", return_value="pytest") as mock_detect, \
+             patch("evolve.application.run_loop.subprocess.run", return_value=mock_result), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_dry_run_agent"):
+            from evolve.application.dry_run import run_dry_run
             run_dry_run(tmp_path)
             mock_detect.assert_called_once_with(tmp_path)
 
@@ -231,9 +234,9 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_dry_run_agent"):
-            from evolve.orchestrator import run_dry_run
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_dry_run_agent"):
+            from evolve.application.dry_run import run_dry_run
             run_dry_run(tmp_path)
 
         # No report produced so warn is displayed
@@ -250,9 +253,9 @@ class TestRunDryRun:
             if rd:
                 (rd / "dry_run_report.md").write_text("# Report\n")
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_dry_run_agent", side_effect=create_report):
-            from evolve.orchestrator import run_dry_run
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_dry_run_agent", side_effect=create_report):
+            from evolve.application.dry_run import run_dry_run
             run_dry_run(tmp_path)
 
         output = capsys.readouterr().out
@@ -269,16 +272,16 @@ class TestRunDryRun:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        import evolve.agent as _agent_mod
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_dry_run_agent"):
-            from evolve.orchestrator import run_dry_run
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_dry_run_agent"):
+            from evolve.application.dry_run import run_dry_run
             run_dry_run(tmp_path, model="claude-sonnet-4-20250514")
-            assert __rt_mod.MODEL == "claude-sonnet-4-20250514"
+            assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
 
         # Reset
-        __rt_mod.MODEL = "claude-opus-4-6"
+        _agent_mod.MODEL = "claude-opus-4-6"
 
 class TestRunDryRunClaudeAgent:
     """Tests for agent._run_dry_run_claude_agent with mocked SDK."""
@@ -312,7 +315,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_dry_run_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -352,7 +355,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_dry_run_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -382,7 +385,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_dry_run_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -420,7 +423,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_dry_run_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -459,7 +462,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_dry_run_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -489,7 +492,7 @@ class TestRunDryRunClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_dry_run_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_dry_run_claude_agent
             asyncio.run(_run_dry_run_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))

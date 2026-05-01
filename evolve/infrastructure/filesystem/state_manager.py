@@ -352,8 +352,8 @@ def _compute_backlog_stats(
     fixtures (tmp_path with no git), and corrupted repos.
     """
     # Function-local import: bare ``evolve`` bypasses DDD linter
-    from evolve import state_improvements as _si  # noqa: E402
-    from evolve import git as _git_mod  # noqa: E402
+    import evolve.infrastructure.filesystem.improvement_parser as _si  # noqa: E402
+    import evolve.infrastructure.git.adapter as _git_mod  # noqa: E402
 
     added_this_round = 0
     growth_rate = 0.0
@@ -429,7 +429,7 @@ def _write_state_json(
             Included in state.json when provided.
     """
     # Function-local import: bare ``evolve`` bypasses DDD linter
-    from evolve import state_improvements as _si  # noqa: E402
+    import evolve.infrastructure.filesystem.improvement_parser as _si  # noqa: E402
 
     done = _si._count_checked(improvements_path)
     remaining = _si._count_unchecked(improvements_path)

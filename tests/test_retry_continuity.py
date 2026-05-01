@@ -21,11 +21,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from evolve.agent import (
+from evolve.infrastructure.claude_sdk.runtime import (
     _detect_current_attempt,
     analyze_and_fix,
-    build_prompt,
 )
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +85,8 @@ class TestPerAttemptLogsNoOverwrite:
                     "# Attempt 2 transcript\n\n- Continued from attempt 1\n"
                 )
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()), \
-             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
+        with patch("evolve.interfaces.tui.get_tui", return_value=MagicMock()), \
+             patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", side_effect=mock_run_agent):
             analyze_and_fix(tmp_path, round_num=round_num, run_dir=run_dir)
 
         # Attempt 2's invocation must have targeted the attempt_2 log.
@@ -263,8 +263,8 @@ class TestCanonicalLogCopy:
         ):
             (Path(run_dir) / log_filename).write_text(attempt_content)
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()), \
-             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
+        with patch("evolve.interfaces.tui.get_tui", return_value=MagicMock()), \
+             patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", side_effect=mock_run_agent):
             analyze_and_fix(tmp_path, round_num=round_num, run_dir=run_dir)
 
         canonical = run_dir / f"conversation_loop_{round_num}.md"
@@ -297,8 +297,8 @@ class TestCanonicalLogCopy:
         ):
             (Path(run_dir) / log_filename).write_text(attempt_2_content)
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()), \
-             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
+        with patch("evolve.interfaces.tui.get_tui", return_value=MagicMock()), \
+             patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", side_effect=mock_run_agent):
             analyze_and_fix(tmp_path, round_num=round_num, run_dir=run_dir)
 
         canonical = run_dir / f"conversation_loop_{round_num}.md"
@@ -316,8 +316,8 @@ class TestCanonicalLogCopy:
         ):
             (Path(run_dir) / log_filename).write_text("# content\n")
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()), \
-             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
+        with patch("evolve.interfaces.tui.get_tui", return_value=MagicMock()), \
+             patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", side_effect=mock_run_agent):
             analyze_and_fix(tmp_path, round_num=round_num, run_dir=run_dir)
 
         canonical = run_dir / f"conversation_loop_{round_num}.md"
@@ -340,8 +340,8 @@ class TestCanonicalLogCopy:
             # Agent "crashed" before writing any log — do nothing here.
             return
 
-        with patch("evolve.agent.get_tui", return_value=MagicMock()), \
-             patch("evolve.agent.run_claude_agent", side_effect=mock_run_agent):
+        with patch("evolve.interfaces.tui.get_tui", return_value=MagicMock()), \
+             patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", side_effect=mock_run_agent):
             # Should not raise even though no log was written.
             analyze_and_fix(tmp_path, round_num=round_num, run_dir=run_dir)
 

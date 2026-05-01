@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def dry_run(
+def run_dry_run(
     project_dir: Path,
     check_cmd: str | None = None,
     timeout: int = 20,
@@ -28,12 +28,13 @@ def dry_run(
     No files in the project are modified and no git commits are created.
     """
     # Lazy imports — preserve ``patch("evolve.orchestrator.X")`` surfaces.
-    __mod = __import__("evolve.orchestrator", fromlist=["_auto_detect_check", "_emit_stale_readme_advisory", "_probe", "_runs_base", "get_tui"])
-    _auto_detect_check = __mod._auto_detect_check
-    _emit_stale_readme_advisory = __mod._emit_stale_readme_advisory
-    _probe = __mod._probe
-    _runs_base = __mod._runs_base
-    get_tui = __mod.get_tui
+    from evolve.application.run_loop import (
+        _auto_detect_check,
+        _emit_stale_readme_advisory,
+        _probe,
+        _runs_base,
+        get_tui,
+    )
 
     ui = get_tui()
 
@@ -80,10 +81,8 @@ def dry_run(
         ui.no_check()
 
     # 2. Launch agent in dry-run mode (restricted tools)
-    __mod = __import__("evolve.agent", fromlist=["run_dry_run_agent"])
-    run_dry_run_agent = __mod.run_dry_run_agent
-    __mod = __import__("evolve.infrastructure.claude_sdk", fromlist=["runtime"])
-    _runtime = __mod.runtime
+    from evolve.infrastructure.claude_sdk.oneshot_agents import run_dry_run_agent
+    from evolve.infrastructure.claude_sdk import runtime as _runtime
     _runtime.MODEL = model
     _runtime.EFFORT = effort
 

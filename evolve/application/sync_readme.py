@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def sync_readme(
+def run_sync_readme(
     project_dir: Path,
     spec: str | None = None,
     apply: bool = False,
@@ -29,12 +29,13 @@ def sync_readme(
         Exit code: 0 (proposal written / applied), 1 (already in sync), 2 (error).
     """
     # Lazy imports — preserve ``patch("evolve.orchestrator.X")`` surfaces.
-    __mod = __import__("evolve.orchestrator", fromlist=["_ensure_git", "_git_commit", "_probe", "_runs_base", "get_tui"])
-    _ensure_git = __mod._ensure_git
-    _git_commit = __mod._git_commit
-    _probe = __mod._probe
-    _runs_base = __mod._runs_base
-    get_tui = __mod.get_tui
+    from evolve.application.run_loop import (
+        _ensure_git,
+        _git_commit,
+        _probe,
+        _runs_base,
+        get_tui,
+    )
 
     ui = get_tui()
 
@@ -70,11 +71,11 @@ def sync_readme(
     readme_mtime_before = readme_path.stat().st_mtime if readme_path.is_file() else None
 
     # Launch agent.
-    __mod = __import__("evolve.agent", fromlist=["run_sync_readme_agent", "SYNC_README_NO_CHANGES_SENTINEL"])
-    run_sync_readme_agent = __mod.run_sync_readme_agent
-    SYNC_README_NO_CHANGES_SENTINEL = __mod.SYNC_README_NO_CHANGES_SENTINEL
-    __mod = __import__("evolve.infrastructure.claude_sdk", fromlist=["runtime"])
-    _runtime = __mod.runtime
+    from evolve.infrastructure.claude_sdk.oneshot_agents import (
+        run_sync_readme_agent,
+        SYNC_README_NO_CHANGES_SENTINEL,
+    )
+    from evolve.infrastructure.claude_sdk import runtime as _runtime
     _runtime.MODEL = model
     _runtime.EFFORT = effort
 

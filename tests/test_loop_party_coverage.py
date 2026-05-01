@@ -13,8 +13,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.orchestrator import evolve_loop
-from evolve.party import _run_party_mode
+from evolve.application.run_loop_startup import evolve_loop
+from evolve.infrastructure.claude_sdk.party import _run_party_mode
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ def _setup_party_project(tmp_path):
 def _run_party_with_mock(tmp_path, run_dir, ui, asyncio_side_effect):
     """Shared helper: run _run_party_mode with mocked asyncio.run and agent."""
     import asyncio as _asyncio
-    import evolve.agent as agent_mod
+    import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
     with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
          patch.object(_asyncio, 'run', side_effect=asyncio_side_effect):
@@ -122,7 +122,7 @@ class TestPartyModeRetryPaths:
         run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         call_count = 0
 
@@ -148,7 +148,7 @@ class TestPartyModeRetryPaths:
         run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         call_count = 0
 
@@ -178,7 +178,7 @@ class TestPartyModeRetryPaths:
         run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         def mock_asyncio_run(coro):
             coro.close()
@@ -196,7 +196,7 @@ class TestPartyModeRetryPaths:
         """ImportError from missing claude-agent-sdk should warn and return.
 
         ``_run_party_mode`` does ``from evolve import agent as _agent_mod``.
-        Python treats ``sys.modules["evolve.agent"] = None`` as a sentinel
+        Python treats ``sys.modules["evolve.infrastructure.claude_sdk.runtime."] = None`` as a sentinel
         meaning "this module is known to not exist", so ``from evolve import
         agent`` raises ``ImportError`` immediately without touching disk.
         We also delete the ``agent`` attribute from the ``evolve`` package
@@ -208,22 +208,22 @@ class TestPartyModeRetryPaths:
         run_dir = _setup_party_project(tmp_path)
         ui = MagicMock()
 
-        saved_mod = sys.modules.get("evolve.agent")
+        saved_mod = sys.modules.get("evolve.infrastructure.claude_sdk.runtime.")
         had_attr = hasattr(_evolve_pkg, "agent")
         saved_attr = getattr(_evolve_pkg, "agent", None)
 
         try:
             # Setting to None in sys.modules makes Python raise ImportError
-            sys.modules["evolve.agent"] = None  # type: ignore[assignment]
+            sys.modules["evolve.infrastructure.claude_sdk.runtime."] = None  # type: ignore[assignment]
             if had_attr:
                 delattr(_evolve_pkg, "agent")
 
             _run_party_mode(tmp_path, run_dir, ui)
         finally:
             if saved_mod is not None:
-                sys.modules["evolve.agent"] = saved_mod
+                sys.modules["evolve.infrastructure.claude_sdk.runtime."] = saved_mod
             else:
-                sys.modules.pop("evolve.agent", None)
+                sys.modules.pop("evolve.infrastructure.claude_sdk.runtime.", None)
             if had_attr:
                 _evolve_pkg.agent = saved_attr
 
@@ -243,10 +243,10 @@ class TestEvolveLoopAutoDetect:
         (tmp_path / "README.md").write_text("# Test")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value="pytest") as mock_detect, \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run, \
-             patch("evolve.orchestrator.get_tui") as mock_get_tui:
+        with patch("evolve.application.run_loop._auto_detect_check", return_value="pytest") as mock_detect, \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run, \
+             patch("evolve.interfaces.tui.get_tui") as mock_get_tui:
             evolve_loop(tmp_path, max_rounds=5, check_cmd=None)
 
         mock_detect.assert_called_once_with(tmp_path)
@@ -262,10 +262,10 @@ class TestEvolveLoopAutoDetect:
         (tmp_path / "README.md").write_text("# Test")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None) as mock_detect, \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run, \
-             patch("evolve.orchestrator.get_tui"):
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None) as mock_detect, \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run, \
+             patch("evolve.interfaces.tui.get_tui"):
             evolve_loop(tmp_path, max_rounds=5, check_cmd=None)
 
         mock_detect.assert_called_once_with(tmp_path)
@@ -278,10 +278,10 @@ class TestEvolveLoopAutoDetect:
         (tmp_path / "README.md").write_text("# Test")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check") as mock_detect, \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run, \
-             patch("evolve.orchestrator.get_tui"):
+        with patch("evolve.application.run_loop._auto_detect_check") as mock_detect, \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run, \
+             patch("evolve.interfaces.tui.get_tui"):
             evolve_loop(tmp_path, max_rounds=5, check_cmd="npm test")
 
         mock_detect.assert_not_called()
@@ -366,7 +366,7 @@ class TestPartyModeWorkflowFallback:
         ui = MagicMock()
 
         # Patch the evolve package's workflow dir to not exist so it falls back
-        import evolve.orchestrator as loop_mod
+        import evolve.application.run_loop as loop_mod
         real_parent = Path(loop_mod.__file__).parent
 
         real_is_dir = Path.is_dir
@@ -398,7 +398,7 @@ class TestPartyModeWorkflowFallback:
         (agents / "dev.md").write_text("# Dev Agent")
 
         # Create workflow with steps dir containing a bad file
-        import evolve.orchestrator as loop_mod
+        import evolve.application.run_loop as loop_mod
         wf_dir = Path(loop_mod.__file__).parent / "workflows" / "party-mode"
         # We'll use project-level workflow dir to control file contents
         proj_wf_dir = tmp_path / "workflows" / "party-mode" / "steps"
@@ -456,7 +456,7 @@ class TestForeverRestartConvergedFile:
 
     def test_converged_file_preserved(self, tmp_path: Path):
         """CONVERGED file is left in place (line 1030 — pass branch)."""
-        from evolve.orchestrator import _forever_restart
+        from evolve.application.run_loop import _forever_restart
 
         run_dir = tmp_path / "runs" / "session1"
         run_dir.mkdir(parents=True)

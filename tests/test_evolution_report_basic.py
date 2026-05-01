@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from evolve.orchestrator import _generate_evolution_report
+from evolve.infrastructure.reporting.generator import _generate_evolution_report
 
 
 # ---------------------------------------------------------------------------
@@ -29,7 +29,7 @@ class TestGenerateEvolutionReport:
 
     def test_basic_report_converged(self, tmp_path: Path):
         project_dir, run_dir = self._setup_project(tmp_path)
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=3, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "# Evolution Report" in report
@@ -39,7 +39,7 @@ class TestGenerateEvolutionReport:
 
     def test_basic_report_max_rounds(self, tmp_path: Path):
         project_dir, run_dir = self._setup_project(tmp_path)
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=5, final_round=5, converged=False)
         report = (run_dir / "evolution_report.md").read_text()
         assert "MAX_ROUNDS" in report
@@ -49,7 +49,7 @@ class TestGenerateEvolutionReport:
     def test_report_with_check_results(self, tmp_path: Path):
         project_dir, run_dir = self._setup_project(tmp_path)
         (run_dir / "check_round_1.txt").write_text("Round 1 post-fix check: PASS\n42 passed\n")
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "42 passed" in report
@@ -59,7 +59,7 @@ class TestGenerateEvolutionReport:
         (run_dir / "conversation_loop_1.md").write_text(
             "feat(parser): add validation\nEdit \u2192 src/parser.py\nWrite \u2192 src/validator.py\n"
         )
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "feat(parser): add validation" in report
@@ -68,7 +68,7 @@ class TestGenerateEvolutionReport:
     def test_report_no_rounds(self, tmp_path: Path):
         """Report with 0 final_round shouldn't crash."""
         project_dir, run_dir = self._setup_project(tmp_path)
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=0, converged=False)
         report = (run_dir / "evolution_report.md").read_text()
         assert "# Evolution Report" in report
@@ -78,7 +78,7 @@ class TestGenerateEvolutionReport:
         project_dir, run_dir = self._setup_project(tmp_path)
         (run_dir / "check_round_1.txt").write_text("Round 1 PASS\n42 passed\n")
         (run_dir / "check_round_2.txt").write_text("Round 2 PASS\n45 passed\n")
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         # Round 1 has no previous, shows "42 passed"
@@ -91,7 +91,7 @@ class TestGenerateEvolutionReport:
         project_dir, run_dir = self._setup_project(tmp_path)
         (run_dir / "check_round_1.txt").write_text("Round 1 PASS\n42 passed\n")
         (run_dir / "check_round_2.txt").write_text("Round 2 PASS\n42 passed\n")
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         # Both rounds should show "42 passed" (no arrow since unchanged)
@@ -104,7 +104,7 @@ class TestGenerateEvolutionReport:
         (run_dir / "conversation_loop_1.md").write_text(
             "Edit \u2192 src/foo.py\nEdit \u2192 src/foo.py\nEdit \u2192 src/bar.py\n"
         )
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         # src/foo.py should appear only once in the files column
@@ -130,7 +130,7 @@ class TestGenerateEvolutionReport:
             "cache_creation_tokens": 9000, "cache_read_tokens": 41200,
             "model": "claude-opus-4-6", "round": 2,
         }))
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=2, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "## Cost Summary" in report
@@ -152,7 +152,7 @@ class TestGenerateEvolutionReport:
     def test_report_no_cost_summary_without_usage(self, tmp_path: Path):
         """Report omits Cost Summary when no usage_round_N.json files exist."""
         project_dir, run_dir = self._setup_project(tmp_path)
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, max_rounds=10, final_round=1, converged=True)
         report = (run_dir / "evolution_report.md").read_text()
         assert "## Cost Summary" not in report

@@ -14,18 +14,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import evolve.orchestrator as _orch
-from evolve.git import _git_show_at
-from evolve.orchestrator import (
+import evolve.application.run_loop as _orch
+from evolve.infrastructure.git.adapter import _git_show_at
+from evolve.application.run_loop import (
     _auto_detect_check,
-    _generate_evolution_report,
     _run_rounds,
-    evolve_loop,
-    run_dry_run,
-    run_single_round,
-    run_validate,
 )
-from evolve.state import _get_current_improvement
+from evolve.application.run_loop_startup import evolve_loop
+from evolve.application.run_round import run_single_round
+from evolve.application.validate import run_validate
+from evolve.application.dry_run import run_dry_run
+from evolve.infrastructure.reporting.generator import _generate_evolution_report
+from evolve.infrastructure.filesystem.improvement_parser import _get_current_improvement
 
 
 def _close_coro(coro):
@@ -44,7 +44,7 @@ class TestAutoDetectMakefileOSError:
         (tmp_path / "Makefile").write_text("test:\n\techo ok\n")
 
         with patch("shutil.which", side_effect=lambda name: "/usr/bin/make" if name == "make" else None), \
-             patch("evolve.orchestrator.Path.read_text", side_effect=OSError("permission denied")):
+             patch("evolve.application.run_loop.Path.read_text", side_effect=OSError("permission denied")):
             # Monkey-patch read_text just for Makefile path — simplest: patch on the method
             result = _auto_detect_check(tmp_path)
 
@@ -60,7 +60,7 @@ class TestGitShowAtSubprocessError:
     def test_subprocess_error_returns_none(self, tmp_path: Path):
         """SubprocessError during git show returns None."""
         with patch(
-            "evolve.orchestrator.subprocess.run",
+            "evolve.application.run_loop.subprocess.run",
             side_effect=subprocess.SubprocessError("boom"),
         ):
             assert _git_show_at(tmp_path, "HEAD", "runs/improvements.md") is None
@@ -68,14 +68,14 @@ class TestGitShowAtSubprocessError:
     def test_filenotfound_returns_none(self, tmp_path: Path):
         """FileNotFoundError (git binary missing) returns None."""
         with patch(
-            "evolve.orchestrator.subprocess.run",
+            "evolve.application.run_loop.subprocess.run",
             side_effect=FileNotFoundError("no git"),
         ):
             assert _git_show_at(tmp_path, "HEAD", "runs/improvements.md") is None
 
     def test_os_error_returns_none(self, tmp_path: Path):
         """Generic OSError returns None."""
-        with patch("evolve.orchestrator.subprocess.run", side_effect=OSError("io error")):
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=OSError("io error")):
             assert _git_show_at(tmp_path, "HEAD", "runs/improvements.md") is None
 
 
@@ -130,9 +130,9 @@ class TestYoloAliasEntryPoints:
             if len(args) >= 8:
                 captured["allow_installs_positional"] = args[7]
 
-        with patch("evolve.orchestrator._run_rounds", side_effect=_fake_run_rounds), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator.load_hooks", return_value={}):
+        with patch("evolve.application.run_loop._run_rounds", side_effect=_fake_run_rounds), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop.load_hooks", return_value={}):
             evolve_loop(
                 tmp_path,
                 max_rounds=1,
@@ -163,8 +163,8 @@ class TestYoloAliasEntryPoints:
         def _fake_analyze(*args, **kwargs):
             captured["allow_installs"] = kwargs.get("allow_installs", args[2] if len(args) > 2 else None)
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("evolve.agent.analyze_and_fix", side_effect=_fake_analyze), \
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
+             patch("evolve.infrastructure.claude_sdk.runtime.analyze_and_fix", side_effect=_fake_analyze), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path,
@@ -201,9 +201,9 @@ class TestResumeCorruptedFilenames:
             # Expect start_round == 2 (last good numeric round + 1)
             called["start_round"] = args[4] if len(args) > 4 else kwargs.get("start_round")
 
-        with patch("evolve.orchestrator._run_rounds", side_effect=_fake_run_rounds), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator.load_hooks", return_value={}):
+        with patch("evolve.application.run_loop._run_rounds", side_effect=_fake_run_rounds), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop.load_hooks", return_value={}):
             evolve_loop(
                 tmp_path,
                 max_rounds=10,
@@ -228,9 +228,9 @@ class TestResumeCorruptedFilenames:
         def _fake_run_rounds(*args, **kwargs):
             called["start_round"] = args[4] if len(args) > 4 else kwargs.get("start_round")
 
-        with patch("evolve.orchestrator._run_rounds", side_effect=_fake_run_rounds), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator.load_hooks", return_value={}):
+        with patch("evolve.application.run_loop._run_rounds", side_effect=_fake_run_rounds), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop.load_hooks", return_value={}):
             evolve_loop(
                 tmp_path,
                 max_rounds=10,
@@ -262,8 +262,8 @@ class TestCheckOutputStderr:
         def _fake_dry_agent(*args, **kwargs):
             captured_check["check_output"] = kwargs.get("check_output", "")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=check_result), \
-             patch("evolve.agent.run_dry_run_agent", side_effect=_fake_dry_agent), \
+        with patch("evolve.application.run_loop.subprocess.run", return_value=check_result), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_dry_run_agent", side_effect=_fake_dry_agent), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_dry_run(tmp_path, check_cmd="pytest", timeout=10)
 
@@ -292,8 +292,8 @@ class TestCheckOutputStderr:
                 (rd / "validate_report.md").write_text("All claims: PASS\n")
             _fake_val_agent(*args, **kwargs)
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=check_result), \
-             patch("evolve.agent.run_validate_agent", side_effect=_write_report), \
+        with patch("evolve.application.run_loop.subprocess.run", return_value=check_result), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent", side_effect=_write_report), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_validate(tmp_path, check_cmd="pytest", timeout=10)
 
@@ -322,7 +322,7 @@ class TestGenerateEvolutionReportVisualTimeline:
         (frames_dir / "round_1_end.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (frames_dir / "converged.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(
                 project_dir, run_dir, max_rounds=10, final_round=1,
                 converged=True, capture_frames=True,
@@ -343,7 +343,7 @@ class TestGenerateEvolutionReportVisualTimeline:
         run_dir.mkdir()
         (runs_dir / "improvements.md").write_text("# Improvements\n- [x] done\n")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(
                 project_dir, run_dir, max_rounds=10, final_round=1,
                 converged=True, capture_frames=True,
@@ -363,7 +363,7 @@ class TestGenerateEvolutionReportVisualTimeline:
         (runs_dir / "improvements.md").write_text("# Improvements\n- [x] done\n")
         (run_dir / "frames").mkdir()  # empty dir
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(
                 project_dir, run_dir, max_rounds=10, final_round=1,
                 converged=True, capture_frames=True,
@@ -385,9 +385,9 @@ class TestEvolveLoopHooksPrint:
 
         fake_hooks = {"on_round_start": "echo start", "on_round_end": "echo end"}
 
-        with patch("evolve.orchestrator.load_hooks", return_value=fake_hooks), \
-             patch("evolve.orchestrator._run_rounds"), \
-             patch("evolve.orchestrator._ensure_git"):
+        with patch("evolve.application.run_loop.load_hooks", return_value=fake_hooks), \
+             patch("evolve.application.run_loop._run_rounds"), \
+             patch("evolve.application.run_loop._ensure_git"):
             evolve_loop(
                 tmp_path,
                 max_rounds=1,

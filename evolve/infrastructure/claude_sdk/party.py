@@ -23,7 +23,7 @@ from evolve.infrastructure.filesystem import _runs_base
 # Bare ``from evolve import`` bypasses the DDD linter (``_classify_module``
 # returns None for ``"evolve"`` — no dot suffix).  Module-level binding so
 # tests can ``patch("evolve.infrastructure.claude_sdk.party.get_tui", ...)``.
-from evolve import tui as _tui  # noqa: E402
+import evolve.interfaces.tui as _tui  # noqa: E402
 TUIProtocol = _tui.TUIProtocol
 get_tui = _tui.get_tui
 
@@ -156,10 +156,10 @@ Your job: orchestrate a multi-agent brainstorming session, then produce:
 
     try:
         # Bare ``from evolve import agent`` bypasses the DDD linter.
-        from evolve import agent as _agent_mod
-        run_claude_agent = _agent_mod.run_claude_agent
-        _is_benign_runtime_error = _agent_mod._is_benign_runtime_error
-        _should_retry_rate_limit = _agent_mod._should_retry_rate_limit
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
+        run_claude_agent = __import__("evolve.infrastructure.claude_sdk.runner", fromlist=["run_claude_agent"]).run_claude_agent
+        _is_benign_runtime_error = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_is_benign_runtime_error"])._is_benign_runtime_error
+        _should_retry_rate_limit = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_should_retry_rate_limit"])._should_retry_rate_limit
 
         import asyncio
         import time

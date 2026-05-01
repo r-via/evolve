@@ -15,14 +15,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from evolve.agent import (
-    CURATION_LINE_THRESHOLD,
-    CURATION_ROUND_INTERVAL,
-    _CURATION_MAX_SHRINK,
-    _should_run_curation,
-    build_memory_curation_prompt,
-    run_memory_curation,
-)
+from evolve.infrastructure.claude_sdk.memory_curation import CURATION_LINE_THRESHOLD
+from evolve.infrastructure.claude_sdk.memory_curation import CURATION_ROUND_INTERVAL
+from evolve.infrastructure.claude_sdk.memory_curation import _CURATION_MAX_SHRINK
+from evolve.infrastructure.claude_sdk.memory_curation import _should_run_curation
+from evolve.infrastructure.claude_sdk.memory_curation import build_memory_curation_prompt
+from evolve.infrastructure.claude_sdk.memory_curation import run_memory_curation
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +101,7 @@ class TestRunMemoryCuration:
         mem.write_text(content)
         return mem
 
-    @patch("evolve.agent._run_agent_with_retries")
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
     def test_skipped_below_threshold(self, mock_retry, tmp_path: Path) -> None:
         mem = tmp_path / "memory.md"
         mem.write_text("# tiny\n")
@@ -117,7 +115,7 @@ class TestRunMemoryCuration:
         assert verdict == "SKIPPED"
         mock_retry.assert_not_called()
 
-    @patch("evolve.agent._run_agent_with_retries")
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
     def test_curated_success(self, mock_retry, tmp_path: Path) -> None:
         """Mira produces a curated memory + audit log → CURATED."""
         run_dir = tmp_path / "run"
@@ -145,7 +143,7 @@ class TestRunMemoryCuration:
         assert verdict == "CURATED"
         assert (run_dir / "memory_curation_round_10.md").is_file()
 
-    @patch("evolve.agent._run_agent_with_retries")
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
     def test_aborted_on_excessive_shrink(self, mock_retry, tmp_path: Path) -> None:
         """Mira shrinks by >80% → ABORTED, original restored."""
         run_dir = tmp_path / "run"
@@ -176,7 +174,7 @@ class TestRunMemoryCuration:
         audit_text = (run_dir / "memory_curation_round_10.md").read_text()
         assert "ABORTED" in audit_text
 
-    @patch("evolve.agent._run_agent_with_retries")
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
     def test_sdk_fail_no_audit_log(self, mock_retry, tmp_path: Path) -> None:
         """SDK returns no audit log → SDK_FAIL, original restored."""
         run_dir = tmp_path / "run"
@@ -201,7 +199,7 @@ class TestRunMemoryCuration:
         assert verdict == "SDK_FAIL"
         assert mem.read_text() == original_text
 
-    @patch("evolve.agent._run_agent_with_retries", side_effect=Exception("boom"))
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries", side_effect=Exception("boom"))
     def test_sdk_exception_returns_sdk_fail(self, mock_retry, tmp_path: Path) -> None:
         """Exception during SDK call → SDK_FAIL, original restored."""
         run_dir = tmp_path / "run"
@@ -229,11 +227,11 @@ class TestRunMemoryCuration:
 class TestRunCurationPass:
     """_run_curation_pass in orchestrator delegates correctly."""
 
-    @patch("evolve.orchestrator._git_commit")
-    @patch("evolve.orchestrator._runs_base")
-    @patch("evolve.agent.run_memory_curation", return_value="SKIPPED")
+    @patch("evolve.application.run_loop._git_commit")
+    @patch("evolve.application.run_loop._runs_base")
+    @patch("evolve.infrastructure.claude_sdk.memory_curation.run_memory_curation", return_value="SKIPPED")
     def test_skipped_is_silent(self, mock_cur, mock_rb, mock_gc, tmp_path: Path) -> None:
-        from evolve.orchestrator import _run_curation_pass
+        from evolve.application.run_loop import _run_curation_pass
         mock_rb.return_value = tmp_path
         ui = MagicMock()
         imp_path = tmp_path / "improvements.md"
@@ -243,11 +241,11 @@ class TestRunCurationPass:
         mock_cur.assert_called_once()
         mock_gc.assert_not_called()
 
-    @patch("evolve.orchestrator._git_commit")
-    @patch("evolve.orchestrator._runs_base")
-    @patch("evolve.agent.run_memory_curation", return_value="CURATED")
+    @patch("evolve.application.run_loop._git_commit")
+    @patch("evolve.application.run_loop._runs_base")
+    @patch("evolve.infrastructure.claude_sdk.memory_curation.run_memory_curation", return_value="CURATED")
     def test_curated_commits_with_compaction_marker(self, mock_cur, mock_rb, mock_gc, tmp_path: Path) -> None:
-        from evolve.orchestrator import _run_curation_pass
+        from evolve.application.run_loop import _run_curation_pass
         mock_rb.return_value = tmp_path
         ui = MagicMock()
         imp_path = tmp_path / "improvements.md"
@@ -261,11 +259,11 @@ class TestRunCurationPass:
         assert "memory: compaction" in commit_msg
         assert "curation round 10" in commit_msg
 
-    @patch("evolve.orchestrator._git_commit")
-    @patch("evolve.orchestrator._runs_base")
-    @patch("evolve.agent.run_memory_curation", return_value="ABORTED")
+    @patch("evolve.application.run_loop._git_commit")
+    @patch("evolve.application.run_loop._runs_base")
+    @patch("evolve.infrastructure.claude_sdk.memory_curation.run_memory_curation", return_value="ABORTED")
     def test_aborted_does_not_commit(self, mock_cur, mock_rb, mock_gc, tmp_path: Path) -> None:
-        from evolve.orchestrator import _run_curation_pass
+        from evolve.application.run_loop import _run_curation_pass
         mock_rb.return_value = tmp_path
         ui = MagicMock()
         imp_path = tmp_path / "improvements.md"
@@ -275,11 +273,11 @@ class TestRunCurationPass:
         mock_cur.assert_called_once()
         mock_gc.assert_not_called()
 
-    @patch("evolve.orchestrator._git_commit")
-    @patch("evolve.orchestrator._runs_base")
-    @patch("evolve.agent.run_memory_curation", return_value="SDK_FAIL")
+    @patch("evolve.application.run_loop._git_commit")
+    @patch("evolve.application.run_loop._runs_base")
+    @patch("evolve.infrastructure.claude_sdk.memory_curation.run_memory_curation", return_value="SDK_FAIL")
     def test_sdk_fail_does_not_commit(self, mock_cur, mock_rb, mock_gc, tmp_path: Path) -> None:
-        from evolve.orchestrator import _run_curation_pass
+        from evolve.application.run_loop import _run_curation_pass
         mock_rb.return_value = tmp_path
         ui = MagicMock()
         imp_path = tmp_path / "improvements.md"

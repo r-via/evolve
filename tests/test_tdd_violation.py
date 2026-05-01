@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.diagnostics import _detect_tdd_violation
+from evolve.infrastructure.diagnostics.detector import _detect_tdd_violation
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ class TestBuildPrevCrashTddViolation:
     """Test the TDD VIOLATION branch in build_prev_crash_section."""
 
     def test_tdd_violation_renders_section(self):
-        from evolve.prompt_diagnostics import build_prev_crash_section
+        from evolve.infrastructure.claude_sdk.prompt_diagnostics import build_prev_crash_section
 
         diag = (
             "TDD VIOLATION: Production files modified without "
@@ -143,7 +143,7 @@ class TestBuildPrevCrashTddViolation:
 
     def test_tdd_violation_takes_priority_over_generic(self):
         """TDD VIOLATION prefix is matched before the generic fallback."""
-        from evolve.prompt_diagnostics import build_prev_crash_section
+        from evolve.infrastructure.claude_sdk.prompt_diagnostics import build_prev_crash_section
 
         diag = "TDD VIOLATION: test"
         result = build_prev_crash_section(diag)
@@ -167,10 +167,10 @@ class TestRoundSuccessIntegration:
         assert "_detect_tdd_violation" in src
 
     def test_orchestrator_re_exports_detect_tdd_violation(self):
-        import evolve.orchestrator as orch
+        import evolve.application.run_loop as orch
 
         assert hasattr(orch, "_detect_tdd_violation")
-        from evolve.diagnostics import (
+        from evolve.infrastructure.diagnostics.detector import (
             _detect_tdd_violation as orig,
         )
         assert orch._detect_tdd_violation is orig

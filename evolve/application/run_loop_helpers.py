@@ -8,15 +8,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-__mod = __import__("evolve.diagnostics", fromlist=["_save_subprocess_diagnostic"])
-_save_subprocess_diagnostic = __mod._save_subprocess_diagnostic
-__mod = __import__("evolve.git", fromlist=["_git_commit"])
-_git_commit = __mod._git_commit
-__mod = __import__("evolve.state", fromlist=["_detect_premature_converged", "_runs_base"])
-_detect_premature_converged = __mod._detect_premature_converged
-_runs_base = __mod._runs_base
-__mod = __import__("evolve.tui", fromlist=["TUIProtocol"])
-TUIProtocol = __mod.TUIProtocol
+from evolve.infrastructure.diagnostics.detector import _save_subprocess_diagnostic
+from evolve.infrastructure.git.adapter import _git_commit
+from evolve.infrastructure.filesystem.state_manager import (
+    _detect_premature_converged,
+    _runs_base,
+)
+from evolve.interfaces.tui import TUIProtocol
 
 _PROBE_PREFIX = "\x1b[2;36m[probe]\x1b[0m"
 _PROBE_WARN_PREFIX = "\x1b[33m[probe]\x1b[0m"
@@ -55,8 +53,7 @@ def _scaffold_shared_runtime_files(project_dir: Path, spec: str | None) -> None:
     mem_path = runs_base / "memory.md"
     if not mem_path.is_file():
         try:
-            __mod = __import__("evolve.cli", fromlist=["_render_default_memory_md"])
-            _render_default_memory_md = __mod._render_default_memory_md
+            from evolve.interfaces.cli.main import _render_default_memory_md
             mem_path.write_text(_render_default_memory_md(spec))
         except ImportError:
             mem_path.write_text(
@@ -147,11 +144,11 @@ def _run_curation_pass(
     ui: TUIProtocol,
 ) -> None:
     """Run memory curation (Mira) between rounds if triggered."""
-    __mod = __import__("evolve.agent", fromlist=["run_memory_curation"])
-    run_memory_curation = __mod.run_memory_curation
-    __mod = __import__("evolve.orchestrator", fromlist=["_git_commit", "_runs_base"])
-    _git_commit = __mod._git_commit
-    _runs_base = __mod._runs_base
+    from evolve.infrastructure.claude_sdk.memory_curation import run_memory_curation
+    from evolve.application.run_loop import (
+        _git_commit,
+        _runs_base,
+    )
 
     memory_path = _runs_base(project_dir) / "memory.md"
     spec_path = project_dir / (spec or "README.md") if spec else project_dir / "README.md"
@@ -181,8 +178,7 @@ def _run_curation_pass(
 
 def _should_run_spec_archival(project_dir: Path, round_num: int, spec: str | None = None) -> bool:
     """Return True when SPEC archival should run this round."""
-    __mod = __import__("evolve.agent", fromlist=["_should_run_spec_archival"])
-    _agent_check = __mod._should_run_spec_archival
+    from evolve.infrastructure.claude_sdk.spec_archival import _should_run_spec_archival
 
     spec_path = project_dir / (spec or "README.md")
     return _agent_check(spec_path, round_num)
@@ -196,10 +192,8 @@ def _run_spec_archival_pass(
     ui: TUIProtocol,
 ) -> None:
     """Run SPEC archival (Sid) between rounds if triggered."""
-    __mod = __import__("evolve.agent", fromlist=["run_spec_archival"])
-    run_spec_archival = __mod.run_spec_archival
-    __mod = __import__("evolve.orchestrator", fromlist=["_git_commit"])
-    _git_commit = __mod._git_commit
+    from evolve.infrastructure.claude_sdk.spec_archival import run_spec_archival
+    from evolve.application.run_loop import _git_commit
 
     spec_path = project_dir / (spec or "README.md")
     if not spec_path.is_file():

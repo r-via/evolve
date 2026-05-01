@@ -15,13 +15,18 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.agent import (
+from evolve.infrastructure.claude_sdk.prompt_builder import (
     _load_project_context,
     build_prompt,
+)
+from evolve.infrastructure.claude_sdk.oneshot_agents import (
     build_validate_prompt,
     build_dry_run_prompt,
 )
-from evolve.party import _forever_restart, _run_party_mode
+from evolve.infrastructure.claude_sdk.party import (
+    _forever_restart,
+    _run_party_mode,
+)
 
 class TestSpecFileNotFound:
 
@@ -60,7 +65,7 @@ class TestSpecFileNotFound:
         # It will try to call evolve_loop, which we mock to prevent actual execution
         with patch("sys.argv", [
             "evolve", "start", str(project_dir), "--spec", "SPEC.md",
-        ]), patch("evolve._check_deps"), patch("evolve.orchestrator.evolve_loop") as mock_loop:
+        ]), patch("evolve._check_deps"), patch("evolve.application.run_loop_startup.evolve_loop") as mock_loop:
             from evolve import main
             main()
 
@@ -250,9 +255,9 @@ class TestRunPartyModeSpec:
                 (run_dir / "SPEC_proposal.md").write_text("# Proposed Spec\n")
                 (run_dir / "party_report.md").write_text("# Party Report\n")
 
-        with patch("evolve.agent.run_claude_agent", mock_agent), \
-             patch("evolve.agent._is_benign_runtime_error", return_value=False), \
-             patch("evolve.agent._should_retry_rate_limit", return_value=None):
+        with patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", mock_agent), \
+             patch("evolve.infrastructure.claude_sdk.runtime._is_benign_runtime_error", return_value=False), \
+             patch("evolve.infrastructure.claude_sdk.runtime._should_retry_rate_limit", return_value=None):
             _run_party_mode(tmp_path, run_dir, ui, spec="SPEC.md")
 
         # The prompt should reference SPEC_proposal.md, not README_proposal.md
@@ -278,9 +283,9 @@ class TestRunPartyModeSpec:
         async def mock_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None, images=None):
             captured_prompts.append(prompt)
 
-        with patch("evolve.agent.run_claude_agent", mock_agent), \
-             patch("evolve.agent._is_benign_runtime_error", return_value=False), \
-             patch("evolve.agent._should_retry_rate_limit", return_value=None):
+        with patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", mock_agent), \
+             patch("evolve.infrastructure.claude_sdk.runtime._is_benign_runtime_error", return_value=False), \
+             patch("evolve.infrastructure.claude_sdk.runtime._should_retry_rate_limit", return_value=None):
             _run_party_mode(tmp_path, run_dir, ui, spec=None)
 
         assert len(captured_prompts) == 1
@@ -305,9 +310,9 @@ class TestRunPartyModeSpec:
                 (run_dir / "SPEC_proposal.md").write_text("# Proposal\n")
                 (run_dir / "party_report.md").write_text("# Report\n")
 
-        with patch("evolve.agent.run_claude_agent", mock_agent), \
-             patch("evolve.agent._is_benign_runtime_error", return_value=False), \
-             patch("evolve.agent._should_retry_rate_limit", return_value=None):
+        with patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", mock_agent), \
+             patch("evolve.infrastructure.claude_sdk.runtime._is_benign_runtime_error", return_value=False), \
+             patch("evolve.infrastructure.claude_sdk.runtime._should_retry_rate_limit", return_value=None):
             _run_party_mode(tmp_path, run_dir, ui, spec="SPEC.md")
 
         # party_results should be called with SPEC_proposal.md path
@@ -406,7 +411,7 @@ class TestForeverAtomicAdoptionCommit:
         that references only the spec proposal — README is user-authored and
         never appears in the commit (see SPEC.md § "README as a user-level summary").
         """
-        from evolve.orchestrator import evolve_loop
+        from evolve.application.run_loop_startup import evolve_loop
 
         project_dir, imp_path = self._setup_project(tmp_path)
         call_count = 0
@@ -430,13 +435,13 @@ class TestForeverAtomicAdoptionCommit:
         def capture_commit(project_dir_, message, ui_=None):
             captured_commits.append(message)
 
-        with patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._git_commit", side_effect=capture_commit), \
+        with patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._git_commit", side_effect=capture_commit), \
              pytest.raises(SystemExit):
             evolve_loop(project_dir, max_rounds=1, forever=True, spec="SPEC.md")
 
@@ -453,7 +458,7 @@ class TestForeverAtomicAdoptionCommit:
         assert (project_dir / "README.md").read_text() == "# Old README\n"
 
     def test_legacy_commit_message_when_spec_is_readme(self, tmp_path: Path):
-        from evolve.orchestrator import evolve_loop
+        from evolve.application.run_loop_startup import evolve_loop
 
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
@@ -483,13 +488,13 @@ class TestForeverAtomicAdoptionCommit:
         def capture_commit(project_dir_, message, ui_=None):
             captured_commits.append(message)
 
-        with patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._git_commit", side_effect=capture_commit), \
+        with patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._git_commit", side_effect=capture_commit), \
              pytest.raises(SystemExit):
             evolve_loop(project_dir, max_rounds=1, forever=True)
 

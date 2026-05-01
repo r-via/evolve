@@ -25,7 +25,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.orchestrator import (
+from evolve.application.run_loop import (
     _MEMORY_COMPACTION_MARKER,
     _MEMORY_WIPE_THRESHOLD,
     _run_rounds,
@@ -257,9 +257,9 @@ class TestMemoryWipeSanityGateRetry:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -283,7 +283,7 @@ class TestMemoryWipeSanityGateRetry:
         agent knows to treat the retry as a memory-discipline violation
         rather than a generic stuck round.
         """
-        from evolve.agent import build_prompt
+        from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
         project_dir = tmp_path
         (project_dir / "README.md").write_text("# project")

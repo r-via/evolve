@@ -1,9 +1,9 @@
-"""Tests for evolve.state._write_state_json — real-time state.json writer."""
+"""Tests for evolve.infrastructure.filesystem.state_manager._write_state_json — real-time state.json writer."""
 
 from pathlib import Path
 from unittest.mock import patch
 
-from evolve.state import _write_state_json
+from evolve.infrastructure.filesystem.state_manager import _write_state_json
 
 class TestWriteStateJson:
     """Tests for the real-time state.json writer."""

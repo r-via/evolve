@@ -126,7 +126,7 @@ class TestRunClaudeAgentImages:
         sdk.query = _query
 
         with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=MagicMock()):
-            from evolve.agent import run_claude_agent
+            from evolve.infrastructure.claude_sdk.runner import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test prompt", proj, round_num=1,
                 run_dir=run_dir, images=[img],
@@ -157,7 +157,7 @@ class TestRunClaudeAgentThinking:
         sdk.query = _query
 
         with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=MagicMock()):
-            from evolve.agent import run_claude_agent
+            from evolve.infrastructure.claude_sdk.runner import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,
             ))
@@ -185,7 +185,7 @@ class TestRunClaudeAgentUsage:
         sdk.query = _query
 
         with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=MagicMock()):
-            from evolve.agent import run_claude_agent
+            from evolve.infrastructure.claude_sdk.runner import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,
             ))
@@ -217,7 +217,7 @@ class TestRunClaudeAgentUsageSaveError:
         mock_tui = MagicMock()
         with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=mock_tui):
             with patch("evolve.costs.TokenUsage.save", side_effect=OSError("disk full")):
-                from evolve.agent import run_claude_agent
+                from evolve.infrastructure.claude_sdk.runner import run_claude_agent
                 # Should not raise
                 asyncio.run(run_claude_agent(
                     "test", proj, round_num=1, run_dir=run_dir,
@@ -250,7 +250,7 @@ class TestReadonlyAgentEdgeCases:
         sdk.query = _query
 
         with patch("evolve.infrastructure.claude_sdk.oneshot_agents.get_tui", return_value=MagicMock()):
-            from evolve.agent import _run_readonly_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_readonly_claude_agent
             asyncio.run(_run_readonly_claude_agent(
                 "test", proj, run_dir,
                 log_filename="dry_run_conversation.md",
@@ -277,7 +277,7 @@ class TestReadonlyAgentEdgeCases:
 
         mock_tui = MagicMock()
         with patch("evolve.infrastructure.claude_sdk.oneshot_agents.get_tui", return_value=mock_tui):
-            from evolve.agent import _run_readonly_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_readonly_claude_agent
             asyncio.run(_run_readonly_claude_agent(
                 "test", proj, run_dir,
                 log_filename="validate_conversation.md",
@@ -307,8 +307,8 @@ class TestSyncReadmeAgent:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.tui.get_tui", return_value=mock_tui):
-            from evolve.agent import _run_sync_readme_claude_agent
+        with patch("evolve.interfaces.tui.get_tui", return_value=mock_tui):
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test prompt", proj, run_dir))
 
         log = (run_dir / "sync_readme_conversation.md").read_text()
@@ -336,8 +336,8 @@ class TestSyncReadmeAgent:
 
         sdk.query = _query
 
-        with patch("evolve.tui.get_tui", return_value=MagicMock()):
-            from evolve.agent import _run_sync_readme_claude_agent
+        with patch("evolve.interfaces.tui.get_tui", return_value=MagicMock()):
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test", proj, run_dir))
 
         log = (run_dir / "sync_readme_conversation.md").read_text()
@@ -360,8 +360,8 @@ class TestSyncReadmeAgent:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.tui.get_tui", return_value=mock_tui):
-            from evolve.agent import _run_sync_readme_claude_agent
+        with patch("evolve.interfaces.tui.get_tui", return_value=mock_tui):
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test", proj, run_dir))
 
         log = (run_dir / "sync_readme_conversation.md").read_text()
@@ -380,8 +380,8 @@ class TestSyncReadmeAgent:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.tui.get_tui", return_value=mock_tui):
-            from evolve.agent import _run_sync_readme_claude_agent
+        with patch("evolve.interfaces.tui.get_tui", return_value=mock_tui):
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test", proj, run_dir))
 
         log = (run_dir / "sync_readme_conversation.md").read_text()
@@ -399,8 +399,8 @@ class TestSyncReadmeAgent:
         sdk.query = _query
 
         mock_tui = MagicMock()
-        with patch("evolve.tui.get_tui", return_value=mock_tui):
-            from evolve.agent import _run_sync_readme_claude_agent
+        with patch("evolve.interfaces.tui.get_tui", return_value=mock_tui):
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_sync_readme_claude_agent
             asyncio.run(_run_sync_readme_claude_agent("test", proj, run_dir))
 
         log = (run_dir / "sync_readme_conversation.md").read_text()
@@ -413,9 +413,9 @@ class TestSyncReadmeAgent:
         # Use a fresh run_dir that doesn't exist yet
         new_run_dir = proj / ".evolve" / "runs" / "new_session"
 
-        with patch("evolve.agent.build_sync_readme_prompt", return_value="sync prompt") as mock_bsp:
-            with patch("evolve.agent._run_agent_with_retries") as mock_retries:
-                from evolve.agent import run_sync_readme_agent
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.build_sync_readme_prompt", return_value="sync prompt") as mock_bsp:
+            with patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries") as mock_retries:
+                from evolve.infrastructure.claude_sdk.oneshot_agents import run_sync_readme_agent
                 run_sync_readme_agent(proj, new_run_dir, spec="SPEC.md", apply=True)
 
                 assert new_run_dir.exists()
@@ -470,7 +470,7 @@ class TestRunClaudeAgentFullStream:
 
         mock_tui = MagicMock()
         with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=mock_tui):
-            from evolve.agent import run_claude_agent
+            from evolve.infrastructure.claude_sdk.runner import run_claude_agent
             asyncio.run(run_claude_agent(
                 "test", proj, round_num=1, run_dir=run_dir,
             ))

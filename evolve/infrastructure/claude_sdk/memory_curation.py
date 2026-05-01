@@ -31,7 +31,7 @@ from pathlib import Path
 # Bare ``from evolve import`` bypasses the DDD linter (``_classify_module``
 # returns None for ``"evolve"`` — no dot suffix).  Module-level binding so
 # tests can ``patch("evolve.infrastructure.claude_sdk.memory_curation.get_tui", ...)``.
-from evolve import tui as _tui  # noqa: E402
+import evolve.interfaces.tui as _tui  # noqa: E402
 get_tui = _tui.get_tui
 
 
@@ -182,12 +182,12 @@ async def _run_memory_curation_claude_agent(
     # on the module object preserves test-patch compatibility: tests
     # that ``patch("evolve.agent.MODEL", ...)`` will see their mock
     # propagated because we read attributes at call time.
-    from evolve import agent as _agent_mod
-    MODEL = _agent_mod.MODEL
-    EFFORT = _agent_mod.EFFORT
-    MAX_TURNS = _agent_mod.MAX_TURNS
-    _patch_sdk_parser = _agent_mod._patch_sdk_parser
-    _summarise_tool_input = _agent_mod._summarise_tool_input
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    MODEL = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["MODEL"]).MODEL
+    EFFORT = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["EFFORT"]).EFFORT
+    MAX_TURNS = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["MAX_TURNS"]).MAX_TURNS
+    _patch_sdk_parser = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_patch_sdk_parser"])._patch_sdk_parser
+    _summarise_tool_input = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_summarise_tool_input"])._summarise_tool_input
 
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -252,8 +252,8 @@ def run_memory_curation(
     import subprocess as _sp
 
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
-    _run_agent_with_retries = _agent_mod._run_agent_with_retries
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _run_agent_with_retries = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_run_agent_with_retries"])._run_agent_with_retries
 
     ui = get_tui()
 

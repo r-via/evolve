@@ -26,7 +26,7 @@ class TestDetectLegacyLayoutViolation:
 
     def test_detects_unmigrated_file(self, tmp_path: Path) -> None:
         """A file with FunctionDef at top level is flagged."""
-        from evolve.diagnostics import _detect_legacy_layout_violation
+        from evolve.infrastructure.diagnostics.detector import _detect_legacy_layout_violation
 
         evolve_dir = tmp_path / "evolve"
         evolve_dir.mkdir()
@@ -57,7 +57,7 @@ class TestDetectLegacyLayoutViolation:
 
     def test_noop_with_all_shims(self, tmp_path: Path) -> None:
         """All pure shims → empty list."""
-        from evolve.diagnostics import _detect_legacy_layout_violation
+        from evolve.infrastructure.diagnostics.detector import _detect_legacy_layout_violation
 
         evolve_dir = tmp_path / "evolve"
         evolve_dir.mkdir()
@@ -74,7 +74,7 @@ class TestDetectLegacyLayoutViolation:
 
     def test_detects_class_def(self, tmp_path: Path) -> None:
         """ClassDef at top level is also flagged."""
-        from evolve.diagnostics import _detect_legacy_layout_violation
+        from evolve.infrastructure.diagnostics.detector import _detect_legacy_layout_violation
 
         evolve_dir = tmp_path / "evolve"
         evolve_dir.mkdir()
@@ -88,7 +88,7 @@ class TestDetectLegacyLayoutViolation:
 
     def test_whitelists_init_and_main(self, tmp_path: Path) -> None:
         """__init__.py and __main__.py are never scanned."""
-        from evolve.diagnostics import _detect_legacy_layout_violation
+        from evolve.infrastructure.diagnostics.detector import _detect_legacy_layout_violation
 
         evolve_dir = tmp_path / "evolve"
         evolve_dir.mkdir()
@@ -101,7 +101,7 @@ class TestDetectLegacyLayoutViolation:
 
     def test_allows_warnings_warn_in_shim(self, tmp_path: Path) -> None:
         """Shims with warnings.warn() calls are allowed."""
-        from evolve.diagnostics import _detect_legacy_layout_violation
+        from evolve.infrastructure.diagnostics.detector import _detect_legacy_layout_violation
 
         evolve_dir = tmp_path / "evolve"
         evolve_dir.mkdir()
@@ -118,7 +118,7 @@ class TestDetectLegacyLayoutViolation:
 
     def test_no_evolve_dir(self, tmp_path: Path) -> None:
         """Missing evolve/ dir → empty list (no crash)."""
-        from evolve.diagnostics import _detect_legacy_layout_violation
+        from evolve.infrastructure.diagnostics.detector import _detect_legacy_layout_violation
 
         violations = _detect_legacy_layout_violation(tmp_path)
         assert violations == []
@@ -134,7 +134,7 @@ class TestLegacyLayoutPromptRendering:
 
     def test_renders_critical_header(self) -> None:
         """LEGACY LAYOUT NOT EMPTY prefix → correct header."""
-        from evolve.prompt_diagnostics import build_prev_crash_section
+        from evolve.infrastructure.claude_sdk.prompt_diagnostics import build_prev_crash_section
 
         diag = (
             "LEGACY LAYOUT NOT EMPTY: 2 file(s) at evolve/ top level "
@@ -148,7 +148,7 @@ class TestLegacyLayoutPromptRendering:
 
     def test_does_not_match_other_prefix(self) -> None:
         """Other prefixes don't trigger legacy layout handler."""
-        from evolve.prompt_diagnostics import build_prev_crash_section
+        from evolve.infrastructure.claude_sdk.prompt_diagnostics import build_prev_crash_section
 
         result = build_prev_crash_section("FILE TOO LARGE: foo.py 600 lines")
         assert "DDD migration not complete" not in result
@@ -166,7 +166,7 @@ class TestLegacyLayoutIntegration:
         self,
     ) -> None:
         """The helper is importable from the evolve.diagnostics shim."""
-        from evolve.diagnostics import _detect_legacy_layout_violation
+        from evolve.infrastructure.diagnostics.detector import _detect_legacy_layout_violation
 
         assert callable(_detect_legacy_layout_violation)
 
@@ -182,7 +182,7 @@ class TestLegacyLayoutIntegration:
 
     def test_is_identity_across_shim(self) -> None:
         """Same object via shim and infrastructure."""
-        from evolve.diagnostics import (
+        from evolve.infrastructure.diagnostics.detector import (
             _detect_legacy_layout_violation as via_shim,
         )
         from evolve.infrastructure.diagnostics import (

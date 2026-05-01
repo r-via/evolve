@@ -49,9 +49,9 @@ def test_no_forbidden_imports_in_infrastructure():
     forbidden_prefixes = (
         "from evolve.application",
         "from evolve.interfaces",
-        "from evolve.cli",
-        "from evolve.agent",
-        "from evolve.orchestrator",
+        "from evolve.interfaces.cli.main",
+        "from evolve.infrastructure.claude_sdk.runtime",
+        "from evolve.application.run_loop",
     )
     violations = []
     for py_file in INFRA_ROOT.rglob("*.py"):

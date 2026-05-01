@@ -5,8 +5,8 @@ import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from evolve.git import _setup_forever_branch
-from evolve.party import _forever_restart
+from evolve.infrastructure.git.adapter import _setup_forever_branch
+from evolve.infrastructure.claude_sdk.party import _forever_restart
 
 # ---------------------------------------------------------------------------
 # _setup_forever_branch

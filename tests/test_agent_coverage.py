@@ -7,14 +7,14 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.agent import (
-    run_claude_agent,
-    analyze_and_fix,
+from evolve.infrastructure.claude_sdk.runner import run_claude_agent
+from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
+from evolve.infrastructure.claude_sdk.runtime import _should_retry_rate_limit
+from evolve.infrastructure.claude_sdk.runtime import (
     _patch_sdk_parser,
     _is_benign_runtime_error,
-    _should_retry_rate_limit,
-    build_prompt,
 )
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
 
 def _run_async(coro):
@@ -82,7 +82,7 @@ class TestRunClaudeAgent:
     def _run_agent(self, tmp_path, run_dir, mock_sdk, **kwargs):
         """Run the agent with the given SDK mock and standard patches."""
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("evolve.agent._patch_sdk_parser"):
+             patch("evolve.infrastructure.claude_sdk.runtime._patch_sdk_parser"):
             _run_async(run_claude_agent(
                 kwargs.pop("prompt", "test"), tmp_path,
                 round_num=kwargs.pop("round_num", 1),
@@ -322,7 +322,7 @@ class TestRunClaudeAgent:
         mock_sdk.ResultMessage = self.RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}), \
-             patch("evolve.agent._patch_sdk_parser"):
+             patch("evolve.infrastructure.claude_sdk.runtime._patch_sdk_parser"):
             _run_async(run_claude_agent("prompt", tmp_path, round_num=1, run_dir=None))
 
         assert (tmp_path / "runs" / "conversation_loop_1.md").is_file()

@@ -12,27 +12,27 @@ import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from evolve.diagnostics import _detect_layering_violation
-from evolve.prompt_diagnostics import build_prev_crash_section
+from evolve.infrastructure.diagnostics.detector import _detect_layering_violation
+from evolve.infrastructure.claude_sdk.prompt_diagnostics import build_prev_crash_section
 
 
 class TestDetectLayeringViolation:
     """Tests for _detect_layering_violation in evolve/diagnostics.py."""
 
     def test_detects_inward_violating_import(self, tmp_path):
-        """Domain file importing from evolve.orchestrator is a violation."""
+        """Domain file importing from evolve.application.run_loop is a violation."""
         evolve_dir = tmp_path / "evolve"
         domain_dir = evolve_dir / "domain"
         domain_dir.mkdir(parents=True)
         (domain_dir / "__init__.py").write_text("")
         (domain_dir / "bad.py").write_text(
-            "from evolve.orchestrator import something\n"
+            "from evolve.application.run_loop import something\n"
         )
         violations = _detect_layering_violation(tmp_path)
         assert len(violations) == 1
         f, mod, src, tgt = violations[0]
         assert "bad.py" in f
-        assert mod == "evolve.orchestrator"
+        assert mod == "evolve.application.run_loop."
         assert src == "domain"
         assert tgt == "legacy"
 
@@ -106,7 +106,7 @@ class TestBuildPrevCrashSection:
     """Tests for LAYERING VIOLATION prefix in build_prev_crash_section."""
 
     def test_renders_layering_violation_header(self):
-        diag = "LAYERING VIOLATION: 1 inward-violating edge(s):\n  - domain/bad.py imports evolve.orchestrator"
+        diag = "LAYERING VIOLATION: 1 inward-violating edge(s):\n  - domain/bad.py imports evolve.application.run_loop"
         result = build_prev_crash_section(diag)
         assert "## CRITICAL — DDD layering violation" in result
         assert "LAYERING VIOLATION" in result
@@ -129,9 +129,9 @@ class TestRoundSuccessIntegration:
         imp_path = tmp_path / "improvements.md"
         imp_path.write_text("# Improvements\n")
 
-        from evolve.round_success import _handle_round_success
+        from evolve.application.run_loop_lifecycle import _handle_round_success
 
-        violations = [("domain/bad.py", "evolve.agent", "domain", "legacy")]
+        violations = [("domain/bad.py", "evolve.infrastructure.claude_sdk.runtime.", "domain", "legacy")]
         mock_imports = {
             "_detect_file_too_large": MagicMock(return_value=[]),
             "_detect_layering_violation": MagicMock(return_value=violations),
@@ -164,14 +164,14 @@ class TestRoundSuccessIntegration:
         }
 
         with patch.dict(
-            "evolve.orchestrator.__dict__", mock_imports
+            "evolve.application.run_loop.__dict__", mock_imports
         ), patch(
-            "evolve.round_success._handle_round_success.__module__",
+            "evolve.application.run_loop_lifecycle._handle_round_success.__module__",
             create=True,
         ):
             # Re-import to pick up patched orchestrator
             import importlib
-            import evolve.round_success as rs_mod
+            import evolve.application.run_loop_lifecycle as rs_mod
             importlib.reload(rs_mod)
 
             ui = MagicMock()
@@ -213,9 +213,9 @@ class TestRoundSuccessIntegration:
         # object in evolve.round_success, breaking the re-export identity
         # chain (orchestrator → round_lifecycle → round_success).  Reload
         # the full chain to restore identity invariants.
-        import evolve.round_success
-        import evolve.round_lifecycle
-        import evolve.orchestrator
+        import evolve.application.run_loop_lifecycle
+        import evolve.application.run_loop_lifecycle
+        import evolve.application.run_loop
         importlib.reload(evolve.round_success)
         importlib.reload(evolve.round_lifecycle)
-        importlib.reload(evolve.orchestrator)
+        importlib.reload(evolve.application.run_loop)

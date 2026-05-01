@@ -5,7 +5,7 @@ SPEC § "Multi-call round architecture" pins draft and review to
 tests lock that contract:
 
 * The two constants ``DRAFT_EFFORT`` / ``REVIEW_EFFORT`` exist in
-  ``evolve.agent`` and equal ``"low"``.
+  ``evolve.infrastructure.claude_sdk.runtime`` and equal ``"low"``.
 * The draft and review SDK call sites use the new constants by name
   (verified via source-grep — same approach as the existing
   ``effort=EFFORT`` plumbing test in ``test_evolve.py``).
@@ -21,19 +21,22 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import evolve.agent as agent_mod
-import evolve.draft_review as draft_review_mod
+import evolve.infrastructure.claude_sdk.runtime as agent_mod
+import evolve.infrastructure.claude_sdk.draft_review as draft_review_mod
 import evolve.infrastructure.claude_sdk.draft_review as infra_draft_review_mod
-import evolve.memory_curation as memory_curation_mod
-import evolve.oneshot_agents as oneshot_agents_mod
-import evolve.sdk_runner as sdk_runner_mod
+import evolve.infrastructure.claude_sdk.memory_curation as memory_curation_mod
+import evolve.infrastructure.claude_sdk.oneshot_agents as oneshot_agents_mod
+import evolve.infrastructure.claude_sdk.runner as sdk_runner_mod
 import evolve.infrastructure.claude_sdk.runner as infra_runner_mod
 import evolve.infrastructure.claude_sdk.oneshot_agents as infra_oneshot_agents_mod
 import evolve.infrastructure.claude_sdk.memory_curation as infra_memory_curation_mod
 import evolve.infrastructure.claude_sdk.spec_archival as infra_spec_archival_mod
-import evolve.spec_archival as spec_archival_mod
-import evolve.sync_readme as sync_readme_mod
-from evolve.agent import DRAFT_EFFORT, REVIEW_EFFORT
+import evolve.infrastructure.claude_sdk.spec_archival as spec_archival_mod
+import evolve.infrastructure.claude_sdk.sync_readme as sync_readme_mod
+from evolve.infrastructure.claude_sdk.runtime import (
+    DRAFT_EFFORT,
+    REVIEW_EFFORT,
+)
 
 
 AGENT_SRC = (Path(agent_mod.__file__)).read_text()
@@ -92,9 +95,9 @@ COMBINED_SRC = (
     ],
 )
 def test_per_call_effort_constants_pin_to_low(constant_name, expected):
-    """The two constants exist on ``evolve.agent`` and equal ``"low"``."""
+    """The two constants exist on ``evolve.infrastructure.claude_sdk.runtime`` and equal ``"low"``."""
     assert hasattr(agent_mod, constant_name), (
-        f"evolve.agent must define {constant_name} per SPEC § "
+        f"evolve.infrastructure.claude_sdk.runtime must define {constant_name} per SPEC § "
         "'Multi-call round architecture'"
     )
     assert getattr(agent_mod, constant_name) == expected

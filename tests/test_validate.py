@@ -7,7 +7,10 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.agent import build_validate_prompt, run_validate_agent
+from evolve.infrastructure.claude_sdk.oneshot_agents import (
+    build_validate_prompt,
+    run_validate_agent,
+)
 class TestBuildValidatePrompt:
     def test_includes_readme(self, tmp_path: Path):
         (tmp_path / "README.md").write_text("# My Project\nValidation spec")
@@ -101,7 +104,7 @@ class TestRunValidateAgent:
             coro.close()
             raise RuntimeError("cancel scope")
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_validate_agent(tmp_path, run_dir=rdir)
     def test_rate_limit_retry(self, tmp_path: Path):
@@ -118,8 +121,8 @@ class TestRunValidateAgent:
             if call_count < 2:
                 raise Exception("rate_limit exceeded")
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
-             patch("evolve.agent.time.sleep") as mock_sleep, \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
+             patch("evolve.infrastructure.claude_sdk.runtime.time.sleep") as mock_sleep, \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_validate_agent(tmp_path, run_dir=rdir, max_retries=3)
             assert call_count == 2
@@ -133,7 +136,7 @@ class TestRunValidateAgent:
             coro.close()
             raise ValueError("unexpected SDK error")
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_validate_agent(tmp_path, run_dir=rdir)
     def test_creates_run_dir(self, tmp_path: Path):
@@ -143,7 +146,7 @@ class TestRunValidateAgent:
         def mock_asyncio_run(coro):
             coro.close()
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_validate_agent(tmp_path, run_dir=rdir)
             assert rdir.is_dir()
@@ -152,9 +155,9 @@ class TestRunValidate:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_validate_agent"):
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent"):
+            from evolve.application.validate import run_validate
             run_validate(tmp_path)
 
         sessions = [d for d in (tmp_path / "runs").iterdir() if d.is_dir()]
@@ -168,9 +171,9 @@ class TestRunValidate:
         mock_result.stdout = "5 passed"
         mock_result.stderr = ""
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=mock_result) as mock_sub, \
-             patch("evolve.agent.run_validate_agent") as mock_agent:
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop.subprocess.run", return_value=mock_result) as mock_sub, \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent") as mock_agent:
+            from evolve.application.validate import run_validate
             run_validate(tmp_path, check_cmd="pytest", timeout=60)
 
         calls = [c for c in mock_sub.call_args_list if "pytest" in str(c)]
@@ -182,9 +185,9 @@ class TestRunValidate:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 60)), \
-             patch("evolve.agent.run_validate_agent"):
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 60)), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent"):
+            from evolve.application.validate import run_validate
             run_validate(tmp_path, check_cmd="pytest", timeout=60)
     def test_auto_detect_when_no_check(self, tmp_path: Path):
         (tmp_path / "README.md").write_text("# P")
@@ -192,10 +195,10 @@ class TestRunValidate:
 
         mock_result = MagicMock(returncode=0, stdout="ok", stderr="")
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value="pytest") as mock_detect, \
-             patch("evolve.orchestrator.subprocess.run", return_value=mock_result), \
-             patch("evolve.agent.run_validate_agent"):
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop._auto_detect_check", return_value="pytest") as mock_detect, \
+             patch("evolve.application.run_loop.subprocess.run", return_value=mock_result), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent"):
+            from evolve.application.validate import run_validate
             run_validate(tmp_path)
             mock_detect.assert_called_once_with(tmp_path)
     def test_exit_0_all_pass(self, tmp_path: Path):
@@ -212,9 +215,9 @@ class TestRunValidate:
                     "## Summary\nCompliance: 100%\n"
                 )
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_validate_agent", side_effect=create_report):
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent", side_effect=create_report):
+            from evolve.application.validate import run_validate
             result = run_validate(tmp_path)
             assert result == 0
     def test_exit_1_some_fail(self, tmp_path: Path):
@@ -231,18 +234,18 @@ class TestRunValidate:
                     "## Summary\nCompliance: 50%\n"
                 )
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_validate_agent", side_effect=create_report):
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent", side_effect=create_report):
+            from evolve.application.validate import run_validate
             result = run_validate(tmp_path)
             assert result == 1
     def test_exit_2_no_report(self, tmp_path: Path):
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_validate_agent"):
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent"):
+            from evolve.application.validate import run_validate
             result = run_validate(tmp_path)
             assert result == 2
     def test_exit_2_no_markers(self, tmp_path: Path):
@@ -256,25 +259,25 @@ class TestRunValidate:
                     "# Validation Report\nEmpty report\n"
                 )
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_validate_agent", side_effect=create_report):
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent", side_effect=create_report):
+            from evolve.application.validate import run_validate
             result = run_validate(tmp_path)
             assert result == 2
     def test_model_passed_to_agent(self, tmp_path: Path):
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        import evolve.agent as _agent_mod
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
-        with patch("evolve.orchestrator._auto_detect_check", return_value=None), \
-             patch("evolve.agent.run_validate_agent"):
-            from evolve.orchestrator import run_validate
+        with patch("evolve.application.run_loop._auto_detect_check", return_value=None), \
+             patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_validate_agent"):
+            from evolve.application.validate import run_validate
             run_validate(tmp_path, model="claude-sonnet-4-20250514")
-            assert __rt_mod.MODEL == "claude-sonnet-4-20250514"
+            assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
 
         # Reset
-        __rt_mod.MODEL = "claude-opus-4-6"
+        _agent_mod.MODEL = "claude-opus-4-6"
 class TestRunValidateClaudeAgent:
     def test_logs_conversation(self, tmp_path: Path):
         run_dir = tmp_path / "runs" / "session"
@@ -305,7 +308,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_validate_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -344,7 +347,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_validate_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -373,7 +376,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_validate_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -409,7 +412,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_validate_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -447,7 +450,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_validate_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -475,7 +478,7 @@ class TestRunValidateClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_validate_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_validate_claude_agent
             asyncio.run(_run_validate_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))

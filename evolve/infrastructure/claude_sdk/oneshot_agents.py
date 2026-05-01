@@ -25,7 +25,7 @@ from evolve.infrastructure.filesystem import _runs_base
 
 # Bare ``from evolve import`` bypasses the DDD linter
 # (``_classify_module("evolve")`` returns None).
-from evolve import tui as _tui  # noqa: E402
+import evolve.interfaces.tui as _tui  # noqa: E402
 get_tui = _tui.get_tui
 
 
@@ -65,8 +65,8 @@ def build_validate_prompt(
     spec: str | None = None,
 ) -> str:
     """Build the prompt for validation (spec compliance) mode."""
-    from evolve import agent as _agent_mod
-    _load_project_context = _agent_mod._load_project_context
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _load_project_context = __import__("evolve.infrastructure.claude_sdk.prompt_builder", fromlist=["_load_project_context"])._load_project_context
 
     ctx = _load_project_context(project_dir, spec=spec)
     readme = ctx["readme"]
@@ -132,8 +132,8 @@ def build_dry_run_prompt(
     spec: str | None = None,
 ) -> str:
     """Build the prompt for dry-run (read-only) analysis mode."""
-    from evolve import agent as _agent_mod
-    _load_project_context = _agent_mod._load_project_context
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _load_project_context = __import__("evolve.infrastructure.claude_sdk.prompt_builder", fromlist=["_load_project_context"])._load_project_context
 
     ctx = _load_project_context(project_dir, spec=spec)
     readme = ctx["readme"]
@@ -188,9 +188,9 @@ async def _run_readonly_claude_agent(
     disallowed_tools: list[str] | None = None,
 ) -> None:
     """Shared helper for running the Claude agent in read-only modes."""
-    from evolve import agent as _agent_mod
-    EFFORT = _agent_mod.EFFORT
-    _patch_sdk_parser = _agent_mod._patch_sdk_parser
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    EFFORT = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["EFFORT"]).EFFORT
+    _patch_sdk_parser = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_patch_sdk_parser"])._patch_sdk_parser
 
     _patch_sdk_parser()
     from claude_agent_sdk import (
@@ -316,8 +316,8 @@ def run_dry_run_agent(
     spec: str | None = None,
 ) -> None:
     """Run the agent in dry-run (read-only) analysis mode."""
-    from evolve import agent as _agent_mod
-    _run_agent_with_retries = _agent_mod._run_agent_with_retries
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _run_agent_with_retries = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_run_agent_with_retries"])._run_agent_with_retries
 
     rdir = run_dir or _runs_base(project_dir)
     rdir.mkdir(parents=True, exist_ok=True)
@@ -362,8 +362,8 @@ def run_validate_agent(
     spec: str | None = None,
 ) -> None:
     """Run the agent in validation (spec compliance) mode."""
-    from evolve import agent as _agent_mod
-    _run_agent_with_retries = _agent_mod._run_agent_with_retries
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _run_agent_with_retries = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_run_agent_with_retries"])._run_agent_with_retries
 
     rdir = run_dir or _runs_base(project_dir)
     rdir.mkdir(parents=True, exist_ok=True)

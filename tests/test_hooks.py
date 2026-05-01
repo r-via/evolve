@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from evolve.hooks import load_hooks, fire_hook, SUPPORTED_EVENTS, HOOK_TIMEOUT
+from evolve.infrastructure.hooks import load_hooks, fire_hook, SUPPORTED_EVENTS, HOOK_TIMEOUT
 
 class TestSupportedEvents:
     def test_all_events_present(self):

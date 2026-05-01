@@ -7,7 +7,10 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.agent import build_diff_prompt, run_diff_agent
+from evolve.infrastructure.claude_sdk.oneshot_agents import (
+    build_diff_prompt,
+    run_diff_agent,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +136,7 @@ class TestRunDiffAgent:
             coro.close()
             raise RuntimeError("cancel scope")
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_diff_agent(tmp_path, run_dir=rdir)
 
@@ -152,8 +155,8 @@ class TestRunDiffAgent:
             if call_count < 2:
                 raise Exception("rate_limit exceeded")
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
-             patch("evolve.agent.time.sleep") as mock_sleep, \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
+             patch("evolve.infrastructure.claude_sdk.runtime.time.sleep") as mock_sleep, \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_diff_agent(tmp_path, run_dir=rdir, max_retries=3)
             assert call_count == 2
@@ -169,7 +172,7 @@ class TestRunDiffAgent:
             coro.close()
             raise ValueError("unexpected SDK error")
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_diff_agent(tmp_path, run_dir=rdir)
 
@@ -181,7 +184,7 @@ class TestRunDiffAgent:
         def mock_asyncio_run(coro):
             coro.close()
 
-        with patch("evolve.agent.asyncio.run", side_effect=mock_asyncio_run), \
+        with patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=mock_asyncio_run), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_diff_agent(tmp_path, run_dir=rdir)
             assert rdir.is_dir()
@@ -199,8 +202,8 @@ class TestRunDiff:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.agent.run_diff_agent"):
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent"):
+            from evolve.application.diff import run_diff
             run_diff(tmp_path)
 
         sessions = [d for d in (tmp_path / "runs").iterdir() if d.is_dir()]
@@ -221,8 +224,8 @@ class TestRunDiff:
                     "## Summary\nCompliance: 100%\n"
                 )
 
-        with patch("evolve.agent.run_diff_agent", side_effect=create_report):
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent", side_effect=create_report):
+            from evolve.application.diff import run_diff
             result = run_diff(tmp_path)
             assert result == 0
 
@@ -241,8 +244,8 @@ class TestRunDiff:
                     "## Summary\nCompliance: 50%\n"
                 )
 
-        with patch("evolve.agent.run_diff_agent", side_effect=create_report):
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent", side_effect=create_report):
+            from evolve.application.diff import run_diff
             result = run_diff(tmp_path)
             assert result == 1
 
@@ -251,8 +254,8 @@ class TestRunDiff:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.agent.run_diff_agent"):
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent"):
+            from evolve.application.diff import run_diff
             result = run_diff(tmp_path)
             assert result == 2
 
@@ -268,8 +271,8 @@ class TestRunDiff:
                     "# Diff Report\nEmpty report\n"
                 )
 
-        with patch("evolve.agent.run_diff_agent", side_effect=create_report):
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent", side_effect=create_report):
+            from evolve.application.diff import run_diff
             result = run_diff(tmp_path)
             assert result == 2
 
@@ -277,7 +280,7 @@ class TestRunDiff:
         """Returns exit code 2 when spec file does not exist."""
         (tmp_path / "runs").mkdir()
 
-        from evolve.orchestrator import run_diff
+        from evolve.application.diff import run_diff
         result = run_diff(tmp_path, spec="NONEXISTENT.md")
         assert result == 2
 
@@ -286,54 +289,54 @@ class TestRunDiff:
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        import evolve.agent as _agent_mod
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
-        with patch("evolve.agent.run_diff_agent"):
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent"):
+            from evolve.application.diff import run_diff
             run_diff(tmp_path, model="claude-sonnet-4-20250514")
-            assert __rt_mod.MODEL == "claude-sonnet-4-20250514"
+            assert _agent_mod.MODEL == "claude-sonnet-4-20250514"
 
         # Reset
-        __rt_mod.MODEL = "claude-opus-4-6"
+        _agent_mod.MODEL = "claude-opus-4-6"
 
     def test_effort_default_low(self, tmp_path: Path):
         """Default effort for diff is 'low'."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        import evolve.agent as _agent_mod
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
-        with patch("evolve.agent.run_diff_agent"):
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent"):
+            from evolve.application.diff import run_diff
             run_diff(tmp_path)
-            assert __rt_mod.EFFORT == "low"
+            assert _agent_mod.EFFORT == "low"
 
         # Reset
-        __rt_mod.EFFORT = "max"
+        _agent_mod.EFFORT = "max"
 
     def test_effort_override(self, tmp_path: Path):
         """Explicit effort parameter overrides the default."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        import evolve.agent as _agent_mod
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
-        with patch("evolve.agent.run_diff_agent"):
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent"):
+            from evolve.application.diff import run_diff
             run_diff(tmp_path, effort="high")
-            assert __rt_mod.EFFORT == "high"
+            assert _agent_mod.EFFORT == "high"
 
         # Reset
-        __rt_mod.EFFORT = "max"
+        _agent_mod.EFFORT = "max"
 
     def test_does_not_run_check_cmd(self, tmp_path: Path):
         """Diff does NOT run any check command (SPEC says so)."""
         (tmp_path / "README.md").write_text("# P")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.agent.run_diff_agent"), \
-             patch("evolve.orchestrator.subprocess.run") as mock_sub:
-            from evolve.orchestrator import run_diff
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_diff_agent"), \
+             patch("evolve.application.run_loop.subprocess.run") as mock_sub:
+            from evolve.application.diff import run_diff
             run_diff(tmp_path)
             mock_sub.assert_not_called()
 
@@ -375,7 +378,7 @@ class TestRunDiffClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_diff_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_diff_claude_agent
             asyncio.run(_run_diff_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -408,7 +411,7 @@ class TestRunDiffClaudeAgent:
         mock_sdk.ResultMessage = RM
 
         with patch.dict("sys.modules", {"claude_agent_sdk": mock_sdk}):
-            from evolve.agent import _run_diff_claude_agent
+            from evolve.infrastructure.claude_sdk.oneshot_agents import _run_diff_claude_agent
             asyncio.run(_run_diff_claude_agent(
                 "test prompt", tmp_path, run_dir
             ))
@@ -430,7 +433,7 @@ class TestDiffCLI:
         (tmp_path / "README.md").write_text("# P")
         with patch.object(sys, "argv", ["evolve", "diff", str(tmp_path)]):
             from evolve import main
-            with patch("evolve.orchestrator.run_diff", return_value=0) as mock_diff, \
+            with patch("evolve.application.diff.run_diff", return_value=0) as mock_diff, \
                  patch("evolve._check_deps"):
                 try:
                     main()
@@ -444,7 +447,7 @@ class TestDiffCLI:
         (tmp_path / "SPEC.md").write_text("# Spec")
         with patch.object(sys, "argv", ["evolve", "diff", str(tmp_path), "--spec", "SPEC.md"]):
             from evolve import main
-            with patch("evolve.orchestrator.run_diff", return_value=0) as mock_diff, \
+            with patch("evolve.application.diff.run_diff", return_value=0) as mock_diff, \
                  patch("evolve._check_deps"):
                 try:
                     main()
@@ -462,7 +465,7 @@ class TestDiffCLI:
         with patch.object(sys, "argv", ["evolve", "diff", str(tmp_path)]), \
              patch.dict(os.environ, env, clear=True):
             from evolve import main
-            with patch("evolve.orchestrator.run_diff", return_value=0) as mock_diff, \
+            with patch("evolve.application.diff.run_diff", return_value=0) as mock_diff, \
                  patch("evolve._check_deps"):
                 try:
                     main()

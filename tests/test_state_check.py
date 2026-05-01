@@ -1,13 +1,11 @@
-"""Tests for evolve.state / evolve.diagnostics check helpers — _auto_detect_check, _parse_check_output, _check_spec_freshness."""
+"""Tests for evolve.infrastructure.filesystem.state_manager / evolve.diagnostics check helpers — _auto_detect_check, _parse_check_output, _check_spec_freshness."""
 
 from pathlib import Path
 from unittest.mock import patch
 
-from evolve.diagnostics import _auto_detect_check
-from evolve.state import (
-    _check_spec_freshness,
-    _parse_check_output,
-)
+from evolve.infrastructure.diagnostics.detector import _auto_detect_check
+from evolve.infrastructure.filesystem.state_manager import _check_spec_freshness
+from evolve.infrastructure.filesystem.improvement_parser import _parse_check_output
 
 # ---------------------------------------------------------------------------
 # _auto_detect_check

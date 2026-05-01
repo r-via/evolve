@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.diagnostics import (
+from evolve.infrastructure.diagnostics.detector import (
     _FILE_TOO_LARGE_LIMIT,
     _detect_file_too_large,
 )
@@ -114,7 +114,7 @@ class TestBuildPromptFileTooLarge:
     def test_file_too_large_header_rendered(self, tmp_path: Path) -> None:
         """When the diagnostic contains ``FILE TOO LARGE``, the prompt
         includes the ``## CRITICAL — File too large`` section."""
-        from evolve.agent import build_prompt
+        from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -149,7 +149,7 @@ class TestBuildPromptFileTooLarge:
     def test_file_too_large_does_not_match_other_prefix(self, tmp_path: Path) -> None:
         """A diagnostic with ``NO PROGRESS`` must NOT trigger the
         FILE TOO LARGE header."""
-        from evolve.agent import build_prompt
+        from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -186,7 +186,7 @@ class TestFileSizeIntegration:
     def test_diagnostic_written_on_oversized_file(self, tmp_path: Path) -> None:
         """When ``_detect_file_too_large`` returns results, a diagnostic
         file with ``FILE TOO LARGE:`` prefix is written."""
-        from evolve.diagnostics import _save_subprocess_diagnostic
+        from evolve.infrastructure.diagnostics.detector import _save_subprocess_diagnostic
 
         run_dir = tmp_path / "session"
         run_dir.mkdir()

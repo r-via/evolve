@@ -8,7 +8,7 @@ and re-export identity.
 import re
 from pathlib import Path
 
-import evolve.agent_runtime as shim_mod
+import evolve.infrastructure.claude_sdk.runtime as shim_mod
 import evolve.infrastructure.claude_sdk.runtime as runtime_mod
 
 # Symbols that must be present in the infrastructure module

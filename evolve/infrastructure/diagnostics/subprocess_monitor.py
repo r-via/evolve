@@ -10,8 +10,7 @@ import sys
 import threading
 import time
 
-__mod = __import__("evolve.tui", fromlist=["TUIProtocol"])
-TUIProtocol = __mod.TUIProtocol
+from evolve.interfaces.tui import TUIProtocol
 
 # Seconds of silence before the watchdog considers a subprocess stalled.
 WATCHDOG_TIMEOUT = 120

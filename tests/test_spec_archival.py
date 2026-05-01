@@ -17,14 +17,12 @@ import pytest
 # Trigger conditions — _should_run_spec_archival
 # ---------------------------------------------------------------------------
 
-from evolve.agent import (
-    ARCHIVAL_LINE_THRESHOLD,
-    ARCHIVAL_ROUND_INTERVAL,
-    _ARCHIVAL_MAX_SHRINK,
-    _should_run_spec_archival,
-    build_spec_archival_prompt,
-    run_spec_archival,
-)
+from evolve.infrastructure.claude_sdk.spec_archival import ARCHIVAL_LINE_THRESHOLD
+from evolve.infrastructure.claude_sdk.spec_archival import ARCHIVAL_ROUND_INTERVAL
+from evolve.infrastructure.claude_sdk.spec_archival import _ARCHIVAL_MAX_SHRINK
+from evolve.infrastructure.claude_sdk.spec_archival import _should_run_spec_archival
+from evolve.infrastructure.claude_sdk.spec_archival import build_spec_archival_prompt
+from evolve.infrastructure.claude_sdk.spec_archival import run_spec_archival
 
 
 class TestShouldRunSpecArchival:
@@ -165,8 +163,8 @@ class TestRunSpecArchival:
         verdict = run_spec_archival(tmp_path, run_dir, ARCHIVAL_ROUND_INTERVAL, spec)
         assert verdict == "SKIPPED"
 
-    @patch("evolve.agent._run_agent_with_retries")
-    @patch("evolve.agent.get_tui", return_value=MagicMock())
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
+    @patch("evolve.interfaces.tui.get_tui", return_value=MagicMock())
     def test_sdk_fail_when_no_audit_log(self, mock_tui, mock_retries, tmp_path):
         """SDK runs but produces no audit log → SDK_FAIL, original restored."""
         spec = self._make_spec(tmp_path, lines=ARCHIVAL_LINE_THRESHOLD + 1)
@@ -180,8 +178,8 @@ class TestRunSpecArchival:
         assert verdict == "SDK_FAIL"
         assert spec.read_text() == original
 
-    @patch("evolve.agent._run_agent_with_retries")
-    @patch("evolve.agent.get_tui", return_value=MagicMock())
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
+    @patch("evolve.interfaces.tui.get_tui", return_value=MagicMock())
     def test_archived_when_audit_present_and_moderate_shrink(self, mock_tui, mock_retries, tmp_path):
         """Agent produces audit log, SPEC shrinks moderately → ARCHIVED."""
         spec = self._make_spec(tmp_path, lines=ARCHIVAL_LINE_THRESHOLD + 1)
@@ -200,8 +198,8 @@ class TestRunSpecArchival:
         verdict = run_spec_archival(tmp_path, run_dir, 7, spec)
         assert verdict == "ARCHIVED"
 
-    @patch("evolve.agent._run_agent_with_retries")
-    @patch("evolve.agent.get_tui", return_value=MagicMock())
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
+    @patch("evolve.interfaces.tui.get_tui", return_value=MagicMock())
     def test_aborted_when_shrink_exceeds_threshold(self, mock_tui, mock_retries, tmp_path):
         """Agent shrinks SPEC by >80% → ABORTED, original restored."""
         spec = self._make_spec(tmp_path, lines=ARCHIVAL_LINE_THRESHOLD + 1)
@@ -222,8 +220,8 @@ class TestRunSpecArchival:
         assert verdict == "ABORTED"
         assert spec.read_text() == original
 
-    @patch("evolve.agent._run_agent_with_retries")
-    @patch("evolve.agent.get_tui", return_value=MagicMock())
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
+    @patch("evolve.interfaces.tui.get_tui", return_value=MagicMock())
     def test_aborted_audit_log_updated_with_verdict(self, mock_tui, mock_retries, tmp_path):
         """On ABORT, the audit log is prefixed with verdict: ABORTED."""
         spec = self._make_spec(tmp_path, lines=ARCHIVAL_LINE_THRESHOLD + 1)
@@ -242,8 +240,8 @@ class TestRunSpecArchival:
         audit = run_dir / "spec_curation_round_7.md"
         assert "verdict: ABORTED" in audit.read_text()
 
-    @patch("evolve.agent._run_agent_with_retries", side_effect=Exception("SDK boom"))
-    @patch("evolve.agent.get_tui", return_value=MagicMock())
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries", side_effect=Exception("SDK boom"))
+    @patch("evolve.interfaces.tui.get_tui", return_value=MagicMock())
     def test_sdk_exception_restores_original(self, mock_tui, mock_retries, tmp_path):
         """Exception from SDK → SDK_FAIL, original restored."""
         spec = self._make_spec(tmp_path, lines=ARCHIVAL_LINE_THRESHOLD + 1)
@@ -255,8 +253,8 @@ class TestRunSpecArchival:
         assert verdict == "SDK_FAIL"
         assert spec.read_text() == original
 
-    @patch("evolve.agent._run_agent_with_retries")
-    @patch("evolve.agent.get_tui", return_value=MagicMock())
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
+    @patch("evolve.interfaces.tui.get_tui", return_value=MagicMock())
     def test_archive_dir_created(self, mock_tui, mock_retries, tmp_path):
         """run_spec_archival creates SPEC/archive/ if it doesn't exist."""
         spec = self._make_spec(tmp_path, lines=ARCHIVAL_LINE_THRESHOLD + 1)
@@ -284,21 +282,21 @@ class TestOrchestratorShouldRunSpecArchival:
     """Tests for _should_run_spec_archival in orchestrator.py (AC 3)."""
 
     def test_delegates_to_agent_check(self, tmp_path):
-        from evolve.orchestrator import _should_run_spec_archival
+        from evolve.infrastructure.claude_sdk.spec_archival import _should_run_spec_archival
 
         spec = tmp_path / "SPEC.md"
         spec.write_text("line\n" * (ARCHIVAL_LINE_THRESHOLD + 1))
         assert _should_run_spec_archival(tmp_path, 7, "SPEC.md") is True
 
     def test_below_threshold(self, tmp_path):
-        from evolve.orchestrator import _should_run_spec_archival
+        from evolve.infrastructure.claude_sdk.spec_archival import _should_run_spec_archival
 
         spec = tmp_path / "SPEC.md"
         spec.write_text("# Short\n")
         assert _should_run_spec_archival(tmp_path, 7, "SPEC.md") is False
 
     def test_interval_triggers(self, tmp_path):
-        from evolve.orchestrator import _should_run_spec_archival
+        from evolve.infrastructure.claude_sdk.spec_archival import _should_run_spec_archival
 
         spec = tmp_path / "SPEC.md"
         spec.write_text("# Short\n")
@@ -308,10 +306,10 @@ class TestOrchestratorShouldRunSpecArchival:
 class TestOrchestratorWiring:
     """Tests for _run_spec_archival_pass in orchestrator.py."""
 
-    @patch("evolve.orchestrator._git_commit")
-    @patch("evolve.agent.run_spec_archival", return_value="ARCHIVED")
+    @patch("evolve.application.run_loop._git_commit")
+    @patch("evolve.infrastructure.claude_sdk.spec_archival.run_spec_archival", return_value="ARCHIVED")
     def test_archived_triggers_commit(self, mock_archival, mock_commit, tmp_path):
-        from evolve.orchestrator import _run_spec_archival_pass
+        from evolve.application.run_loop import _run_spec_archival_pass
 
         spec = tmp_path / "SPEC.md"
         spec.write_text("# Spec\n")
@@ -324,9 +322,9 @@ class TestOrchestratorWiring:
         commit_msg = mock_commit.call_args[0][1]
         assert "archival" in commit_msg.lower()
 
-    @patch("evolve.agent.run_spec_archival", return_value="SKIPPED")
+    @patch("evolve.infrastructure.claude_sdk.spec_archival.run_spec_archival", return_value="SKIPPED")
     def test_skipped_no_commit(self, mock_archival, tmp_path):
-        from evolve.orchestrator import _run_spec_archival_pass
+        from evolve.application.run_loop import _run_spec_archival_pass
 
         spec = tmp_path / "SPEC.md"
         spec.write_text("# Spec\n")
@@ -334,13 +332,13 @@ class TestOrchestratorWiring:
         run_dir.mkdir()
         ui = MagicMock()
 
-        with patch("evolve.orchestrator._git_commit") as mock_commit:
+        with patch("evolve.application.run_loop._git_commit") as mock_commit:
             _run_spec_archival_pass(tmp_path, run_dir, 5, "SPEC.md", ui)
             mock_commit.assert_not_called()
 
-    @patch("evolve.agent.run_spec_archival", return_value="ABORTED")
+    @patch("evolve.infrastructure.claude_sdk.spec_archival.run_spec_archival", return_value="ABORTED")
     def test_aborted_no_commit(self, mock_archival, tmp_path):
-        from evolve.orchestrator import _run_spec_archival_pass
+        from evolve.application.run_loop import _run_spec_archival_pass
 
         spec = tmp_path / "SPEC.md"
         spec.write_text("# Spec\n")
@@ -348,12 +346,12 @@ class TestOrchestratorWiring:
         run_dir.mkdir()
         ui = MagicMock()
 
-        with patch("evolve.orchestrator._git_commit") as mock_commit:
+        with patch("evolve.application.run_loop._git_commit") as mock_commit:
             _run_spec_archival_pass(tmp_path, run_dir, 5, "SPEC.md", ui)
             mock_commit.assert_not_called()
 
     def test_missing_spec_file_returns_silently(self, tmp_path):
-        from evolve.orchestrator import _run_spec_archival_pass
+        from evolve.application.run_loop import _run_spec_archival_pass
 
         run_dir = tmp_path / "run"
         run_dir.mkdir()

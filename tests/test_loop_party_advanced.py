@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.party import _run_party_mode
+from evolve.infrastructure.claude_sdk.party import _run_party_mode
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ class TestPartyModeAgentLoading:
         captured_prompt = {}
 
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         def mock_run_agent(prompt, project_dir, round_num=0, run_dir=None, log_filename=None):
             captured_prompt["value"] = prompt
@@ -82,7 +82,7 @@ class TestPartyModeAgentLoading:
 
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
              patch.object(_asyncio, 'run', side_effect=lambda c: c.close()):
@@ -101,12 +101,12 @@ class TestPartyModeAgentLoading:
 
         ui = MagicMock()
 
-        import evolve.party as party_mod
+        import evolve.infrastructure.claude_sdk.party as party_mod
         evolve_agents = Path(party_mod.__file__).parent.parent / "agents"
 
         if evolve_agents.is_dir() and list(evolve_agents.glob("*.md")):
             import asyncio as _asyncio
-            import evolve.agent as agent_mod
+            import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
             with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()), \
                  patch.object(_asyncio, 'run', side_effect=lambda c: c.close()):
@@ -140,7 +140,7 @@ class TestPartyModePromptContent:
 
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()) as mock_agent, \
              patch.object(_asyncio, 'run', side_effect=lambda c: c.close()):
@@ -163,7 +163,7 @@ class TestPartyModePromptContent:
 
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()) as mock_agent, \
              patch.object(_asyncio, 'run', side_effect=lambda c: c.close()):
@@ -185,8 +185,8 @@ class TestPartyModePromptContent:
 
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
-        import evolve.party as party_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
+        import evolve.infrastructure.claude_sdk.party as party_mod
 
         wf_dir = Path(party_mod.__file__).parent.parent / "workflows" / "party-mode"
         wf_existed = wf_dir.is_dir()
@@ -233,8 +233,8 @@ class TestPartyModeMissingWorkflow:
 
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
-        import evolve.orchestrator as loop_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
+        import evolve.application.run_loop as loop_mod
 
         real_parent = Path(loop_mod.__file__).parent
         real_is_dir = Path.is_dir
@@ -270,8 +270,8 @@ class TestPartyModeMissingWorkflow:
 
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
-        import evolve.orchestrator as loop_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
+        import evolve.application.run_loop as loop_mod
 
         real_parent = Path(loop_mod.__file__).parent
         real_is_dir = Path.is_dir
@@ -314,7 +314,7 @@ class TestPartyModeEndToEnd:
 
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         def mock_asyncio_run(coro):
             coro.close()
@@ -348,7 +348,7 @@ class TestPartyModeEndToEnd:
 
         ui = MagicMock()
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         with patch.object(agent_mod, 'run_claude_agent', return_value=MagicMock()) as mock_agent, \
              patch.object(_asyncio, 'run', side_effect=lambda c: c.close()):
@@ -375,7 +375,7 @@ class TestPartyModeEndToEnd:
         (tmp_path / "runs" / "improvements.md").write_text("- [x] done\n")
 
         import asyncio as _asyncio
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
 
         mock_ui = MagicMock()
 

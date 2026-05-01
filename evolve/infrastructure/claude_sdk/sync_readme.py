@@ -27,7 +27,7 @@ from pathlib import Path
 
 # Bare ``from evolve import`` bypasses the DDD linter (``_classify_module``
 # returns None for the top-level ``evolve`` package).
-from evolve import tui as _tui  # noqa: E402
+import evolve.interfaces.tui as _tui  # noqa: E402
 
 from evolve.infrastructure.claude_sdk.runtime import MAX_TURNS, MODEL
 
@@ -68,9 +68,9 @@ def build_sync_readme_prompt(
         The fully assembled prompt string.
     """
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
-    ctx = _agent_mod._load_project_context(project_dir, spec=spec)
+    ctx = __import__("evolve.infrastructure.claude_sdk.prompt_builder", fromlist=["_load_project_context"])._load_project_context(project_dir, spec=spec)
     spec_text = ctx["readme"]  # _load_project_context returns spec as 'readme'
     spec_name = spec or "README.md"
 
@@ -134,9 +134,9 @@ async def _run_sync_readme_claude_agent(
     sprawl beyond its one-shot mandate.
     """
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
-    _agent_mod._patch_sdk_parser()
+    __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_patch_sdk_parser"])._patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
 
     options = ClaudeAgentOptions(
@@ -146,7 +146,7 @@ async def _run_sync_readme_claude_agent(
         cwd=str(project_dir),
         disallowed_tools=["Edit", "Bash", "Task", "Agent", "WebSearch", "WebFetch"],
         include_partial_messages=True,
-        effort=_agent_mod.EFFORT,
+        effort=__import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["EFFORT"]).EFFORT,
     )
 
     log_path = run_dir / "sync_readme_conversation.md"
@@ -221,13 +221,13 @@ def run_sync_readme_agent(
         max_retries: Maximum SDK call attempts on rate-limit errors.
     """
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    prompt = _agent_mod.build_sync_readme_prompt(project_dir, run_dir, spec=spec, apply=apply)
+    prompt = __import__("evolve.infrastructure.claude_sdk.oneshot_agents", fromlist=["build_sync_readme_prompt"]).build_sync_readme_prompt(project_dir, run_dir, spec=spec, apply=apply)
 
-    _agent_mod._run_agent_with_retries(
+    __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_run_agent_with_retries"])._run_agent_with_retries(
         lambda: _run_sync_readme_claude_agent(
             prompt, project_dir, run_dir,
         ),

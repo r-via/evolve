@@ -24,7 +24,7 @@ from pathlib import Path
 
 def _clean_sessions(project_dir: Path, keep: int = 5) -> None:
     """Remove old session directories, keeping the N most recent."""
-    from evolve import state as _st  # noqa: E402
+    import evolve.infrastructure.filesystem.state_manager as _st  # noqa: E402
 
     runs_dir = _st._runs_base(project_dir)
     if not runs_dir.is_dir():
@@ -50,8 +50,8 @@ def _clean_sessions(project_dir: Path, keep: int = 5) -> None:
 
 def _show_history(project_dir: Path) -> None:
     """Show evolution timeline across all sessions."""
-    from evolve import state as _st  # noqa: E402
-    from evolve import tui as _tui  # noqa: E402
+    import evolve.infrastructure.filesystem.state_manager as _st  # noqa: E402
+    import evolve.interfaces.tui as _tui  # noqa: E402
 
     ui = _tui.get_tui()
 
@@ -117,8 +117,8 @@ def _show_history(project_dir: Path) -> None:
 
 def _show_status(project_dir: Path):
     """Display the current evolution status of *project_dir*."""
-    from evolve import state as _st  # noqa: E402
-    from evolve import tui as _tui  # noqa: E402
+    import evolve.infrastructure.filesystem.state_manager as _st  # noqa: E402
+    import evolve.interfaces.tui as _tui  # noqa: E402
 
     ui = _tui.get_tui()
 

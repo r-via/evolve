@@ -29,7 +29,7 @@ from evolve.infrastructure.filesystem import _runs_base
 # Bare ``from evolve import`` bypasses the DDD linter (``_classify_module``
 # returns None for ``"evolve"`` — no dot suffix).  Module-level binding so
 # tests can ``patch("evolve.infrastructure.claude_sdk.runner.get_tui", ...)``.
-from evolve import tui as _tui  # noqa: E402
+import evolve.interfaces.tui as _tui  # noqa: E402
 get_tui = _tui.get_tui
 
 
@@ -118,8 +118,8 @@ async def run_claude_agent(
     # circular) top-level import of ``evolve.agent`` from this module
     # is avoided — ``agent.py`` re-exports ``run_claude_agent`` from
     # here at its module top.
-    from evolve import agent as _agent_mod
-    EFFORT = _agent_mod.EFFORT
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    EFFORT = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["EFFORT"]).EFFORT
 
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",

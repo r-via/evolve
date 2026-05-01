@@ -9,23 +9,26 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from evolve.git import _ensure_git, _git_commit
-from evolve.orchestrator import (
+from evolve.infrastructure.git.adapter import (
+    _ensure_git,
+    _git_commit,
+)
+from evolve.application.run_loop import (
     MAX_DEBUG_RETRIES,
     _MEMORY_COMPACTION_MARKER,
     _MEMORY_WIPE_THRESHOLD,
-    _generate_evolution_report,
     _run_rounds,
-    evolve_loop,
-    run_single_round,
 )
-from evolve.party import _run_party_mode
-from evolve.state import (
+from evolve.application.run_loop_startup import evolve_loop
+from evolve.application.run_round import run_single_round
+from evolve.infrastructure.reporting.generator import _generate_evolution_report
+from evolve.infrastructure.claude_sdk.party import _run_party_mode
+from evolve.infrastructure.filesystem.improvement_parser import (
     _count_checked,
     _count_unchecked,
     _get_current_improvement,
-    _parse_restart_required,
 )
+from evolve.infrastructure.filesystem.state_manager import _parse_restart_required
 
 
 def _close_coro(coro):
@@ -51,8 +54,8 @@ class TestRunSingleRound:
 
         mock_subprocess = MagicMock(returncode=0, stdout="42 passed", stderr="")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=mock_subprocess), \
-             patch("evolve.agent.asyncio.run", side_effect=_close_coro), \
+        with patch("evolve.application.run_loop.subprocess.run", return_value=mock_subprocess), \
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1, check_cmd="pytest",
@@ -67,8 +70,8 @@ class TestRunSingleRound:
         run_dir.mkdir()
         (tmp_path / "README.md").write_text("# Test")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("evolve.agent.asyncio.run", side_effect=_close_coro), \
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1,
@@ -87,8 +90,8 @@ class TestRunSingleRound:
         # Pre-create COMMIT_MSG (simulating what agent would do)
         (run_dir / "COMMIT_MSG").write_text("feat(parser): add validation")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=0, stdout="ok", stderr="")), \
-             patch("evolve.agent.asyncio.run", side_effect=_close_coro), \
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="ok", stderr="")), \
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1, check_cmd="pytest",
@@ -111,8 +114,8 @@ class TestRunSingleRound:
                 raise subprocess.TimeoutExpired(cmd="pytest", timeout=60)
             return MagicMock(returncode=0, stdout="", stderr="")
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=mock_run), \
-             patch("evolve.agent.asyncio.run", side_effect=_close_coro), \
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=mock_run), \
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1, check_cmd="pytest",
@@ -149,8 +152,8 @@ class TestRunSingleRound:
             return MagicMock(returncode=0, stdout="", stderr="")
 
         # Patch at the point of import inside run_single_round
-        import evolve.agent as _agent_mod
-        with patch("evolve.orchestrator.subprocess.run", side_effect=mock_run), \
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=mock_run), \
              patch.object(_agent_mod, "analyze_and_fix", mock_analyze), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
@@ -170,11 +173,11 @@ class TestRunSingleRound:
         run_dir.mkdir()
         (tmp_path / "README.md").write_text("# Test")
 
-        import evolve.agent as agent_mod
+        import evolve.infrastructure.claude_sdk.runtime as agent_mod
         original_model = _rt_mod.MODEL
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("evolve.agent.asyncio.run", side_effect=_close_coro), \
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1,
@@ -197,8 +200,8 @@ class TestRunSingleRound:
                 return MagicMock(returncode=1, stdout="3 passed", stderr="DeprecationWarning")
             return MagicMock(returncode=0, stdout="", stderr="")
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=mock_run), \
-             patch("evolve.agent.asyncio.run", side_effect=_close_coro), \
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=mock_run), \
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(
                 tmp_path, round_num=1, check_cmd="pytest",
@@ -211,8 +214,8 @@ class TestRunSingleRound:
         runs.mkdir()
         (tmp_path / "README.md").write_text("# Test")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
-             patch("evolve.agent.asyncio.run", side_effect=_close_coro), \
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")), \
+             patch("evolve.infrastructure.claude_sdk.runtime.asyncio.run", side_effect=_close_coro), \
              patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
             run_single_round(tmp_path, round_num=1, run_dir=None)
 
@@ -229,9 +232,9 @@ class TestEvolveLoop:
         (tmp_path / "README.md").write_text("# Test")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(tmp_path, max_rounds=5)
 
         mock_run.assert_called_once()
@@ -248,8 +251,8 @@ class TestEvolveLoop:
         (session / "conversation_loop_2.md").write_text("r2")
         (runs / "improvements.md").write_text("# Improvements\n")
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(tmp_path, max_rounds=10, resume=True)
 
         mock_run.assert_called_once()
@@ -261,8 +264,8 @@ class TestEvolveLoop:
         (tmp_path / "README.md").write_text("# Test")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(tmp_path, max_rounds=5, resume=True)
 
         mock_run.assert_called_once()
@@ -274,9 +277,9 @@ class TestEvolveLoop:
         (tmp_path / "README.md").write_text("# Test")
         (tmp_path / "runs").mkdir()
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._setup_forever_branch") as mock_branch, \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._setup_forever_branch") as mock_branch, \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(tmp_path, max_rounds=10, forever=True)
 
         mock_branch.assert_called_once_with(tmp_path)
@@ -288,8 +291,8 @@ class TestEvolveLoop:
         """Resume when runs/ doesn't exist starts fresh."""
         (tmp_path / "README.md").write_text("# Test")
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(tmp_path, max_rounds=5, resume=True)
 
         mock_run.assert_called_once()
@@ -302,8 +305,8 @@ class TestEvolveLoop:
         session.mkdir(parents=True)
         (runs / "improvements.md").write_text("# Improvements\n")
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(tmp_path, max_rounds=5, resume=True)
 
         mock_run.assert_called_once()
@@ -343,10 +346,10 @@ class TestRunRounds:
             imp_path.write_text("- [x] [functional] do something\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -368,9 +371,9 @@ class TestRunRounds:
             imp_path.write_text(existing + f"- [ ] [functional] new item {round_num}\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -389,10 +392,10 @@ class TestRunRounds:
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             return 0, "output", True  # always stalls
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -417,10 +420,10 @@ class TestRunRounds:
             convo.write_text("# Recovered")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -436,10 +439,10 @@ class TestRunRounds:
         def mock_monitored(cmd, cwd, ui_, round_num, watchdog_timeout=120):
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,

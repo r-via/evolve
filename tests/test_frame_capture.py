@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.tui import PlainTUI, JsonTUI, _has_rich
+from evolve.interfaces.tui import PlainTUI, JsonTUI, _has_rich
 
 
 # ---------------------------------------------------------------------------
@@ -54,19 +54,19 @@ class TestRichTUICaptureFrame:
 
     def test_disabled_returns_none(self, tmp_path):
         """When capture_frames=False, capture_frame returns None."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=False)
         assert ui.capture_frame("round_1_end") is None
 
     def test_no_run_dir_returns_none(self):
         """When run_dir is None, capture_frame returns None."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
         ui = RichTUI(run_dir=None, capture_frames=True)
         assert ui.capture_frame("round_1_end") is None
 
     def test_returns_png_path_with_cairosvg(self, tmp_path):
         """When cairosvg is available, capture_frame returns a valid PNG path."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
         # Render something so the buffer is not empty
@@ -89,7 +89,7 @@ class TestRichTUICaptureFrame:
 
     def test_creates_frames_directory(self, tmp_path):
         """capture_frame creates the frames/ directory if it doesn't exist."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
         ui.console.print("Test output")
@@ -110,7 +110,7 @@ class TestRichTUICaptureFrame:
 
     def test_cairosvg_missing_returns_none_and_warns(self, tmp_path, caplog):
         """When cairosvg is not installed, capture_frame returns None and logs warning."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
         ui.console.print("Test output")
@@ -125,7 +125,7 @@ class TestRichTUICaptureFrame:
 
     def test_cairosvg_missing_warns_only_once(self, tmp_path, caplog):
         """The cairosvg warning should only be emitted once per RichTUI instance."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
 
@@ -140,7 +140,7 @@ class TestRichTUICaptureFrame:
 
     def test_svg_cleaned_up_on_missing_cairosvg(self, tmp_path):
         """SVG file should be cleaned up even when cairosvg is missing."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
         ui.console.print("Test output")
@@ -154,7 +154,7 @@ class TestRichTUICaptureFrame:
 
     def test_svg_cleaned_up_on_success(self, tmp_path):
         """SVG intermediate file should be removed after successful PNG conversion."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
         ui.console.print("Test output")
@@ -173,7 +173,7 @@ class TestRichTUICaptureFrame:
 
     def test_cairosvg_conversion_error_returns_none(self, tmp_path, caplog):
         """When cairosvg.svg2png raises, capture_frame returns None and logs."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
         ui.console.print("Test output")
@@ -190,7 +190,7 @@ class TestRichTUICaptureFrame:
 
     def test_multiple_labels_produce_separate_files(self, tmp_path):
         """Each label should produce a separate PNG file."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         ui = RichTUI(run_dir=str(tmp_path), capture_frames=True)
 
@@ -227,7 +227,7 @@ class TestRichTUIStartupCairosvgWarning:
 
     def test_warns_at_startup_when_cairosvg_missing(self, tmp_path, caplog):
         """capture_frames=True + cairosvg missing → single startup warning."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         # Force cairosvg import to fail by stubbing sys.modules with None
         # BEFORE constructing RichTUI (the check happens in __init__).
@@ -247,7 +247,7 @@ class TestRichTUIStartupCairosvgWarning:
 
     def test_no_warning_when_capture_frames_false(self, tmp_path, caplog):
         """capture_frames=False → no warning even if cairosvg is unimportable."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         with patch.dict("sys.modules", {"cairosvg": None}):
             with caplog.at_level(logging.WARNING, logger="tui"):
@@ -260,7 +260,7 @@ class TestRichTUIStartupCairosvgWarning:
 
     def test_no_warning_when_cairosvg_importable(self, tmp_path, caplog):
         """capture_frames=True + cairosvg importable → no startup warning."""
-        from evolve.tui import RichTUI
+        from evolve.interfaces.tui import RichTUI
 
         # Inject a fake importable cairosvg module into sys.modules so the
         # `import cairosvg` inside __init__ succeeds without the real package.
@@ -318,7 +318,7 @@ class TestPartyModeFrameAttachment:
         # Mock run_claude_agent
         mock_agent = AsyncMock()
 
-        with patch("evolve.orchestrator._run_party_mode") as mock_party:
+        with patch("evolve.application.run_loop._run_party_mode") as mock_party:
             # Instead of calling the real function, test the frame scanning logic directly
             pass
 
@@ -415,18 +415,18 @@ class TestPartyModeFrameAttachment:
         # Patch agent module attributes directly so that the function-local
         # ``from evolve import agent as _agent_mod`` picks up the mocks
         # regardless of import order in the full test suite.  Patching only
-        # sys.modules["evolve.agent"] is insufficient because Python resolves
+        # sys.modules["evolve.infrastructure.claude_sdk.runtime."] is insufficient because Python resolves
         # ``from evolve import agent`` via getattr(sys.modules["evolve"], "agent")
         # when the parent package is already imported.
-        import evolve.agent as _real_agent
+        import evolve.infrastructure.claude_sdk.runtime as _real_agent
         monkeypatch.setattr(_real_agent, "run_claude_agent", mock_run_agent)
         monkeypatch.setattr(_real_agent, "_is_benign_runtime_error", mock_is_benign)
         monkeypatch.setattr(_real_agent, "_should_retry_rate_limit", mock_should_retry)
 
-        from evolve.tui import PlainTUI
+        from evolve.interfaces.tui import PlainTUI
         ui = PlainTUI()
 
-        from evolve.orchestrator import _run_party_mode
+        from evolve.application.run_loop import _run_party_mode
         _run_party_mode(
             project_dir=project_dir,
             run_dir=run_dir,
@@ -473,15 +473,15 @@ class TestPartyModeFrameAttachment:
         mock_is_benign = MagicMock(return_value=False)
         mock_should_retry = MagicMock(return_value=None)
 
-        import evolve.agent as _real_agent
+        import evolve.infrastructure.claude_sdk.runtime as _real_agent
         monkeypatch.setattr(_real_agent, "run_claude_agent", mock_run_agent)
         monkeypatch.setattr(_real_agent, "_is_benign_runtime_error", mock_is_benign)
         monkeypatch.setattr(_real_agent, "_should_retry_rate_limit", mock_should_retry)
 
-        from evolve.tui import PlainTUI
+        from evolve.interfaces.tui import PlainTUI
         ui = PlainTUI()
 
-        from evolve.orchestrator import _run_party_mode
+        from evolve.application.run_loop import _run_party_mode
         _run_party_mode(
             project_dir=project_dir,
             run_dir=run_dir,

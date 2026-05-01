@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from evolve.agent import build_prompt
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
 
 class TestScopeCreepPromptSection:

@@ -8,12 +8,10 @@ import asyncio
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
-from evolve.agent import (
-    build_prompt,
-    _build_multimodal_prompt,
-    _detect_current_attempt,
-    _detect_prior_round_anomalies,
-)
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
+from evolve.infrastructure.claude_sdk.runner import _build_multimodal_prompt
+from evolve.infrastructure.claude_sdk.runtime import _detect_current_attempt
+from evolve.infrastructure.claude_sdk.prompt_diagnostics import _detect_prior_round_anomalies
 
 
 # ---------------------------------------------------------------------------
@@ -179,16 +177,16 @@ def _exhaust_async_gen(agen):
 class TestAnalyzeAndFixEdgeCases:
     """Cover analyze_and_fix edge cases: yolo alias, copyfile OSError."""
 
-    @patch("evolve.agent.run_claude_agent", new_callable=AsyncMock)
-    @patch("evolve.agent._run_agent_with_retries")
+    @patch("evolve.infrastructure.claude_sdk.runner.run_claude_agent", new_callable=AsyncMock)
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
     def test_yolo_forwards_to_allow_installs(self, mock_retries, mock_agent, tmp_path: Path):
         """yolo=True forwards to build_prompt as allow_installs=True."""
-        from evolve.agent import analyze_and_fix
+        from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
         (tmp_path / "README.md").write_text("# Spec")
         run_dir = tmp_path / ".evolve" / "runs" / "session"
         run_dir.mkdir(parents=True)
 
-        with patch("evolve.agent.build_prompt") as mock_bp:
+        with patch("evolve.infrastructure.claude_sdk.prompt_builder.build_prompt") as mock_bp:
             mock_bp.return_value = "prompt"
             analyze_and_fix(tmp_path, "ok", yolo=True, run_dir=run_dir, round_num=1)
             call_kwargs = mock_bp.call_args
@@ -199,10 +197,10 @@ class TestAnalyzeAndFixEdgeCases:
             # Let's just verify build_prompt was called
             mock_bp.assert_called_once()
 
-    @patch("evolve.agent._run_agent_with_retries")
+    @patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries")
     def test_copyfile_oserror_non_fatal(self, mock_retries, tmp_path: Path):
         """When shutil.copyfile raises OSError, analyze_and_fix doesn't crash."""
-        from evolve.agent import analyze_and_fix
+        from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
         import shutil
         (tmp_path / "README.md").write_text("# Spec")
         run_dir = tmp_path / ".evolve" / "runs" / "session"
@@ -268,7 +266,7 @@ class TestResultMessageSubtype:
 
         with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
              patch("evolve.infrastructure.claude_sdk.runner._patch_sdk_parser", lambda: None):
-            from evolve.agent import run_claude_agent
+            from evolve.infrastructure.claude_sdk.runner import run_claude_agent
 
             ui_mock = MagicMock()
             with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=ui_mock):
@@ -308,7 +306,7 @@ class TestResultMessageSubtype:
 
         with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
              patch("evolve.infrastructure.claude_sdk.runner._patch_sdk_parser", lambda: None):
-            from evolve.agent import run_claude_agent
+            from evolve.infrastructure.claude_sdk.runner import run_claude_agent
 
             ui_mock = MagicMock()
             with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=ui_mock):
@@ -346,7 +344,7 @@ class TestResultMessageSubtype:
 
         with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
              patch("evolve.infrastructure.claude_sdk.runner._patch_sdk_parser", lambda: None):
-            from evolve.agent import run_claude_agent
+            from evolve.infrastructure.claude_sdk.runner import run_claude_agent
 
             ui_mock = MagicMock()
             with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=ui_mock):
@@ -383,7 +381,7 @@ class TestResultMessageSubtype:
 
         with patch.dict("sys.modules", {"claude_agent_sdk": sdk_mod}), \
              patch("evolve.infrastructure.claude_sdk.runner._patch_sdk_parser", lambda: None):
-            from evolve.agent import run_claude_agent
+            from evolve.infrastructure.claude_sdk.runner import run_claude_agent
 
             ui_mock = MagicMock()
             with patch("evolve.infrastructure.claude_sdk.runner.get_tui", return_value=ui_mock):
@@ -399,15 +397,15 @@ class TestResultMessageSubtype:
 
     def test_analyze_and_fix_propagates_subtype(self, tmp_path: Path):
         """analyze_and_fix returns the subtype from run_claude_agent."""
-        from evolve.agent import analyze_and_fix
+        from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
 
         (tmp_path / "README.md").write_text("# Spec")
         run_dir = tmp_path / ".evolve" / "runs" / "session"
         run_dir.mkdir(parents=True)
 
         # Mock _run_agent_with_retries to return a known subtype
-        with patch("evolve.agent._run_agent_with_retries", return_value="error_max_turns"):
-            with patch("evolve.agent.build_prompt", return_value="prompt"):
+        with patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries", return_value="error_max_turns"):
+            with patch("evolve.infrastructure.claude_sdk.prompt_builder.build_prompt", return_value="prompt"):
                 result = analyze_and_fix(
                     tmp_path, "ok", run_dir=run_dir, round_num=1,
                 )
@@ -416,14 +414,14 @@ class TestResultMessageSubtype:
 
     def test_analyze_and_fix_returns_none_on_no_sdk(self, tmp_path: Path):
         """analyze_and_fix returns None when SDK is missing."""
-        from evolve.agent import analyze_and_fix
+        from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
 
         (tmp_path / "README.md").write_text("# Spec")
         run_dir = tmp_path / ".evolve" / "runs" / "session"
         run_dir.mkdir(parents=True)
 
-        with patch("evolve.agent._run_agent_with_retries", return_value=None):
-            with patch("evolve.agent.build_prompt", return_value="prompt"):
+        with patch("evolve.infrastructure.claude_sdk.runtime._run_agent_with_retries", return_value=None):
+            with patch("evolve.infrastructure.claude_sdk.prompt_builder.build_prompt", return_value="prompt"):
                 result = analyze_and_fix(
                     tmp_path, "ok", run_dir=run_dir, round_num=1,
                 )

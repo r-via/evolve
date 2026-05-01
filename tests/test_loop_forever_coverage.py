@@ -11,7 +11,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.orchestrator import MAX_DEBUG_RETRIES, evolve_loop
+from evolve.application.run_loop import MAX_DEBUG_RETRIES
+from evolve.application.run_loop_startup import evolve_loop
 
 
 class TestEvolveLoopForeverIntegration:
@@ -65,14 +66,14 @@ class TestEvolveLoopForeverIntegration:
             else:
                 raise SystemExit(42)
 
-        with patch("evolve.orchestrator._setup_forever_branch") as mock_branch, \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode") as mock_party, \
-             patch("evolve.orchestrator._forever_restart") as mock_restart, \
-             patch("evolve.orchestrator._git_commit") as mock_commit, \
+        with patch("evolve.application.run_loop._setup_forever_branch") as mock_branch, \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode") as mock_party, \
+             patch("evolve.application.run_loop._forever_restart") as mock_restart, \
+             patch("evolve.application.run_loop._git_commit") as mock_commit, \
              pytest.raises(SystemExit) as exc:
             evolve_loop(project_dir, max_rounds=1, forever=True)
 
@@ -114,13 +115,13 @@ class TestEvolveLoopForeverIntegration:
             else:
                 raise SystemExit(42)
 
-        with patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._git_commit"), \
+        with patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._git_commit"), \
              pytest.raises(SystemExit):
             evolve_loop(project_dir, max_rounds=1, forever=True)
 
@@ -149,13 +150,13 @@ class TestEvolveLoopForeverIntegration:
             else:
                 raise SystemExit(42)
 
-        with patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._git_commit"), \
+        with patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._git_commit"), \
              pytest.raises(SystemExit):
             evolve_loop(project_dir, max_rounds=1, forever=True)
 
@@ -184,11 +185,11 @@ class TestEvolveLoopForeverIntegration:
             else:
                 raise SystemExit(42)
 
-        with patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             evolve_loop(project_dir, max_rounds=2, forever=True)
 
@@ -198,9 +199,9 @@ class TestEvolveLoopForeverIntegration:
         """evolve_loop with forever=True internally sets max_rounds to 999999."""
         project_dir, imp_path = self._setup_project(tmp_path)
 
-        with patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(project_dir, max_rounds=5, forever=True)
 
         call_args = mock_run.call_args[0]
@@ -231,14 +232,14 @@ class TestEvolveLoopForeverIntegration:
             d.name for d in (project_dir / "runs").iterdir() if d.is_dir()
         )
 
-        with patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._forever_restart"), \
-             patch("evolve.orchestrator._git_commit"), \
+        with patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._forever_restart"), \
+             patch("evolve.application.run_loop._git_commit"), \
              pytest.raises(SystemExit):
             evolve_loop(project_dir, max_rounds=1, forever=True)
 
@@ -270,15 +271,15 @@ class TestEvolveLoopForeverIntegration:
             else:
                 raise SystemExit(42)
 
-        with patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator.get_tui", return_value=ui), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report") as mock_report, \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._forever_restart"), \
-             patch("evolve.orchestrator._git_commit"), \
+        with patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.interfaces.tui.get_tui", return_value=ui), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report") as mock_report, \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._forever_restart"), \
+             patch("evolve.application.run_loop._git_commit"), \
              pytest.raises(SystemExit):
             evolve_loop(project_dir, max_rounds=1, forever=True)
 
@@ -321,9 +322,9 @@ class TestEvolveLoopResumeForeverCombined:
         """Resume + forever: sets up branch, detects last round, passes forever to _run_rounds."""
         project_dir, session = self._setup_project_with_session(tmp_path, num_convos=5)
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._setup_forever_branch") as mock_branch, \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._setup_forever_branch") as mock_branch, \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
 
         mock_branch.assert_called_once_with(project_dir)
@@ -340,9 +341,9 @@ class TestEvolveLoopResumeForeverCombined:
         (project_dir / "README.md").write_text("# Test\n")
         (project_dir / "runs").mkdir()
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._setup_forever_branch") as mock_branch, \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._setup_forever_branch") as mock_branch, \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
 
         mock_branch.assert_called_once_with(project_dir)
@@ -356,9 +357,9 @@ class TestEvolveLoopResumeForeverCombined:
         """Resume + forever with session but no conversation logs starts from round 1."""
         project_dir, session = self._setup_project_with_session(tmp_path, num_convos=0)
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
 
         mock_run.assert_called_once()
@@ -384,10 +385,10 @@ class TestEvolveLoopResumeForeverCombined:
         (new_session / "conversation_loop_1.md").write_text("r1")
         (new_session / "conversation_loop_2.md").write_text("r2")
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
 
         mock_run.assert_called_once()
@@ -421,15 +422,15 @@ class TestEvolveLoopResumeForeverCombined:
             else:
                 raise SystemExit(42)
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._ensure_runs_layout"), \
-             patch("evolve.orchestrator._setup_forever_branch"), \
-             patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._git_commit"), \
-             patch("evolve.orchestrator._run_party_mode") as mock_party, \
-             patch("evolve.orchestrator._forever_restart") as mock_restart, \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator.fire_hook"), \
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._ensure_runs_layout"), \
+             patch("evolve.application.run_loop._setup_forever_branch"), \
+             patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._git_commit"), \
+             patch("evolve.application.run_loop._run_party_mode") as mock_party, \
+             patch("evolve.application.run_loop._forever_restart") as mock_restart, \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop.fire_hook"), \
              pytest.raises(SystemExit) as exc:
             evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
 
@@ -443,9 +444,9 @@ class TestEvolveLoopResumeForeverCombined:
         project_dir.mkdir()
         (project_dir / "README.md").write_text("# Test\n")
 
-        with patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._setup_forever_branch") as mock_branch, \
-             patch("evolve.orchestrator._run_rounds") as mock_run:
+        with patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._setup_forever_branch") as mock_branch, \
+             patch("evolve.application.run_loop._run_rounds") as mock_run:
             evolve_loop(project_dir, max_rounds=10, resume=True, forever=True)
 
         mock_branch.assert_called_once()

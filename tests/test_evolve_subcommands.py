@@ -369,10 +369,10 @@ class TestEffortFlag:
         import claude_agent_sdk as _sdk
         if isinstance(_sdk, MagicMock):
             pytest.skip("conftest installed a claude_agent_sdk stub — real SDK not available")
-        import evolve.agent as _agent_mod
-        original = __rt_mod.EFFORT
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
+        original = _agent_mod.EFFORT
         try:
-            __rt_mod.EFFORT = "low"
+            _agent_mod.EFFORT = "low"
             # ClaudeAgentOptions receives agent.EFFORT — confirm via direct construction.
             from claude_agent_sdk import ClaudeAgentOptions
             opts = ClaudeAgentOptions(
@@ -380,25 +380,25 @@ class TestEffortFlag:
                 cwd="/tmp",
                 disallowed_tools=[],
                 include_partial_messages=True,
-                effort=__rt_mod.EFFORT,
+                effort=_agent_mod.EFFORT,
             )
             assert opts.effort == "low"
         finally:
-            __rt_mod.EFFORT = original
+            _agent_mod.EFFORT = original
 
     def test_run_single_round_sets_agent_effort(self, tmp_path: Path):
         """loop.run_single_round writes args.effort to agent.EFFORT."""
-        import evolve.agent as _agent_mod
-        original = __rt_mod.EFFORT
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
+        original = _agent_mod.EFFORT
         runs_dir = tmp_path / "runs"
         runs_dir.mkdir()
         (runs_dir / "improvements.md").write_text("- [ ] [functional] placeholder\n")
         (tmp_path / "README.md").write_text("# Test\n")
         try:
             from unittest.mock import patch as _patch
-            with _patch("evolve.agent.analyze_and_fix", return_value=None), \
-                 _patch("evolve.agent.run_review_agent"):
-                from evolve.orchestrator import run_single_round
+            with _patch("evolve.infrastructure.claude_sdk.runtime.analyze_and_fix", return_value=None), \
+                 _patch("evolve.infrastructure.claude_sdk.draft_review.run_review_agent"):
+                from evolve.application.run_round import run_single_round
                 run_single_round(
                     project_dir=tmp_path,
                     round_num=1,
@@ -410,9 +410,9 @@ class TestEffortFlag:
                     spec=None,
                     effort="high",
                 )
-            assert __rt_mod.EFFORT == "high"
+            assert _agent_mod.EFFORT == "high"
         finally:
-            __rt_mod.EFFORT = original
+            _agent_mod.EFFORT = original
 
     def test_cli_parser_accepts_all_four_levels(self):
         """Parser accepts each documented level without raising SystemExit."""

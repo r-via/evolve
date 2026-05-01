@@ -1,4 +1,4 @@
-"""Tests for evolve.state._runs_base and _ensure_runs_layout.
+"""Tests for evolve.infrastructure.filesystem.state_manager._runs_base and _ensure_runs_layout.
 
 Covers SPEC.md § "The .evolve/ directory" — canonical path resolution,
 legacy fallback, migration via git mv, and ambiguous-state detection.
@@ -13,7 +13,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.state import _runs_base, _ensure_runs_layout, _RunsLayoutError
+from evolve.infrastructure.filesystem.state_manager import (
+    _runs_base,
+    _ensure_runs_layout,
+    _RunsLayoutError,
+)
 
 
 class TestRunsBase:
@@ -94,27 +98,27 @@ class TestEnsureRunsLayoutWiring:
 
     def test_evolve_loop_calls_ensure_runs_layout(self, tmp_path: Path):
         """evolve_loop calls _ensure_runs_layout before any path usage (AC 1)."""
-        from evolve.orchestrator import evolve_loop
+        from evolve.application.run_loop_startup import evolve_loop
 
         (tmp_path / "README.md").write_text("# Test")
         (tmp_path / ".evolve" / "runs").mkdir(parents=True)
 
-        with patch("evolve.orchestrator._ensure_runs_layout") as mock_ensure, \
-             patch("evolve.orchestrator._ensure_git"), \
-             patch("evolve.orchestrator._run_rounds"):
+        with patch("evolve.application.run_loop._ensure_runs_layout") as mock_ensure, \
+             patch("evolve.application.run_loop._ensure_git"), \
+             patch("evolve.application.run_loop._run_rounds"):
             evolve_loop(tmp_path, max_rounds=1)
 
         mock_ensure.assert_called_once_with(tmp_path)
 
     def test_evolve_loop_exits_on_runs_layout_error(self, tmp_path: Path):
         """_RunsLayoutError causes sys.exit(2) with error message (AC 2)."""
-        from evolve.orchestrator import evolve_loop
+        from evolve.application.run_loop_startup import evolve_loop
 
         (tmp_path / "README.md").write_text("# Test")
 
-        with patch("evolve.orchestrator._ensure_runs_layout",
+        with patch("evolve.application.run_loop._ensure_runs_layout",
                    side_effect=_RunsLayoutError("Both exist")), \
-             patch("evolve.orchestrator.get_tui") as mock_tui, \
+             patch("evolve.interfaces.tui.get_tui") as mock_tui, \
              pytest.raises(SystemExit, match="2"):
             evolve_loop(tmp_path, max_rounds=1)
 

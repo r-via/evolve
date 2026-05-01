@@ -4,7 +4,7 @@ Split out of test_tui_extended.py per SPEC § "Hard rule: source files MUST
 NOT exceed 500 lines" — the original was 824 lines.
 """
 
-from evolve.tui import PlainTUI, RichTUI, JsonTUI, _has_rich
+from evolve.interfaces.tui import PlainTUI, RichTUI, JsonTUI, _has_rich
 
 
 # ---------------------------------------------------------------------------

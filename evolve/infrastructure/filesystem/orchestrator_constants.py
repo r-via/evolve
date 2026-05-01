@@ -3,7 +3,7 @@
 Extracted from ``evolve/orchestrator.py`` so that file stays under the
 SPEC § "Hard rule: source files MUST NOT exceed 500 lines" cap.
 ``orchestrator.py`` re-exports every name defined here, preserving
-``from evolve.orchestrator import MAX_DEBUG_RETRIES`` (etc.) imports
+``from evolve.application.run_loop import MAX_DEBUG_RETRIES`` (etc.) imports
 across the test suite and the codebase.
 
 This is a leaf module — stdlib-only — so it can be imported from any

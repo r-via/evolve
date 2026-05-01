@@ -13,8 +13,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.orchestrator import _run_rounds
-from evolve.state import _parse_restart_required
+from evolve.application.run_loop import _run_rounds
+from evolve.infrastructure.filesystem.state_manager import _parse_restart_required
 
 
 class TestBacklogStateJsonSchema:
@@ -39,7 +39,7 @@ class TestBacklogStateJsonSchema:
 
     def test_schema_field_names_and_types(self, tmp_path: Path):
         """state.json.backlog has the exact 5 keys and types documented in SPEC."""
-        from evolve.orchestrator import _write_state_json
+        from evolve.application.run_loop import _write_state_json
         import json as _json
 
         project_dir = tmp_path / "proj"
@@ -85,7 +85,7 @@ class TestBacklogStateJsonSchema:
 
     def test_added_this_round_and_growth_from_git_history(self, tmp_path: Path):
         """added_this_round = new ``- [ ]`` lines vs HEAD; growth = delta vs HEAD~5."""
-        from evolve.orchestrator import _write_state_json
+        from evolve.application.run_loop import _write_state_json
         import json as _json
 
         project_dir = tmp_path / "proj"
@@ -127,7 +127,7 @@ class TestBacklogStateJsonSchema:
 
     def test_growth_zero_without_git_history(self, tmp_path: Path):
         """No git repo → added_this_round=0, growth_rate=0.0 (graceful degrade)."""
-        from evolve.orchestrator import _write_state_json
+        from evolve.application.run_loop import _write_state_json
         import json as _json
 
         project_dir = tmp_path / "proj"
@@ -158,7 +158,7 @@ class TestBacklogStateJsonSchema:
 
     def test_added_this_round_uses_line_set_diff_not_count_diff(self, tmp_path: Path):
         """Checking off A and adding B → added_this_round=1, NOT 0 (count is unchanged)."""
-        from evolve.orchestrator import _write_state_json
+        from evolve.application.run_loop import _write_state_json
         import json as _json
 
         project_dir = tmp_path / "proj"
@@ -289,9 +289,9 @@ class TestRunRoundsRestartRequired:
             imp_path.write_text("- [x] [functional] do something\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -319,9 +319,9 @@ class TestRunRoundsRestartRequired:
             imp_path.write_text("- [x] [functional] do something\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -351,10 +351,10 @@ class TestRunRoundsRestartRequired:
             imp_path.write_text("- [x] [functional] do something\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator.fire_hook") as mock_fire_hook, \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop.fire_hook") as mock_fire_hook, \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -393,9 +393,9 @@ class TestRunRoundsRestartRequired:
             imp_path.write_text("- [x] [functional] do something\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -416,10 +416,10 @@ class TestRunRoundsRestartRequired:
             imp_path.write_text("- [x] [functional] do something\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,

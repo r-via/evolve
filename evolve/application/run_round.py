@@ -10,8 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-__mod = __import__("evolve.tui", fromlist=["TUIProtocol"])
-TUIProtocol = __mod.TUIProtocol
+from evolve.interfaces.tui import TUIProtocol
 
 
 def run_single_round(
@@ -29,23 +28,22 @@ def run_single_round(
     """Execute a single evolution round (called as subprocess)."""
     if yolo is not None:
         allow_installs = yolo
-    __mod = __import__("evolve.infrastructure.claude_sdk", fromlist=["runtime"])
-    _runtime = __mod.runtime
+    from evolve.infrastructure.claude_sdk import runtime as _runtime
     _runtime.MODEL = model
     _runtime.EFFORT = effort
 
-    __mod = __import__("evolve.orchestrator", fromlist=["_runs_base", "get_tui", "_probe"])
-    _runs_base = __mod._runs_base
-    get_tui = __mod.get_tui
-    _probe = __mod._probe
+    from evolve.application.run_loop import (
+        _runs_base,
+        get_tui,
+        _probe,
+    )
 
     rdir = run_dir or _runs_base(project_dir)
     rdir.mkdir(parents=True, exist_ok=True)
     improvements_path = _runs_base(project_dir) / "improvements.md"
     ui = get_tui()
 
-    __mod = __import__("evolve.agent", fromlist=["MAX_TURNS"])
-    _MAX_TURNS = __mod.MAX_TURNS
+    from evolve.infrastructure.claude_sdk.runtime import MAX_TURNS as _MAX_TURNS
     _probe(
         f"round {round_num} starting — project={project_dir.name}, "
         f"model={model}, effort={effort}, max_turns={_MAX_TURNS}"
@@ -90,15 +88,15 @@ def _run_single_round_body(
     spec: str | None,
 ) -> None:
     """Body of ``run_single_round``."""
-    __mod = __import__("evolve.agent", fromlist=["analyze_and_fix"])
-    analyze_and_fix = __mod.analyze_and_fix
+    from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
 
-    __mod = __import__("evolve.orchestrator", fromlist=["_get_current_improvement", "_git_commit", "_probe", "_probe_ok", "_probe_warn"])
-    _get_current_improvement = __mod._get_current_improvement
-    _git_commit = __mod._git_commit
-    _probe = __mod._probe
-    _probe_ok = __mod._probe_ok
-    _probe_warn = __mod._probe_warn
+    from evolve.infrastructure.filesystem.improvement_parser import _get_current_improvement
+    from evolve.application.run_loop import (
+        _git_commit,
+        _probe,
+        _probe_ok,
+        _probe_warn,
+    )
 
     check_output = ""
     pre_check_failed = False
@@ -142,8 +140,7 @@ def _run_single_round_body(
             )
         _probe(f"invoking implement agent — target: {current}")
         ui.agent_working()
-        __mod = __import__("evolve.agent", fromlist=["analyze_and_fix"])
-        _analyze_and_fix = __mod.analyze_and_fix
+        from evolve.infrastructure.claude_sdk.agent import analyze_and_fix
         agent_subtype = _analyze_and_fix(
             project_dir=project_dir,
             check_output=check_output,
@@ -162,8 +159,7 @@ def _run_single_round_body(
     else:
         _probe("backlog drained — invoking draft agent (Winston + John, Opus low)")
         ui.agent_working()
-        __mod = __import__("evolve.agent", fromlist=["run_draft_agent"])
-        _run_draft_agent = __mod.run_draft_agent
+        from evolve.infrastructure.claude_sdk.draft_review import run_draft_agent
         _run_draft_agent(
             project_dir=project_dir,
             run_dir=rdir,
@@ -214,8 +210,7 @@ def _run_single_round_body(
 
     if round_kind == "implement":
         try:
-            __mod = __import__("evolve.agent", fromlist=["run_review_agent"])
-            _run_review_agent = __mod.run_review_agent
+            from evolve.infrastructure.claude_sdk.draft_review import run_review_agent
             _probe("invoking review agent (Zara, Opus low)")
             _run_review_agent(
                 project_dir=project_dir,

@@ -219,8 +219,7 @@ def main():
                 sys.exit(2)
 
         if args.validate:
-            __mod = __import__("evolve.orchestrator", fromlist=["run_validate"])
-            run_validate = __mod.run_validate
+            from evolve.application.validate import run_validate
             sys.exit(run_validate(
                 project_dir=project_path,
                 check_cmd=args.check,
@@ -230,8 +229,7 @@ def main():
                 effort=getattr(args, "effort", "medium"),
             ))
         elif args.dry_run:
-            __mod = __import__("evolve.orchestrator", fromlist=["run_dry_run"])
-            run_dry_run = __mod.run_dry_run
+            from evolve.application.dry_run import run_dry_run
             run_dry_run(
                 project_dir=project_path,
                 check_cmd=args.check,
@@ -241,8 +239,7 @@ def main():
                 effort=getattr(args, "effort", "medium"),
             )
         else:
-            __mod = __import__("evolve.orchestrator", fromlist=["evolve_loop"])
-            evolve_loop = __mod.evolve_loop
+            from evolve.application.run_loop_startup import evolve_loop
             evolve_loop(
                 project_dir=project_path,
                 max_rounds=args.rounds,
@@ -270,8 +267,7 @@ def main():
     elif args.command == "sync-readme":
         project_path = Path(args.project_dir).resolve()
         args = _resolve_config(args, project_path)
-        __mod = __import__("evolve.orchestrator", fromlist=["run_sync_readme"])
-        run_sync_readme = __mod.run_sync_readme
+        from evolve.application.sync_readme import run_sync_readme
         sys.exit(run_sync_readme(
             project_dir=project_path,
             spec=getattr(args, "spec", None),
@@ -295,8 +291,7 @@ def main():
             if not spec_path.is_file():
                 print(f"ERROR: spec file not found: {spec_path}")
                 sys.exit(2)
-        __mod = __import__("evolve.orchestrator", fromlist=["run_diff"])
-        run_diff = __mod.run_diff
+        from evolve.application.diff import run_diff
         sys.exit(run_diff(
             project_dir=project_path,
             spec=spec,
@@ -305,16 +300,14 @@ def main():
         ))
 
     elif args.command == "update":
-        __mod = __import__("evolve.updater", fromlist=["run_update"])
-        run_update = __mod.run_update
+        from evolve.application.update import run_update
         sys.exit(run_update(
             dry_run=getattr(args, "dry_run", False),
             ref=getattr(args, "ref", None),
         ))
 
     elif args.command == "_round":
-        __mod = __import__("evolve.orchestrator", fromlist=["run_single_round"])
-        run_single_round = __mod.run_single_round
+        from evolve.application.run_round import run_single_round
         run_single_round(
             project_dir=Path(args.project_dir).resolve(),
             round_num=args.round_num,
@@ -397,8 +390,7 @@ def _init_config(project_dir: Path, spec: str | None = None) -> None:
         print(f"Created {config_path}")
         config_created = True
 
-    __mod = __import__("evolve.state", fromlist=["_runs_base"])
-    _runs_base = __mod._runs_base
+    from evolve.infrastructure.filesystem.state_manager import _runs_base
     memory_path = _runs_base(project_dir) / "memory.md"
     if memory_path.is_file():
         if config_created:

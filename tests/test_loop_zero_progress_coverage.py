@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.orchestrator import _run_rounds
+from evolve.application.run_loop import _run_rounds
 
 
 class TestRunRoundsZeroProgress:
@@ -42,10 +42,10 @@ class TestRunRoundsZeroProgress:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -102,10 +102,10 @@ class TestRunRoundsZeroProgress:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -155,10 +155,10 @@ class TestRunRoundsZeroProgress:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -201,10 +201,10 @@ class TestRunRoundsZeroProgress:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -233,10 +233,10 @@ class TestRunRoundsZeroProgress:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             attempt_log.append(attempt)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -245,7 +245,7 @@ class TestRunRoundsZeroProgress:
             )
         assert exc.value.code == 4  # circuit breaker — identical signatures across attempts
         # Should have MAX_DEBUG_RETRIES + 1 attempts (1 original + 2 retries)
-        from evolve.orchestrator import MAX_DEBUG_RETRIES
+        from evolve.application.run_loop import MAX_DEBUG_RETRIES
         assert len(attempt_log) == MAX_DEBUG_RETRIES + 1
         assert attempt_log == list(range(1, MAX_DEBUG_RETRIES + 2))
 
@@ -264,10 +264,10 @@ class TestRunRoundsZeroProgress:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -319,10 +319,10 @@ class TestRunRoundsZeroProgress:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,

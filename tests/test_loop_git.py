@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.git import _ensure_git, _git_commit
+from evolve.infrastructure.git.adapter import _ensure_git, _git_commit
 
 
 # ---------------------------------------------------------------------------

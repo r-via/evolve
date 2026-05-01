@@ -15,7 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from evolve.agent import _detect_prior_round_anomalies, build_prompt
+from evolve.infrastructure.claude_sdk.prompt_diagnostics import _detect_prior_round_anomalies
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
 
 
 def _setup_run_dir(tmp_path: Path) -> Path:

@@ -1,10 +1,10 @@
-"""Tests for evolve.state improvement parsing — _is_needs_package, counters, _get_current_improvement."""
+"""Tests for evolve.infrastructure.filesystem.state_manager improvement parsing — _is_needs_package, counters, _get_current_improvement."""
 
 import textwrap
 from pathlib import Path
 
-from evolve.state import (
-    _count_blocked,
+from evolve.infrastructure.filesystem.improvement_parser import _count_blocked
+from evolve.infrastructure.filesystem.improvement_parser import (
     _count_checked,
     _count_unchecked,
     _get_current_improvement,

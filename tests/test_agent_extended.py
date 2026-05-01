@@ -4,13 +4,13 @@ import textwrap
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from evolve.agent import (
-    build_prompt,
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
+from evolve.infrastructure.claude_sdk.runtime import (
     _is_benign_runtime_error,
-    _should_retry_rate_limit,
     _patch_sdk_parser,
-    analyze_and_fix,
 )
+from evolve.infrastructure.claude_sdk.runtime import _should_retry_rate_limit
+from evolve.infrastructure.claude_sdk.runtime import analyze_and_fix
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ class TestAnalyzeAndFix:
         (tmp_path / "runs").mkdir()
         mock_ui = MagicMock()
         with patch.dict("sys.modules", {"claude_agent_sdk": None}), \
-             patch("evolve.agent.get_tui", return_value=mock_ui):
+             patch("evolve.interfaces.tui.get_tui", return_value=mock_ui):
             analyze_and_fix(tmp_path)
         mock_ui.warn.assert_called_once_with(
             "claude-agent-sdk not installed, skipping agent"

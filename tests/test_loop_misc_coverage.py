@@ -14,7 +14,11 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.orchestrator import MAX_DEBUG_RETRIES, _run_rounds, run_single_round
+from evolve.application.run_loop import (
+    MAX_DEBUG_RETRIES,
+    _run_rounds,
+)
+from evolve.application.run_round import run_single_round
 
 
 class TestRunRoundsMisc:
@@ -52,10 +56,10 @@ class TestRunRoundsMisc:
             (run_dir / "CONVERGED").write_text("All done")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -85,10 +89,10 @@ class TestRunRoundsMisc:
             (run_dir / "CONVERGED").write_text("All spec claims verified")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -114,10 +118,10 @@ class TestRunRoundsMisc:
             convo.write_text("# Round 2")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -157,9 +161,9 @@ class TestRunRoundsMisc:
             imp_path.write_text("- [x] [functional] do something\n- [ ] [functional] next\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -182,9 +186,9 @@ class TestRunRoundsMisc:
             convo.write_text("# Round")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -208,9 +212,9 @@ class TestRunRoundsMisc:
             convo.write_text("# Round")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -237,9 +241,9 @@ class TestRunRoundsMisc:
             convo.write_text("# Round")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -266,9 +270,9 @@ class TestRunRoundsMisc:
                 convo.write_text("# Round")
                 return 0, "output", False
 
-            with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-                 patch("evolve.orchestrator._generate_evolution_report"), \
+            with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+                 patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
                  pytest.raises(SystemExit):
                 _run_rounds(
                     project_dir, run_dir, imp_path, MagicMock(),
@@ -309,7 +313,7 @@ class TestRunRoundsMisc:
     def test_effort_end_to_end_argv_to_agent_module(self, tmp_path: Path):
         """Full plumbing: _run_rounds builds argv with --effort, _parse_round_args
         parses it, and run_single_round sets agent.EFFORT to the parsed value."""
-        import evolve.agent as _agent_mod
+        import evolve.infrastructure.claude_sdk.agent as _agent_mod
         from evolve import _parse_round_args
 
         project_dir, run_dir, imp_path = self._setup_project(tmp_path)
@@ -324,9 +328,9 @@ class TestRunRoundsMisc:
             convo.write_text("# Round")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -346,10 +350,10 @@ class TestRunRoundsMisc:
         assert args.effort == "medium"
 
         # Step 3: verify run_single_round would set agent.EFFORT
-        original = __rt_mod.EFFORT
+        original = _agent_mod.EFFORT
         try:
-            with patch("evolve.agent.analyze_and_fix", return_value=None), \
-                 patch("evolve.agent.run_review_agent"):
+            with patch("evolve.infrastructure.claude_sdk.runtime.analyze_and_fix", return_value=None), \
+                 patch("evolve.infrastructure.claude_sdk.draft_review.run_review_agent"):
                 run_single_round(
                     project_dir=project_dir,
                     round_num=1,
@@ -360,9 +364,9 @@ class TestRunRoundsMisc:
                     model="claude-opus-4-6",
                     effort=args.effort,
                 )
-            assert __rt_mod.EFFORT == "medium"
+            assert _agent_mod.EFFORT == "medium"
         finally:
-            __rt_mod.EFFORT = original
+            _agent_mod.EFFORT = original
 
     def test_no_current_improvement_initial_analysis(self, tmp_path: Path):
         """When no improvements exist yet, shows 'initial analysis'."""
@@ -374,9 +378,9 @@ class TestRunRoundsMisc:
             convo.write_text("# Round")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,

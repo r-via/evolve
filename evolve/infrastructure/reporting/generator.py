@@ -36,7 +36,7 @@ def _generate_evolution_report(
     # Function-local imports — bare ``evolve`` bypasses DDD linter
     # (``_classify_module("evolve")`` returns None → skipped).
     from evolve import costs as _costs_mod  # noqa: E402
-    from evolve import state as _state_mod  # noqa: E402
+    import evolve.infrastructure.filesystem.state_manager as _state_mod  # noqa: E402
     TokenUsage = _costs_mod.TokenUsage
     estimate_cost = _costs_mod.estimate_cost
     _count_checked = _state_mod._count_checked

@@ -1,6 +1,6 @@
 """Tests for `evolve update` subcommand (US-046).
 
-Every subprocess call is mocked via ``patch("evolve.updater._run", ...)``
+Every subprocess call is mocked via ``patch("evolve.application.update._run", ...)``
 — no live ``pip``, no live ``git``, no network access.  The single real
 subprocess test (``test_update_help_exit_zero``) spawns
 ``python -m evolve update --help`` to verify the subparser is registered;
@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.updater import (
+from evolve.application.update import (
     _ACTIVE_STATUSES,
     _default_ref,
     _detect_active_session,
@@ -48,21 +48,21 @@ class TestDetectInstallLocation:
             "Location: /tmp/site-packages\n"
             "Editable project location: /home/me/evolve\n"
         )
-        with patch("evolve.updater._run", return_value=_fake_cp(stdout=out)):
+        with patch("evolve.application.update._run", return_value=_fake_cp(stdout=out)):
             loc, editable = _detect_install_location()
         assert editable is True
         assert loc == Path("/home/me/evolve")
 
     def test_non_editable(self):
         out = "Name: evolve\nVersion: 0.1.0\nLocation: /tmp/site-packages\n"
-        with patch("evolve.updater._run", return_value=_fake_cp(stdout=out)):
+        with patch("evolve.application.update._run", return_value=_fake_cp(stdout=out)):
             loc, editable = _detect_install_location()
         assert editable is False
         assert loc == Path("/tmp/site-packages")
 
     def test_pip_show_failure(self):
         with patch(
-            "evolve.updater._run",
+            "evolve.application.update._run",
             return_value=_fake_cp(returncode=1, stderr="evolve not installed"),
         ):
             loc, editable = _detect_install_location()
@@ -113,12 +113,12 @@ class TestDetectActiveSession:
 
 class TestGitDirty:
     def test_clean_tree(self, tmp_path: Path):
-        with patch("evolve.updater._run", return_value=_fake_cp(stdout="")):
+        with patch("evolve.application.update._run", return_value=_fake_cp(stdout="")):
             assert _git_dirty(tmp_path) is False
 
     def test_dirty_source_blocks(self, tmp_path: Path):
         with patch(
-            "evolve.updater._run",
+            "evolve.application.update._run",
             return_value=_fake_cp(stdout=" M evolve/cli.py\n"),
         ):
             assert _git_dirty(tmp_path) is True
@@ -126,7 +126,7 @@ class TestGitDirty:
     def test_only_evolve_dir_ignored(self, tmp_path: Path):
         # Per SPEC archive 019 — `.evolve/` run artifacts don't count.
         out = "?? .evolve/runs/20260101_000000/state.json\n"
-        with patch("evolve.updater._run", return_value=_fake_cp(stdout=out)):
+        with patch("evolve.application.update._run", return_value=_fake_cp(stdout=out)):
             assert _git_dirty(tmp_path) is False
 
     def test_mixed_only_real_paths_block(self, tmp_path: Path):
@@ -134,12 +134,12 @@ class TestGitDirty:
             "?? .evolve/runs/foo\n"
             " M evolve/agent.py\n"
         )
-        with patch("evolve.updater._run", return_value=_fake_cp(stdout=out)):
+        with patch("evolve.application.update._run", return_value=_fake_cp(stdout=out)):
             assert _git_dirty(tmp_path) is True
 
     def test_git_failure_treated_clean(self, tmp_path: Path):
         with patch(
-            "evolve.updater._run",
+            "evolve.application.update._run",
             return_value=_fake_cp(returncode=128, stderr="not a git repo"),
         ):
             assert _git_dirty(tmp_path) is False
@@ -153,13 +153,13 @@ class TestGitDirty:
 class TestDefaultRef:
     def test_origin_head_resolved(self, tmp_path: Path):
         with patch(
-            "evolve.updater._run",
+            "evolve.application.update._run",
             return_value=_fake_cp(stdout="refs/remotes/origin/main\n"),
         ):
             assert _default_ref(tmp_path) == "main"
 
     def test_fallback_when_symbolic_ref_fails(self, tmp_path: Path):
-        with patch("evolve.updater._run", return_value=_fake_cp(returncode=1)):
+        with patch("evolve.application.update._run", return_value=_fake_cp(returncode=1)):
             assert _default_ref(tmp_path) == "main"
 
 
@@ -178,7 +178,7 @@ class TestGitCanFastForward:
                 return _fake_cp(stdout="abc123\n")
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             ok, info = _git_can_fast_forward(tmp_path, "main")
         assert ok is True
         assert info == "already up-to-date"
@@ -195,7 +195,7 @@ class TestGitCanFastForward:
                 return _fake_cp(returncode=0)
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             ok, info = _git_can_fast_forward(tmp_path, "main")
         assert ok is True
         assert info == "bbb222"
@@ -212,7 +212,7 @@ class TestGitCanFastForward:
                 return _fake_cp(returncode=1)  # not an ancestor
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             ok, info = _git_can_fast_forward(tmp_path, "main")
         assert ok is False
         assert "non-fast-forward" in info
@@ -223,7 +223,7 @@ class TestGitCanFastForward:
                 return _fake_cp(returncode=128, stderr="network down")
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             ok, info = _git_can_fast_forward(tmp_path, "main")
         assert ok is False
         assert "fetch failed" in info
@@ -267,7 +267,7 @@ class TestRunUpdateEditable:
                 return _fake_cp()
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=False, ref=None)
         assert rc == 0
         out = capsys.readouterr().out
@@ -282,7 +282,7 @@ class TestRunUpdateEditable:
                 return _fake_cp(stdout=" M evolve/cli.py\n")
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=False, ref=None)
         assert rc == 1
         err = capsys.readouterr().err
@@ -307,7 +307,7 @@ class TestRunUpdateEditable:
                 return _fake_cp(returncode=1)
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=False, ref=None)
         assert rc == 1
         err = capsys.readouterr().err
@@ -323,7 +323,7 @@ class TestRunUpdateEditable:
                 return _fake_cp(stdout="refs/remotes/origin/main\n")
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=True, ref=None)
         assert rc == 0
         out = capsys.readouterr().out
@@ -342,7 +342,7 @@ class TestRunUpdateEditable:
                 return _fake_cp(stdout="")
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=True, ref="release-1.2")
         assert rc == 0
         out = capsys.readouterr().out
@@ -363,7 +363,7 @@ class TestRunUpdateNonEditable:
                 return _fake_cp()
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=False, ref=None)
         assert rc == 0
         assert "pip upgrade complete" in capsys.readouterr().out
@@ -376,7 +376,7 @@ class TestRunUpdateNonEditable:
                 return _fake_cp(returncode=1, stderr="boom")
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=False, ref=None)
         assert rc == 2
         err = capsys.readouterr().err
@@ -388,7 +388,7 @@ class TestRunUpdateNonEditable:
                 return _fake_cp(stdout=_non_editable_pip_show(tmp_path))
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=True, ref=None)
         assert rc == 0
         out = capsys.readouterr().out
@@ -401,7 +401,7 @@ class TestRunUpdateNonEditable:
                 return _fake_cp(stdout=_non_editable_pip_show(tmp_path))
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             run_update(dry_run=True, ref="v1.2.3")
         err = capsys.readouterr().err
         assert "--ref is honored only for editable" in err
@@ -415,7 +415,7 @@ class TestRunUpdateNonEditable:
 class TestRunUpdateErrorPaths:
     def test_no_install_detected_returns_two(self, capsys):
         with patch(
-            "evolve.updater._run",
+            "evolve.application.update._run",
             return_value=_fake_cp(returncode=1, stderr="not installed"),
         ):
             rc = run_update(dry_run=False, ref=None)
@@ -434,7 +434,7 @@ class TestRunUpdateErrorPaths:
                 return _fake_cp(stdout=_editable_pip_show(tmp_path))
             return _fake_cp()
 
-        with patch("evolve.updater._run", side_effect=fake):
+        with patch("evolve.application.update._run", side_effect=fake):
             rc = run_update(dry_run=False, ref=None)
         assert rc == 1
         err = capsys.readouterr().err

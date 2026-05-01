@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.orchestrator import (
+from evolve.application.run_loop import (
     _MEMORY_COMPACTION_MARKER,
     _MEMORY_WIPE_THRESHOLD,
     _run_rounds,
@@ -80,10 +80,10 @@ class TestRunRoundsMemoryWipe:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -130,11 +130,11 @@ class TestRunRoundsMemoryWipe:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -176,11 +176,11 @@ class TestRunRoundsMemoryWipe:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -210,11 +210,11 @@ class TestRunRoundsMemoryWipe:
         def mock_save_diag(run_dir_, round_num_, cmd_, output_, reason, attempt):
             diagnostics.append(reason)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=mock_save_diag), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=mock_save_diag), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -227,7 +227,7 @@ class TestRunRoundsMemoryWipe:
     def test_memory_wipe_prompt_header(self, tmp_path: Path):
         """agent.build_prompt renders the dedicated 'silently wiped memory.md' header
         when the diagnostic starts with 'MEMORY WIPED'."""
-        from evolve.agent import build_prompt
+        from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
         run_dir = tmp_path / "runs" / "session"
         run_dir.mkdir(parents=True)
         project_dir = tmp_path

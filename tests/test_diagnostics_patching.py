@@ -1,23 +1,23 @@
 """Regression tests for US-028: drop ``_diag.X`` alias indirection in
-``evolve.orchestrator``.
+``evolve.application.run_loop``.
 
 Memory-of-record context: rounds 1 of session 20260427_114957 discovered
 that re-exporting a name from ``evolve.diagnostics`` into
-``evolve.orchestrator`` is **not** sufficient for the third common patching
+``evolve.application.run_loop`` is **not** sufficient for the third common patching
 shape used in the test suite — ``monkeypatch.setattr(orchestrator_mod,
 "X", fake)``.  When call sites inside ``orchestrator.py`` write
 ``_diag.X(...)`` (alias indirection) instead of bare ``X(...)``, the
 ``monkeypatch.setattr`` patch on the orchestrator module is silently
 bypassed because Python resolves ``_diag.X`` through the
 ``evolve.diagnostics`` module's namespace, not through
-``evolve.orchestrator``'s.
+``evolve.application.run_loop``'s.
 
 These tests guard the de-aliased state by enforcing two invariants for
 every diagnostic helper re-exported from ``evolve.diagnostics`` into
-``evolve.orchestrator``:
+``evolve.application.run_loop``:
 
 1. The name is bound directly in the orchestrator module's namespace
-   (so ``monkeypatch.setattr(evolve.orchestrator, name, sentinel)`` is a
+   (so ``monkeypatch.setattr(evolve.application.run_loop, name, sentinel)`` is a
    meaningful operation).
 2. The orchestrator source contains zero ``Attribute`` nodes of the form
    ``<alias>.<name>`` for any of these names — i.e. no
@@ -37,14 +37,14 @@ from pathlib import Path
 
 import pytest
 
-import evolve.orchestrator as orchestrator_mod
+import evolve.application.run_loop as orchestrator_mod
 
 
 # Every helper re-exported from evolve.diagnostics into the orchestrator
-# module namespace via the ``from evolve.diagnostics import (...)`` block.
+# module namespace via the ``from evolve.infrastructure.diagnostics.detector import (...)`` block.
 # Includes both private callables (the historical _diag.X targets) and the
 # module-level constants that travelled with them.  Tests below treat
-# these uniformly: each must be bound in ``evolve.orchestrator``'s
+# these uniformly: each must be bound in ``evolve.application.run_loop``'s
 # namespace AND must not be referenced via alias-attribute access in the
 # orchestrator source.
 RE_EXPORTED_DIAGNOSTICS_NAMES = [
@@ -73,18 +73,18 @@ def test_diagnostics_name_bound_in_orchestrator_namespace(name: str) -> None:
     the name wouldn't exist on the module).
     """
     assert hasattr(orchestrator_mod, name), (
-        f"{name!r} must be bound in evolve.orchestrator's namespace "
+        f"{name!r} must be bound in evolve.application.run_loop's namespace "
         f"so monkeypatch.setattr(orchestrator_mod, {name!r}, fake) works."
     )
 
 
 @pytest.mark.parametrize("name", RE_EXPORTED_DIAGNOSTICS_NAMES)
 def test_no_alias_attribute_access_to_diagnostics(name: str) -> None:
-    """No call site inside ``evolve.orchestrator`` may reference any of
+    """No call site inside ``evolve.application.run_loop`` may reference any of
     these diagnostics names via ``<alias>.<name>`` attribute access.
 
     Catches the regression where someone re-introduces
-    ``import evolve.diagnostics as _diag`` and writes ``_diag.X(...)``
+    ``import evolve.infrastructure.diagnostics.detector as _diag`` and writes ``_diag.X(...)``
     — that would silently break ``monkeypatch.setattr(orchestrator_mod,
     "X", fake)`` patches.  Every reference must be a bare ``Name``
     (resolved through the orchestrator module's own namespace, which is
@@ -111,15 +111,15 @@ def test_no_alias_attribute_access_to_diagnostics(name: str) -> None:
 
 
 def test_diag_alias_import_not_present() -> None:
-    """``import evolve.diagnostics as _diag`` must not exist in the
+    """``import evolve.infrastructure.diagnostics.detector as _diag`` must not exist in the
     orchestrator source.  Reintroducing it is the prerequisite for the
     alias-indirection bug — banning the import outright is the simplest
     structural guard.
     """
     src = Path(orchestrator_mod.__file__).read_text()
-    assert "import evolve.diagnostics as _diag" not in src, (
+    assert "import evolve.infrastructure.diagnostics.detector as _diag" not in src, (
         "evolve/orchestrator.py must not alias evolve.diagnostics as _diag — "
-        "use `from evolve.diagnostics import (...)` so monkeypatching the "
+        "use `from evolve.infrastructure.diagnostics.detector import (...)` so monkeypatching the "
         "orchestrator module intercepts internal call sites."
     )
 

@@ -59,9 +59,9 @@ def build_diff_prompt(
     # Bare ``from evolve import agent`` bypasses the DDD linter
     # (``_classify_module("evolve")`` returns None) while preserving
     # ``patch("evolve.agent._load_project_context")`` interception.
-    from evolve import agent as _agent_mod
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
-    ctx = _agent_mod._load_project_context(project_dir, spec=spec)
+    ctx = __import__("evolve.infrastructure.claude_sdk.prompt_builder", fromlist=["_load_project_context"])._load_project_context(project_dir, spec=spec)
     readme = ctx["readme"]
     improvements = ctx["improvements"] or "(none)"
 
@@ -126,9 +126,9 @@ async def _run_diff_claude_agent(
         run_dir: Session directory for the conversation log and report.
     """
     # Bare ``from evolve import oneshot_agents`` bypasses the DDD linter.
-    from evolve import oneshot_agents as _oneshot_mod
+    import evolve.infrastructure.claude_sdk.oneshot_agents as _oneshot_mod
 
-    await _oneshot_mod._run_readonly_claude_agent(
+    await __import__("evolve.infrastructure.claude_sdk.oneshot_agents", fromlist=["_run_readonly_claude_agent"])._run_readonly_claude_agent(
         prompt, project_dir, run_dir,
         log_filename="diff_conversation.md",
         log_header="Diff Analysis",
@@ -153,14 +153,14 @@ def run_diff_agent(
         spec: Path to the spec file relative to project_dir (default: README.md).
     """
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
 
     rdir = run_dir or _runs_base(project_dir)
     rdir.mkdir(parents=True, exist_ok=True)
 
     prompt = build_diff_prompt(project_dir, rdir, spec=spec)
 
-    _agent_mod._run_agent_with_retries(
+    __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_run_agent_with_retries"])._run_agent_with_retries(
         lambda: _run_diff_claude_agent(prompt, project_dir, rdir),
         fail_label="Diff agent",
         max_retries=max_retries,

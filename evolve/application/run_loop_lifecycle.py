@@ -12,8 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-__mod = __import__("evolve.tui", fromlist=["TUIProtocol"])
-TUIProtocol = __mod.TUIProtocol
+from evolve.interfaces.tui import TUIProtocol
 
 
 @dataclass
@@ -38,23 +37,26 @@ def _diagnose_attempt_outcome(
     failure_signatures: list[str],
 ) -> _AttemptOutcome:
     """Diagnose a single round attempt's outcome."""
-    __mod = __import__("evolve.orchestrator", fromlist=["MAX_IDENTICAL_FAILURES", "WATCHDOG_TIMEOUT", "_BACKLOG_VIOLATION_PREFIX", "_MEMORY_COMPACTION_MARKER", "_MEMORY_WIPE_THRESHOLD", "_check_review_verdict", "_count_checked", "_count_unchecked", "_detect_backlog_violation", "_detect_us_format_violation", "_failure_signature", "_is_circuit_breaker_tripped", "_probe_warn", "_runs_base", "_save_subprocess_diagnostic", "fire_hook"])
-    MAX_IDENTICAL_FAILURES = __mod.MAX_IDENTICAL_FAILURES
-    WATCHDOG_TIMEOUT = __mod.WATCHDOG_TIMEOUT
-    _BACKLOG_VIOLATION_PREFIX = __mod._BACKLOG_VIOLATION_PREFIX
-    _MEMORY_COMPACTION_MARKER = __mod._MEMORY_COMPACTION_MARKER
-    _MEMORY_WIPE_THRESHOLD = __mod._MEMORY_WIPE_THRESHOLD
-    _check_review_verdict = __mod._check_review_verdict
-    _count_checked = __mod._count_checked
-    _count_unchecked = __mod._count_unchecked
-    _detect_backlog_violation = __mod._detect_backlog_violation
-    _detect_us_format_violation = __mod._detect_us_format_violation
-    _failure_signature = __mod._failure_signature
-    _is_circuit_breaker_tripped = __mod._is_circuit_breaker_tripped
-    _probe_warn = __mod._probe_warn
-    _runs_base = __mod._runs_base
-    _save_subprocess_diagnostic = __mod._save_subprocess_diagnostic
-    fire_hook = __mod.fire_hook
+    from evolve.application.run_loop import (
+        MAX_IDENTICAL_FAILURES,
+        WATCHDOG_TIMEOUT,
+        _BACKLOG_VIOLATION_PREFIX,
+        _MEMORY_COMPACTION_MARKER,
+        _MEMORY_WIPE_THRESHOLD,
+        _check_review_verdict,
+        _failure_signature,
+        _is_circuit_breaker_tripped,
+        _probe_warn,
+        _runs_base,
+        _save_subprocess_diagnostic,
+        fire_hook,
+    )
+    from evolve.infrastructure.filesystem.improvement_parser import (
+        _count_checked,
+        _count_unchecked,
+        _detect_backlog_violation,
+    )
+    from evolve.infrastructure.diagnostics.detector import _detect_us_format_violation
 
     if stalled:
         ui.round_failed(round_num, returncode)
@@ -494,33 +496,34 @@ def _handle_round_success(
     failure_signatures: list[str],
 ) -> tuple[Path, TUIProtocol, int] | None:
     """Handle post-round-success work for a successful round."""
-    __mod = __import__("evolve.orchestrator", fromlist=["_detect_file_too_large", "_detect_layering_violation", "_detect_tdd_violation", "_enforce_convergence_backstop", "_FILE_TOO_LARGE_LIMIT", "_forever_restart", "_generate_evolution_report", "_git_commit", "_is_self_evolving", "_parse_check_output", "_parse_report_summary", "_parse_restart_required", "_probe", "_probe_ok", "_probe_warn", "_run_curation_pass", "_run_party_mode", "_run_spec_archival_pass", "_runs_base", "_save_subprocess_diagnostic", "_write_state_json", "aggregate_usage", "build_usage_state", "fire_hook", "format_cost", "get_tui"])
-    _detect_file_too_large = __mod._detect_file_too_large
-    _detect_layering_violation = __mod._detect_layering_violation
-    _detect_tdd_violation = __mod._detect_tdd_violation
-    _enforce_convergence_backstop = __mod._enforce_convergence_backstop
-    _FILE_TOO_LARGE_LIMIT = __mod._FILE_TOO_LARGE_LIMIT
-    _forever_restart = __mod._forever_restart
-    _generate_evolution_report = __mod._generate_evolution_report
-    _git_commit = __mod._git_commit
-    _is_self_evolving = __mod._is_self_evolving
-    _parse_check_output = __mod._parse_check_output
-    _parse_report_summary = __mod._parse_report_summary
-    _parse_restart_required = __mod._parse_restart_required
-    _probe = __mod._probe
-    _probe_ok = __mod._probe_ok
-    _probe_warn = __mod._probe_warn
-    _run_curation_pass = __mod._run_curation_pass
-    _run_party_mode = __mod._run_party_mode
-    _run_spec_archival_pass = __mod._run_spec_archival_pass
-    _runs_base = __mod._runs_base
-    _save_subprocess_diagnostic = __mod._save_subprocess_diagnostic
-    _write_state_json = __mod._write_state_json
-    aggregate_usage = __mod.aggregate_usage
-    build_usage_state = __mod.build_usage_state
-    fire_hook = __mod.fire_hook
-    format_cost = __mod.format_cost
-    get_tui = __mod.get_tui
+    from evolve.application.run_loop import (
+        _detect_file_too_large,
+        _detect_layering_violation,
+        _detect_tdd_violation,
+        _enforce_convergence_backstop,
+        _FILE_TOO_LARGE_LIMIT,
+        _forever_restart,
+        _git_commit,
+        _is_self_evolving,
+        _parse_report_summary,
+        _parse_restart_required,
+        _probe,
+        _probe_ok,
+        _probe_warn,
+        _run_curation_pass,
+        _run_party_mode,
+        _run_spec_archival_pass,
+        _runs_base,
+        _save_subprocess_diagnostic,
+        _write_state_json,
+        aggregate_usage,
+        build_usage_state,
+        fire_hook,
+        format_cost,
+        get_tui,
+    )
+    from evolve.infrastructure.reporting.generator import _generate_evolution_report
+    from evolve.infrastructure.filesystem.improvement_parser import _parse_check_output
 
     failure_signatures.clear()
 

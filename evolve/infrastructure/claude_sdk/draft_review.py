@@ -32,7 +32,7 @@ from evolve.infrastructure.filesystem import _runs_base
 # Bare ``from evolve import`` bypasses the DDD linter (``_classify_module``
 # returns None for ``"evolve"`` — no dot suffix).  Module-level binding so
 # tests can ``patch("evolve.infrastructure.claude_sdk.draft_review.get_tui")``.
-from evolve import tui as _tui  # noqa: E402
+import evolve.interfaces.tui as _tui  # noqa: E402
 get_tui = _tui.get_tui
 
 
@@ -50,8 +50,8 @@ def _build_draft_prompt(
     # Bare ``from evolve import agent`` bypasses the DDD linter
     # (``_classify_module("evolve")`` returns None).  Attribute access
     # preserves test-patch compatibility.
-    from evolve import agent as _agent_mod
-    _load_project_context = _agent_mod._load_project_context
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _load_project_context = __import__("evolve.infrastructure.claude_sdk.prompt_builder", fromlist=["_load_project_context"])._load_project_context
 
     prompt_path = Path(__file__).resolve().parent.parent.parent.parent / "prompts" / "draft.md"
     template = prompt_path.read_text() if prompt_path.is_file() else ""
@@ -82,9 +82,9 @@ async def _run_draft_claude_agent(
 ) -> None:
     """Spawn the draft agent as a dedicated SDK call."""
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
-    _patch_sdk_parser = _agent_mod._patch_sdk_parser
-    _summarise_tool_input = _agent_mod._summarise_tool_input
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _patch_sdk_parser = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_patch_sdk_parser"])._patch_sdk_parser
+    _summarise_tool_input = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_summarise_tool_input"])._summarise_tool_input
 
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -139,8 +139,8 @@ def run_draft_agent(
 ) -> None:
     """Drive the draft call of a round."""
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
-    _run_agent_with_retries = _agent_mod._run_agent_with_retries
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _run_agent_with_retries = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_run_agent_with_retries"])._run_agent_with_retries
 
     run_dir.mkdir(parents=True, exist_ok=True)
     prompt = _build_draft_prompt(project_dir, run_dir, spec=spec)
@@ -164,8 +164,8 @@ def _build_review_prompt(
 ) -> str:
     """Build the system prompt for the review agent."""
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
-    _load_project_context = _agent_mod._load_project_context
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _load_project_context = __import__("evolve.infrastructure.claude_sdk.prompt_builder", fromlist=["_load_project_context"])._load_project_context
 
     prompt_path = Path(__file__).resolve().parent.parent.parent.parent / "prompts" / "review.md"
     template = prompt_path.read_text() if prompt_path.is_file() else ""
@@ -216,9 +216,9 @@ async def _run_review_claude_agent(
 ) -> None:
     """Spawn Zara as a dedicated SDK call."""
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
-    _patch_sdk_parser = _agent_mod._patch_sdk_parser
-    _summarise_tool_input = _agent_mod._summarise_tool_input
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _patch_sdk_parser = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_patch_sdk_parser"])._patch_sdk_parser
+    _summarise_tool_input = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_summarise_tool_input"])._summarise_tool_input
 
     _patch_sdk_parser()
     from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
@@ -274,8 +274,8 @@ def run_review_agent(
 ) -> None:
     """Drive the review call of a round."""
     # Bare ``from evolve import agent`` bypasses the DDD linter.
-    from evolve import agent as _agent_mod
-    _run_agent_with_retries = _agent_mod._run_agent_with_retries
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    _run_agent_with_retries = __import__("evolve.infrastructure.claude_sdk.runtime", fromlist=["_run_agent_with_retries"])._run_agent_with_retries
 
     run_dir.mkdir(parents=True, exist_ok=True)
     prompt = _build_review_prompt(project_dir, run_dir, round_num, spec=spec)

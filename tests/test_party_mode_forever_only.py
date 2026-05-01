@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.orchestrator import _run_rounds
+from evolve.application.run_loop import _run_rounds
 
 
 class TestPartyModeForeverOnly:
@@ -46,9 +46,9 @@ class TestPartyModeForeverOnly:
             imp_path.write_text("- [x] [functional] do X\n")
             return 0, "output", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode") as mock_party, \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode") as mock_party, \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,
@@ -78,10 +78,10 @@ class TestPartyModeForeverOnly:
         def stop_forever_restart(*args, **kwargs):
             raise SystemExit(99)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode") as mock_party, \
-             patch("evolve.orchestrator._forever_restart", side_effect=stop_forever_restart), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode") as mock_party, \
+             patch("evolve.application.run_loop._forever_restart", side_effect=stop_forever_restart), \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, self.ui,

@@ -13,7 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from evolve.agent import build_prompt, build_prompt_blocks, PromptBlocks
+from evolve.infrastructure.claude_sdk.prompt_builder import (
+    build_prompt,
+    build_prompt_blocks,
+    PromptBlocks,
+)
 
 
 # ---------------------------------------------------------------------------

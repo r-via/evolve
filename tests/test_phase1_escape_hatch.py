@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from evolve.agent import build_prompt
-from evolve.diagnostics import _save_subprocess_diagnostic
+from evolve.infrastructure.claude_sdk.prompt_builder import build_prompt
+from evolve.infrastructure.diagnostics.detector import _save_subprocess_diagnostic
 
 
 # ---------------------------------------------------------------------------

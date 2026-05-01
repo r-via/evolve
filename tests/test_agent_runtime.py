@@ -4,7 +4,7 @@ hoisted into ``evolve.agent_runtime``.
 These tests lock in:
 
 1. The hoisted symbols are importable from ``evolve.agent_runtime``.
-2. ``evolve.agent`` re-exports the same object identity (``is``-equal),
+2. ``evolve.infrastructure.claude_sdk.runtime`` re-exports the same object identity (``is``-equal),
    so existing patch targets like ``patch("evolve.infrastructure.claude_sdk.runtime.MODEL")`` and
    ``monkeypatch.setattr(agent_mod, "_patch_sdk_parser", ...)`` keep
    working.
@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
-import evolve.agent as agent_mod
-import evolve.agent_runtime as runtime_mod
+import evolve.infrastructure.claude_sdk.runtime as agent_mod
+import evolve.infrastructure.claude_sdk.runtime as runtime_mod
 
 
 HOISTED_NAMES = (
@@ -48,11 +48,11 @@ def test_hoisted_symbol_importable_from_runtime(name: str) -> None:
 
 @pytest.mark.parametrize("name", HOISTED_NAMES)
 def test_agent_module_reexports_same_object(name: str) -> None:
-    """``evolve.agent.X`` is the SAME object as ``evolve.agent_runtime.X``.
+    """``evolve.infrastructure.claude_sdk.runtime.X`` is the SAME object as ``evolve.agent_runtime.X``.
 
     ``is``-equality (not just ``==``) is what makes
     ``monkeypatch.setattr(agent_mod, name, fake)`` and
-    ``patch("evolve.agent.<name>")`` actually intercept call sites that
+    ``patch("evolve.infrastructure.claude_sdk.runtime.<name>")`` actually intercept call sites that
     bind the re-exported name (memory.md "Re-export ≠ patch surface
     when call site uses ``_diag.`` indirection" — same lesson, applied
     here proactively).

@@ -28,7 +28,7 @@ class TestBuildSyncReadmePrompt:
     """Tests for agent.build_sync_readme_prompt."""
 
     def test_includes_spec_text(self, tmp_path: Path):
-        from evolve.agent import build_sync_readme_prompt
+        from evolve.infrastructure.claude_sdk.oneshot_agents import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec\nFancy feature X\n")
         (tmp_path / "README.md").write_text("# Readme\nOld text\n")
         run_dir = tmp_path / "runs" / "20260424_000000"
@@ -39,7 +39,7 @@ class TestBuildSyncReadmePrompt:
         assert "SPEC.md" in prompt
 
     def test_includes_proposal_path_in_default_mode(self, tmp_path: Path):
-        from evolve.agent import build_sync_readme_prompt
+        from evolve.infrastructure.claude_sdk.oneshot_agents import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# R")
         run_dir = tmp_path / "runs" / "s"
@@ -52,7 +52,7 @@ class TestBuildSyncReadmePrompt:
         assert str(tmp_path / "README_proposal.md") in prompt
 
     def test_includes_readme_path_in_apply_mode(self, tmp_path: Path):
-        from evolve.agent import build_sync_readme_prompt
+        from evolve.infrastructure.claude_sdk.oneshot_agents import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# R")
         run_dir = tmp_path / "runs" / "s"
@@ -64,7 +64,10 @@ class TestBuildSyncReadmePrompt:
         assert str(tmp_path / "README.md") in prompt
 
     def test_includes_sentinel_path(self, tmp_path: Path):
-        from evolve.agent import build_sync_readme_prompt, SYNC_README_NO_CHANGES_SENTINEL
+        from evolve.infrastructure.claude_sdk.oneshot_agents import (
+            build_sync_readme_prompt,
+            SYNC_README_NO_CHANGES_SENTINEL,
+        )
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# R")
         run_dir = tmp_path / "runs" / "session1"
@@ -74,7 +77,7 @@ class TestBuildSyncReadmePrompt:
         assert str(run_dir / SYNC_README_NO_CHANGES_SENTINEL) in prompt
 
     def test_includes_voice_constraints(self, tmp_path: Path):
-        from evolve.agent import build_sync_readme_prompt
+        from evolve.infrastructure.claude_sdk.oneshot_agents import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# R")
         run_dir = tmp_path / "runs" / "s"
@@ -87,7 +90,7 @@ class TestBuildSyncReadmePrompt:
         assert "do not invent features" in lower
 
     def test_handles_missing_readme(self, tmp_path: Path):
-        from evolve.agent import build_sync_readme_prompt
+        from evolve.infrastructure.claude_sdk.oneshot_agents import build_sync_readme_prompt
         (tmp_path / "SPEC.md").write_text("# Spec\nA, B, C\n")
         run_dir = tmp_path / "runs" / "s"
         run_dir.mkdir(parents=True)
@@ -104,9 +107,9 @@ class TestRunSyncReadmeRefusal:
     """Tests for run_sync_readme's no-op refusal when spec IS README."""
 
     def test_refuses_when_spec_is_none(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
+        from evolve.application.sync_readme import run_sync_readme
         # No --spec → refuse with exit 1, no agent call, no run_dir created.
-        with patch("evolve.agent.run_sync_readme_agent") as mock_agent:
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent") as mock_agent:
             rc = run_sync_readme(tmp_path, spec=None, apply=False)
         assert rc == 1
         mock_agent.assert_not_called()
@@ -116,8 +119,8 @@ class TestRunSyncReadmeRefusal:
             assert not any(d.is_dir() for d in runs.iterdir())
 
     def test_refuses_when_spec_equals_readme(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
-        with patch("evolve.agent.run_sync_readme_agent") as mock_agent:
+        from evolve.application.sync_readme import run_sync_readme
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent") as mock_agent:
             rc = run_sync_readme(tmp_path, spec="README.md", apply=False)
         assert rc == 1
         mock_agent.assert_not_called()
@@ -127,9 +130,9 @@ class TestRunSyncReadmeMissingSpec:
     """Tests for run_sync_readme when the spec file is missing."""
 
     def test_missing_spec_returns_2(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
+        from evolve.application.sync_readme import run_sync_readme
         # No SPEC.md created.
-        with patch("evolve.agent.run_sync_readme_agent") as mock_agent:
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent") as mock_agent:
             rc = run_sync_readme(tmp_path, spec="SPEC.md", apply=False)
         assert rc == 2
         mock_agent.assert_not_called()
@@ -139,7 +142,7 @@ class TestRunSyncReadmeProposalMode:
     """Tests for run_sync_readme default (proposal) mode."""
 
     def test_writes_proposal_returns_0(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
+        from evolve.application.sync_readme import run_sync_readme
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# Readme")
 
@@ -149,7 +152,7 @@ class TestRunSyncReadmeProposalMode:
                 "# Readme\n\nUpdated to reflect SPEC.md\n"
             )
 
-        with patch("evolve.agent.run_sync_readme_agent", side_effect=fake_agent):
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent", side_effect=fake_agent):
             rc = run_sync_readme(tmp_path, spec="SPEC.md", apply=False)
         assert rc == 0
         # README.md must NOT have been overwritten.
@@ -159,8 +162,8 @@ class TestRunSyncReadmeProposalMode:
         assert "Updated to reflect" in (tmp_path / "README_proposal.md").read_text()
 
     def test_no_changes_sentinel_returns_1(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
-        from evolve.agent import SYNC_README_NO_CHANGES_SENTINEL
+        from evolve.application.sync_readme import run_sync_readme
+        from evolve.infrastructure.claude_sdk.oneshot_agents import SYNC_README_NO_CHANGES_SENTINEL
 
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# Readme")
@@ -171,7 +174,7 @@ class TestRunSyncReadmeProposalMode:
                 "README already in sync"
             )
 
-        with patch("evolve.agent.run_sync_readme_agent", side_effect=fake_agent):
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent", side_effect=fake_agent):
             rc = run_sync_readme(tmp_path, spec="SPEC.md", apply=False)
         assert rc == 1
         # No proposal file should have been written.
@@ -180,7 +183,7 @@ class TestRunSyncReadmeProposalMode:
         assert (tmp_path / "README.md").read_text() == "# Readme"
 
     def test_no_output_returns_2(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
+        from evolve.application.sync_readme import run_sync_readme
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# Readme")
 
@@ -188,16 +191,16 @@ class TestRunSyncReadmeProposalMode:
         def fake_agent(project_dir, run_dir, spec, apply, max_retries=5):
             pass
 
-        with patch("evolve.agent.run_sync_readme_agent", side_effect=fake_agent):
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent", side_effect=fake_agent):
             rc = run_sync_readme(tmp_path, spec="SPEC.md", apply=False)
         assert rc == 2
 
     def test_agent_exception_returns_2(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
+        from evolve.application.sync_readme import run_sync_readme
         (tmp_path / "SPEC.md").write_text("# Spec")
         (tmp_path / "README.md").write_text("# Readme")
 
-        with patch("evolve.agent.run_sync_readme_agent", side_effect=RuntimeError("boom")):
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent", side_effect=RuntimeError("boom")):
             rc = run_sync_readme(tmp_path, spec="SPEC.md", apply=False)
         assert rc == 2
 
@@ -212,7 +215,7 @@ class TestRunSyncReadmeApplyMode:
         subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=tmp_path, check=True)
 
     def test_apply_mode_writes_readme_and_commits(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
+        from evolve.application.sync_readme import run_sync_readme
 
         self._git_init(tmp_path)
         (tmp_path / "SPEC.md").write_text("# Spec\nfeature X\n")
@@ -227,8 +230,8 @@ class TestRunSyncReadmeApplyMode:
             (project_dir / "README.md").write_text("# New README\n\nfeature X documented\n")
 
         # Block the network push attempted by _git_commit.
-        with patch("evolve.agent.run_sync_readme_agent", side_effect=fake_agent), \
-             patch("evolve.orchestrator._git_commit") as mock_commit:
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent", side_effect=fake_agent), \
+             patch("evolve.application.run_loop._git_commit") as mock_commit:
             rc = run_sync_readme(tmp_path, spec="SPEC.md", apply=True)
 
         assert rc == 0
@@ -240,7 +243,7 @@ class TestRunSyncReadmeApplyMode:
         assert "readme" in commit_msg.lower()
 
     def test_apply_mode_unmodified_readme_returns_2(self, tmp_path: Path):
-        from evolve.orchestrator import run_sync_readme
+        from evolve.application.sync_readme import run_sync_readme
 
         self._git_init(tmp_path)
         (tmp_path / "SPEC.md").write_text("# Spec")
@@ -252,8 +255,8 @@ class TestRunSyncReadmeApplyMode:
         def fake_agent(project_dir, run_dir, spec, apply, max_retries=5):
             pass
 
-        with patch("evolve.agent.run_sync_readme_agent", side_effect=fake_agent), \
-             patch("evolve.orchestrator._git_commit") as mock_commit:
+        with patch("evolve.infrastructure.claude_sdk.oneshot_agents.run_sync_readme_agent", side_effect=fake_agent), \
+             patch("evolve.application.run_loop._git_commit") as mock_commit:
             rc = run_sync_readme(tmp_path, spec="SPEC.md", apply=True)
         assert rc == 2
         # No commit should have been attempted.
@@ -287,7 +290,7 @@ class TestSyncReadmeCLI:
             "evolve", "sync-readme", str(tmp_path), "--spec", "SPEC.md",
         ]):
             with patch("evolve._check_deps"), \
-                 patch("evolve.orchestrator.run_sync_readme", return_value=0) as mock_run:
+                 patch("evolve.application.sync_readme.run_sync_readme", return_value=0) as mock_run:
                 with pytest.raises(SystemExit) as exc_info:
                     evolve.main()
         assert exc_info.value.code == 0
@@ -304,7 +307,7 @@ class TestSyncReadmeCLI:
             "--spec", "SPEC.md", "--apply",
         ]):
             with patch("evolve._check_deps"), \
-                 patch("evolve.orchestrator.run_sync_readme", return_value=0) as mock_run:
+                 patch("evolve.application.sync_readme.run_sync_readme", return_value=0) as mock_run:
                 with pytest.raises(SystemExit):
                     evolve.main()
         assert mock_run.call_args.kwargs["apply"] is True
@@ -315,7 +318,7 @@ class TestSyncReadmeCLI:
             "evolve", "sync-readme", str(tmp_path), "--spec", "SPEC.md",
         ]):
             with patch("evolve._check_deps"), \
-                 patch("evolve.orchestrator.run_sync_readme", return_value=1):
+                 patch("evolve.application.sync_readme.run_sync_readme", return_value=1):
                 with pytest.raises(SystemExit) as exc_info:
                     evolve.main()
         assert exc_info.value.code == 1
@@ -326,7 +329,7 @@ class TestSyncReadmeCLI:
             "evolve", "sync-readme", str(tmp_path), "--spec", "SPEC.md",
         ]):
             with patch("evolve._check_deps"), \
-                 patch("evolve.orchestrator.run_sync_readme", return_value=2):
+                 patch("evolve.application.sync_readme.run_sync_readme", return_value=2):
                 with pytest.raises(SystemExit) as exc_info:
                     evolve.main()
         assert exc_info.value.code == 2
@@ -336,7 +339,7 @@ class TestSyncReadmeCLI:
         monkeypatch.chdir(tmp_path)
         with patch.object(sys, "argv", ["evolve", "sync-readme", "--spec", "SPEC.md"]):
             with patch("evolve._check_deps"), \
-                 patch("evolve.orchestrator.run_sync_readme", return_value=0) as mock_run:
+                 patch("evolve.application.sync_readme.run_sync_readme", return_value=0) as mock_run:
                 with pytest.raises(SystemExit):
                     evolve.main()
         # Should resolve "." against cwd.

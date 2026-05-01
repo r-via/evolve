@@ -2,8 +2,8 @@
 
 import json
 
-from evolve.tui import get_tui, RichTUI, PlainTUI, JsonTUI, TUIProtocol, _has_rich
-import evolve.tui as _tui_mod
+from evolve.interfaces.tui import get_tui, RichTUI, PlainTUI, JsonTUI, TUIProtocol, _has_rich
+import evolve.interfaces.tui as _tui_mod
 
 
 class TestTUIProtocol:

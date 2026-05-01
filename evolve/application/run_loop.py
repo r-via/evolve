@@ -14,99 +14,109 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-__mod = __import__("evolve.costs", fromlist=["TokenUsage", "aggregate_usage", "build_usage_state", "estimate_cost", "format_cost"])
-TokenUsage = __mod.TokenUsage
-aggregate_usage = __mod.aggregate_usage
-build_usage_state = __mod.build_usage_state
-estimate_cost = __mod.estimate_cost
-format_cost = __mod.format_cost
-__mod = __import__("evolve.diagnostics", fromlist=["MAX_IDENTICAL_FAILURES", "_auto_detect_check", "_check_review_verdict", "_DEFAULT_README_STALE_THRESHOLD_DAYS", "_detect_file_too_large", "_detect_layering_violation", "_detect_tdd_violation", "_detect_us_format_violation", "_emit_stale_readme_advisory", "_failure_signature", "_FILE_TOO_LARGE_LIMIT", "_generate_evolution_report", "_is_circuit_breaker_tripped", "_README_STALE_ADVISORY_FMT", "_save_subprocess_diagnostic"])
-MAX_IDENTICAL_FAILURES = __mod.MAX_IDENTICAL_FAILURES
-_auto_detect_check = __mod._auto_detect_check
-_check_review_verdict = __mod._check_review_verdict
-_DEFAULT_README_STALE_THRESHOLD_DAYS = __mod._DEFAULT_README_STALE_THRESHOLD_DAYS
-_detect_file_too_large = __mod._detect_file_too_large
-_detect_layering_violation = __mod._detect_layering_violation
-_detect_tdd_violation = __mod._detect_tdd_violation
-_detect_us_format_violation = __mod._detect_us_format_violation
-_emit_stale_readme_advisory = __mod._emit_stale_readme_advisory
-_failure_signature = __mod._failure_signature
-_FILE_TOO_LARGE_LIMIT = __mod._FILE_TOO_LARGE_LIMIT
-_generate_evolution_report = __mod._generate_evolution_report
-_is_circuit_breaker_tripped = __mod._is_circuit_breaker_tripped
-_README_STALE_ADVISORY_FMT = __mod._README_STALE_ADVISORY_FMT
-_save_subprocess_diagnostic = __mod._save_subprocess_diagnostic
-__mod = __import__("evolve.git", fromlist=["_ensure_git", "_git_commit", "_git_show_at", "_setup_forever_branch"])
-_ensure_git = __mod._ensure_git
-_git_commit = __mod._git_commit
-_git_show_at = __mod._git_show_at
-_setup_forever_branch = __mod._setup_forever_branch
-__mod = __import__("evolve.hooks", fromlist=["fire_hook", "load_hooks"])
-fire_hook = __mod.fire_hook
-load_hooks = __mod.load_hooks
-__mod = __import__("evolve.orchestrator_constants", fromlist=["MAX_DEBUG_RETRIES", "_BACKLOG_VIOLATION_HEADER", "_BACKLOG_VIOLATION_PREFIX", "_MEMORY_COMPACTION_MARKER", "_MEMORY_WIPE_THRESHOLD"])
-MAX_DEBUG_RETRIES = __mod.MAX_DEBUG_RETRIES
-_BACKLOG_VIOLATION_HEADER = __mod._BACKLOG_VIOLATION_HEADER
-_BACKLOG_VIOLATION_PREFIX = __mod._BACKLOG_VIOLATION_PREFIX
-_MEMORY_COMPACTION_MARKER = __mod._MEMORY_COMPACTION_MARKER
-_MEMORY_WIPE_THRESHOLD = __mod._MEMORY_WIPE_THRESHOLD
-__mod = __import__("evolve.orchestrator_helpers", fromlist=["_PROBE_OK_PREFIX", "_PROBE_PREFIX", "_PROBE_WARN_PREFIX", "_enforce_convergence_backstop", "_is_self_evolving", "_parse_report_summary", "_probe", "_probe_ok", "_probe_warn", "_run_curation_pass", "_run_spec_archival_pass", "_scaffold_shared_runtime_files", "_should_run_spec_archival"])
-_PROBE_OK_PREFIX = __mod._PROBE_OK_PREFIX
-_PROBE_PREFIX = __mod._PROBE_PREFIX
-_PROBE_WARN_PREFIX = __mod._PROBE_WARN_PREFIX
-_enforce_convergence_backstop = __mod._enforce_convergence_backstop
-_is_self_evolving = __mod._is_self_evolving
-_parse_report_summary = __mod._parse_report_summary
-_probe = __mod._probe
-_probe_ok = __mod._probe_ok
-_probe_warn = __mod._probe_warn
-_run_curation_pass = __mod._run_curation_pass
-_run_spec_archival_pass = __mod._run_spec_archival_pass
-_scaffold_shared_runtime_files = __mod._scaffold_shared_runtime_files
-_should_run_spec_archival = __mod._should_run_spec_archival
-__mod = __import__("evolve.party", fromlist=["_forever_restart", "_run_party_mode"])
-_forever_restart = __mod._forever_restart
-_run_party_mode = __mod._run_party_mode
-__mod = __import__("evolve.state", fromlist=["_RunsLayoutError", "_check_spec_freshness", "_compute_backlog_stats", "_count_blocked", "_count_checked", "_count_unchecked", "_detect_backlog_violation", "_detect_premature_converged", "_ensure_runs_layout", "_extract_unchecked_lines", "_extract_unchecked_set", "_get_current_improvement", "_is_needs_package", "_parse_check_output", "_parse_restart_required", "_runs_base", "_write_state_json"])
-_RunsLayoutError = __mod._RunsLayoutError
-_check_spec_freshness = __mod._check_spec_freshness
-_compute_backlog_stats = __mod._compute_backlog_stats
-_count_blocked = __mod._count_blocked
-_count_checked = __mod._count_checked
-_count_unchecked = __mod._count_unchecked
-_detect_backlog_violation = __mod._detect_backlog_violation
-_detect_premature_converged = __mod._detect_premature_converged
-_ensure_runs_layout = __mod._ensure_runs_layout
-_extract_unchecked_lines = __mod._extract_unchecked_lines
-_extract_unchecked_set = __mod._extract_unchecked_set
-_get_current_improvement = __mod._get_current_improvement
-_is_needs_package = __mod._is_needs_package
-_parse_check_output = __mod._parse_check_output
-_parse_restart_required = __mod._parse_restart_required
-_runs_base = __mod._runs_base
-_write_state_json = __mod._write_state_json
-__mod = __import__("evolve.subprocess_monitor", fromlist=["WATCHDOG_TIMEOUT", "_run_monitored_subprocess"])
-WATCHDOG_TIMEOUT = __mod.WATCHDOG_TIMEOUT
-_run_monitored_subprocess = __mod._run_monitored_subprocess
-__mod = __import__("evolve.tui", fromlist=["TUIProtocol", "get_tui"])
-TUIProtocol = __mod.TUIProtocol
-get_tui = __mod.get_tui
+from evolve.infrastructure.costs import (
+    TokenUsage,
+    aggregate_usage,
+    build_usage_state,
+    estimate_cost,
+    format_cost,
+)
+from evolve.infrastructure.diagnostics.detector import (
+    MAX_IDENTICAL_FAILURES,
+    _auto_detect_check,
+    _check_review_verdict,
+    _DEFAULT_README_STALE_THRESHOLD_DAYS,
+    _detect_file_too_large,
+    _detect_layering_violation,
+    _detect_tdd_violation,
+    _detect_us_format_violation,
+    _emit_stale_readme_advisory,
+    _failure_signature,
+    _FILE_TOO_LARGE_LIMIT,
+    _is_circuit_breaker_tripped,
+    _README_STALE_ADVISORY_FMT,
+    _save_subprocess_diagnostic,
+)
+from evolve.infrastructure.reporting.generator import _generate_evolution_report
+from evolve.infrastructure.git.adapter import (
+    _ensure_git,
+    _git_commit,
+    _git_show_at,
+    _setup_forever_branch,
+)
+from evolve.infrastructure.hooks import (
+    fire_hook,
+    load_hooks,
+)
+from evolve.infrastructure.filesystem.orchestrator_constants import (
+    MAX_DEBUG_RETRIES,
+    _BACKLOG_VIOLATION_HEADER,
+    _BACKLOG_VIOLATION_PREFIX,
+    _MEMORY_COMPACTION_MARKER,
+    _MEMORY_WIPE_THRESHOLD,
+)
+from evolve.application.run_loop_helpers import (
+    _PROBE_OK_PREFIX,
+    _PROBE_PREFIX,
+    _PROBE_WARN_PREFIX,
+    _enforce_convergence_backstop,
+    _is_self_evolving,
+    _parse_report_summary,
+    _probe,
+    _probe_ok,
+    _probe_warn,
+    _run_curation_pass,
+    _run_spec_archival_pass,
+    _scaffold_shared_runtime_files,
+)
+from evolve.infrastructure.claude_sdk.spec_archival import _should_run_spec_archival
+from evolve.infrastructure.claude_sdk.party import (
+    _forever_restart,
+    _run_party_mode,
+)
+from evolve.infrastructure.filesystem.state_manager import (
+    _RunsLayoutError,
+    _check_spec_freshness,
+    _compute_backlog_stats,
+    _detect_premature_converged,
+    _ensure_runs_layout,
+    _parse_restart_required,
+    _runs_base,
+    _write_state_json,
+)
+from evolve.infrastructure.filesystem.improvement_parser import (
+    _count_checked,
+    _count_unchecked,
+    _detect_backlog_violation,
+    _extract_unchecked_lines,
+    _extract_unchecked_set,
+    _get_current_improvement,
+    _is_needs_package,
+)
+from evolve.infrastructure.filesystem.improvement_parser import (
+    _count_blocked,
+    _parse_check_output,
+)
+from evolve.infrastructure.diagnostics.subprocess_monitor import (
+    WATCHDOG_TIMEOUT,
+    _run_monitored_subprocess,
+)
+from evolve.interfaces.tui import (
+    TUIProtocol,
+    get_tui,
+)
 
 # Re-exports for backward-compat via shim
-__mod = __import__("evolve.round_runner", fromlist=["_run_single_round_body", "run_single_round"])
-_run_single_round_body = __mod._run_single_round_body
-run_single_round = __mod.run_single_round
-__mod = __import__("evolve.round_lifecycle", fromlist=["_AttemptOutcome", "_diagnose_attempt_outcome", "_handle_round_success"])
-_AttemptOutcome = __mod._AttemptOutcome
-_diagnose_attempt_outcome = __mod._diagnose_attempt_outcome
-_handle_round_success = __mod._handle_round_success
-__mod = __import__("evolve.orchestrator_oneshots", fromlist=["run_diff", "run_dry_run", "run_sync_readme", "run_validate"])
-run_diff = __mod.run_diff
-run_dry_run = __mod.run_dry_run
-run_sync_readme = __mod.run_sync_readme
-run_validate = __mod.run_validate
-__mod = __import__("evolve.orchestrator_startup", fromlist=["evolve_loop"])
-evolve_loop = __mod.evolve_loop
+from evolve.application.run_round import (
+    _run_single_round_body,
+    run_single_round,
+)
+from evolve.application.run_loop_lifecycle import (
+    _AttemptOutcome,
+    _diagnose_attempt_outcome,
+    _handle_round_success,
+)
+from evolve.application.run_loop_startup import evolve_loop
 
 
 def _run_rounds(

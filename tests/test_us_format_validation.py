@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from evolve.diagnostics import _detect_us_format_violation
+from evolve.infrastructure.diagnostics.detector import _detect_us_format_violation
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ class TestBuildPrevCrashUsFormat:
     """Test the US FORMAT VIOLATION branch in build_prev_crash_section."""
 
     def test_us_format_violation_renders_section(self):
-        from evolve.prompt_diagnostics import build_prev_crash_section
+        from evolve.infrastructure.claude_sdk.prompt_diagnostics import build_prev_crash_section
         diag = (
             "US FORMAT VIOLATION: 1 item(s) lack required US "
             "template sections:\n  - Item at line 5 missing ..."
@@ -179,7 +179,7 @@ class TestBuildPrevCrashUsFormat:
     def test_us_format_violation_takes_priority_over_generic(self):
         """US FORMAT VIOLATION prefix is matched before the generic
         fallback."""
-        from evolve.prompt_diagnostics import build_prev_crash_section
+        from evolve.infrastructure.claude_sdk.prompt_diagnostics import build_prev_crash_section
         diag = "US FORMAT VIOLATION: test"
         result = build_prev_crash_section(diag)
         assert "CRASHED" not in result
@@ -201,9 +201,9 @@ class TestRoundLifecycleIntegration:
         assert "_detect_us_format_violation" in src
 
     def test_orchestrator_re_exports_detect_us_format_violation(self):
-        import evolve.orchestrator as orch
+        import evolve.application.run_loop as orch
         assert hasattr(orch, "_detect_us_format_violation")
-        from evolve.diagnostics import (
+        from evolve.infrastructure.diagnostics.detector import (
             _detect_us_format_violation as orig,
         )
         assert orch._detect_us_format_violation is orig

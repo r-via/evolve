@@ -33,9 +33,9 @@ from pathlib import Path
 
 import pytest
 
-import evolve.agent as agent_mod
+import evolve.infrastructure.claude_sdk.runtime as agent_mod
 import evolve as evolve_mod
-import evolve.tui as tui_mod
+import evolve.interfaces.tui as tui_mod
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

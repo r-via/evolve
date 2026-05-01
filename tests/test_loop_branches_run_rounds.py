@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import evolve.orchestrator as _orch
+import evolve.application.run_loop as _orch
 
 
 # ---------------------------------------------------------------------------
@@ -53,9 +53,9 @@ class TestRunRoundsIntegrationBranches:
             (run_dir / "CONVERGED").write_text("Done")
             return 0, "out", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit):
             _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -86,10 +86,10 @@ class TestRunRoundsIntegrationBranches:
                 raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
             return real_run(cmd, *args, **kwargs)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator.subprocess.run", side_effect=flaky_run), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop.subprocess.run", side_effect=flaky_run), \
              pytest.raises(SystemExit):
             _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -124,11 +124,11 @@ class TestRunRoundsIntegrationBranches:
                 raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
             return real_run(cmd, *args, **kwargs)
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic"), \
-             patch("evolve.orchestrator.subprocess.run", side_effect=flaky_run), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic"), \
+             patch("evolve.application.run_loop.subprocess.run", side_effect=flaky_run), \
              pytest.raises(SystemExit):
             _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -162,9 +162,9 @@ class TestRunRoundsIntegrationBranches:
         # When spec is newer, _check_spec_freshness marks items stale —
         # which means "add a next item". So the loop will continue past the
         # rejected CONVERGED. Use max_rounds=1 so it exits at max via SystemExit.
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit):
             _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -189,9 +189,9 @@ class TestRunRoundsIntegrationBranches:
         def spy_save(*args, **kwargs):
             save_calls.append(kwargs.get("reason", ""))
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._save_subprocess_diagnostic", side_effect=spy_save), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._save_subprocess_diagnostic", side_effect=spy_save), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
              pytest.raises(SystemExit):
             _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -226,9 +226,9 @@ class TestRunRoundsIntegrationBranches:
             os.utime(imp_path, (old, old))
             return 0, "out", False
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
              pytest.raises(SystemExit):
             _orch._run_rounds(
                 project_dir, run_dir, imp_path, ui,

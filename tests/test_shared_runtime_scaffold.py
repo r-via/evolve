@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from evolve.orchestrator import _scaffold_shared_runtime_files
-from evolve.state import _runs_base
+from evolve.application.run_loop import _scaffold_shared_runtime_files
+from evolve.infrastructure.filesystem.state_manager import _runs_base
 
 
 class TestScaffoldSharedRuntimeFiles:

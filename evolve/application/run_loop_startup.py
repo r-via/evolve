@@ -26,20 +26,21 @@ def evolve_loop(
     max_cost: float | None = None,
 ) -> None:
     """Orchestrate evolution by launching each round as a subprocess."""
-    __mod = __import__("evolve.orchestrator", fromlist=["WATCHDOG_TIMEOUT", "_RunsLayoutError", "_auto_detect_check", "_emit_stale_readme_advisory", "_ensure_git", "_ensure_runs_layout", "_probe", "_run_rounds", "_runs_base", "_scaffold_shared_runtime_files", "_setup_forever_branch", "get_tui", "load_hooks"])
-    WATCHDOG_TIMEOUT = __mod.WATCHDOG_TIMEOUT
-    _RunsLayoutError = __mod._RunsLayoutError
-    _auto_detect_check = __mod._auto_detect_check
-    _emit_stale_readme_advisory = __mod._emit_stale_readme_advisory
-    _ensure_git = __mod._ensure_git
-    _ensure_runs_layout = __mod._ensure_runs_layout
-    _probe = __mod._probe
-    _run_rounds = __mod._run_rounds
-    _runs_base = __mod._runs_base
-    _scaffold_shared_runtime_files = __mod._scaffold_shared_runtime_files
-    _setup_forever_branch = __mod._setup_forever_branch
-    get_tui = __mod.get_tui
-    load_hooks = __mod.load_hooks
+    from evolve.application.run_loop import (
+        WATCHDOG_TIMEOUT,
+        _RunsLayoutError,
+        _auto_detect_check,
+        _emit_stale_readme_advisory,
+        _ensure_git,
+        _ensure_runs_layout,
+        _probe,
+        _run_rounds,
+        _runs_base,
+        _scaffold_shared_runtime_files,
+        _setup_forever_branch,
+        get_tui,
+        load_hooks,
+    )
 
     if yolo is not None:
         allow_installs = yolo
@@ -54,8 +55,7 @@ def evolve_loop(
     improvements_path = _runs_base(project_dir) / "improvements.md"
     _scaffold_shared_runtime_files(project_dir, spec)
 
-    __mod = __import__("evolve.agent", fromlist=["MAX_TURNS"])
-    _MAX_TURNS = __mod.MAX_TURNS
+    from evolve.infrastructure.claude_sdk.runtime import MAX_TURNS as _MAX_TURNS
     _probe(
         f"evolve_loop starting — project={project_dir.name}, "
         f"max_rounds={max_rounds}, check={check_cmd or '(auto-detect)'}, "

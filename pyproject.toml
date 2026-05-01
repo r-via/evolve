@@ -25,8 +25,8 @@ vision = ["cairosvg"]
 dev = ["pytest", "pytest-cov", "rich"]
 
 [project.scripts]
-evolve = "evolve.cli:main"
-evolve-watch = "evolve.watcher:main"
+evolve = "evolve.interfaces.cli.main:main"
+evolve-watch = "evolve.interfaces.watcher:main"
 
 [tool.setuptools.packages.find]
 include = ["evolve*"]

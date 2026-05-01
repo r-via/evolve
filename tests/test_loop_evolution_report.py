@@ -8,11 +8,9 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from evolve.orchestrator import (
-    _generate_evolution_report,
-    _run_rounds,
-)
-from evolve.party import _run_party_mode
+from evolve.infrastructure.reporting.generator import _generate_evolution_report
+from evolve.application.run_loop import _run_rounds
+from evolve.infrastructure.claude_sdk.party import _run_party_mode
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +39,7 @@ class TestEvolutionReportExtended:
                 return MagicMock(returncode=0, stdout="abc1234 fix(parser): handle empty input")
             return MagicMock(returncode=1, stdout="")
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=mock_run):
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=mock_run):
             _generate_evolution_report(project_dir, run_dir, 10, 1, True)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -54,7 +52,7 @@ class TestEvolutionReportExtended:
             "Round 1: FAIL\n10 passed, 3 failed\n"
         )
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 1, False)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -68,7 +66,7 @@ class TestEvolutionReportExtended:
             "Edit → a.py\nEdit → b.py\nEdit → c.py\nEdit → d.py\nEdit → e.py\n"
         )
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 1, True)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -83,7 +81,7 @@ class TestEvolutionReportExtended:
                 raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
             return MagicMock(returncode=1, stdout="")
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=mock_run):
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=mock_run):
             _generate_evolution_report(project_dir, run_dir, 10, 1, False)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -99,7 +97,7 @@ class TestEvolutionReportExtended:
         run_dir.mkdir()
         # No improvements.md file
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 1, True)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -113,7 +111,7 @@ class TestEvolutionReportExtended:
         project_dir, run_dir = self._setup_report_project(tmp_path)
         (run_dir / "check_round_1.txt").write_text("Round 1: FAIL\nERROR: compilation failed\n")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 1, False)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -124,7 +122,7 @@ class TestEvolutionReportExtended:
         project_dir, run_dir = self._setup_report_project(tmp_path)
         (run_dir / "check_round_1.txt").write_text("PASS\nAll good\n")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 1, True)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -139,7 +137,7 @@ class TestEvolutionReportExtended:
         (run_dir / "conversation_loop_2.md").write_text("feat(api): add endpoint\n")
         (run_dir / "conversation_loop_3.md").write_text("refactor(core): simplify logic\n")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 3, True)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -158,7 +156,7 @@ class TestEvolutionReportExtended:
         (run_dir / "conversation_loop_2.md").write_text("feat(ui): add button\nEdit → ui.py\n")
         # Round 3 has neither
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 3, False)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -182,7 +180,7 @@ class TestEvolutionReportExtended:
         run_dir.mkdir()
         (runs_dir / "improvements.md").write_text("# Improvements\n")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 5, 0, False)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -199,7 +197,7 @@ class TestEvolutionReportExtended:
                 raise FileNotFoundError("git not found")
             return MagicMock(returncode=1, stdout="")
 
-        with patch("evolve.orchestrator.subprocess.run", side_effect=mock_run):
+        with patch("evolve.application.run_loop.subprocess.run", side_effect=mock_run):
             _generate_evolution_report(project_dir, run_dir, 10, 1, True)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -210,7 +208,7 @@ class TestEvolutionReportExtended:
         """Report with empty improvements.md (no checkboxes) shows 0 counts."""
         project_dir, run_dir = self._setup_report_project(tmp_path, "# Improvements\n")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 0, False)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -225,7 +223,7 @@ class TestEvolutionReportExtended:
         long_msg = "feat(parser): " + "x" * 80
         (run_dir / "conversation_loop_1.md").write_text(long_msg + "\n")
 
-        with patch("evolve.orchestrator.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        with patch("evolve.application.run_loop.subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
             _generate_evolution_report(project_dir, run_dir, 10, 1, True)
 
         report = (run_dir / "evolution_report.md").read_text()
@@ -337,12 +335,12 @@ class TestForeverRestartInRunRounds:
         def mock_restart_side(*args, **kwargs):
             imp_path.write_text("- [ ] [functional] next task\n")
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._forever_restart", side_effect=mock_restart_side) as mock_restart, \
-             patch("evolve.orchestrator._git_commit") as mock_commit, \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._forever_restart", side_effect=mock_restart_side) as mock_restart, \
+             patch("evolve.application.run_loop._git_commit") as mock_commit, \
              pytest.raises(SystemExit) as exc:
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,
@@ -382,12 +380,12 @@ class TestForeverRestartInRunRounds:
 
         new_dirs_before = set(d.name for d in (project_dir / "runs").iterdir() if d.is_dir())
 
-        with patch("evolve.orchestrator._run_monitored_subprocess", side_effect=mock_monitored), \
-             patch("evolve.orchestrator._is_self_evolving", return_value=True), \
-             patch("evolve.orchestrator._generate_evolution_report"), \
-             patch("evolve.orchestrator._run_party_mode"), \
-             patch("evolve.orchestrator._forever_restart"), \
-             patch("evolve.orchestrator._git_commit"), \
+        with patch("evolve.application.run_loop._run_monitored_subprocess", side_effect=mock_monitored), \
+             patch("evolve.application.run_loop._is_self_evolving", return_value=True), \
+             patch("evolve.infrastructure.reporting.generator._generate_evolution_report"), \
+             patch("evolve.application.run_loop._run_party_mode"), \
+             patch("evolve.application.run_loop._forever_restart"), \
+             patch("evolve.application.run_loop._git_commit"), \
              pytest.raises(SystemExit):
             _run_rounds(
                 project_dir, run_dir, imp_path, ui,

@@ -12,7 +12,7 @@ import sys
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
-from evolve.tui import TUIProtocol, RichTUI, PlainTUI, JsonTUI, _has_rich
+from evolve.interfaces.tui import TUIProtocol, RichTUI, PlainTUI, JsonTUI, _has_rich
 
 
 class TestAgentWarnProtocol:

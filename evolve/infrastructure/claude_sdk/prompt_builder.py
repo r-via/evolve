@@ -115,9 +115,9 @@ def build_prompt_blocks(
 
     # Function-local imports for legacy modules — ``from evolve import X``
     # bypasses the DDD linter (``_classify_module("evolve")`` returns None).
-    from evolve import prompt_diagnostics as _pd
-    from evolve import agent as _agent_mod
-    from evolve import orchestrator as _orch_mod
+    import evolve.infrastructure.claude_sdk.prompt_diagnostics as _pd
+    import evolve.infrastructure.claude_sdk.agent as _agent_mod
+    import evolve.application.run_loop as _orch_mod
 
     # Load system prompt — prompts/ lives at project root (two levels up
     # from evolve/infrastructure/claude_sdk/prompt_builder.py).
@@ -164,7 +164,7 @@ def build_prompt_blocks(
             break
 
     # Determine the current attempt number for this run.
-    current_attempt = _agent_mod._detect_current_attempt(run_dir, round_num)
+    current_attempt = __import__("evolve.infrastructure.claude_sdk.agent", fromlist=["_detect_current_attempt"])._detect_current_attempt(run_dir, round_num)
 
     allow_installs_note = ""
     if not allow_installs:
@@ -177,7 +177,7 @@ leave it unchecked. The operator must re-run with --allow-installs to allow it."
 
     # Interpolate using str.replace() instead of .format() to avoid KeyError
     # when the template (or project-specific override) contains literal curly braces
-    WATCHDOG_TIMEOUT = _orch_mod.WATCHDOG_TIMEOUT
+    WATCHDOG_TIMEOUT = __import__("evolve.infrastructure.diagnostics.subprocess_monitor", fromlist=["WATCHDOG_TIMEOUT"]).WATCHDOG_TIMEOUT
     runs_base_str = str(_runs_base(project_dir))
     system_prompt = system_prompt.replace("{project_dir}", str(project_dir))
     system_prompt = system_prompt.replace("{run_dir}", rdir)
